@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **执行状态（2026-08-13）：** Tasks 1–9 已实现并通过 automated、isolated browser 与 live read-only verification；项目尚无可用 Git `HEAD`，未创建 commit。
+
 **Goal:** 为 standalone Tasks Recorder Dashboard 增加工作目录、worktree、branch 三列、可折叠 Timeline，以及具备并发和父子一致性保护的人工状态修改，并彻底移除 token/Bearer contract。
 
 **Architecture:** SQLite 仍由 taskd 单独持有；Dashboard 通过 snapshot 读取 absolute context，通过窄 `PATCH /api/v1/tasks/:id/status` 修改 status，并由 SSE revision 触发 authoritative refresh。DHTMLX Gantt 继续全局 readonly，Grid 与 Timeline 使用两个 custom layout 切换，状态编辑由应用自己的 Pill/listbox 完成。

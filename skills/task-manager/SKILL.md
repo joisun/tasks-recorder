@@ -7,7 +7,9 @@ description: Use when an Agent is doing concrete work of any duration, resuming 
 
 ## Overview
 
-Use `tasks-recorder` as the local Agent Task Control Plane. SQLite is canonical and exclusively owned by `taskd`; the independent read-only Tree + Timeline Dashboard is available at `http://127.0.0.1:43127`.
+Use `tasks-recorder` as the local Agent Task Control Plane. SQLite is canonical and exclusively owned by `taskd`; the independent Tree + Timeline Dashboard is available at `http://127.0.0.1:43127`.
+
+Dashboard status correction exists only to recover from Hook or lifecycle gaps. It does not replace semantic maintenance through `agent_tasks_context`, `agent_tasks_upsert`, and `agent_tasks_complete`.
 
 ## Decide whether to record
 
@@ -53,4 +55,4 @@ Never edit `tasks.sqlite` directly. Use only named `agent_tasks_*` tools. If MCP
 - Creating a new ID before checking candidates creates duplicates.
 - Treating `waiting` as `blocked` hides whether an obstacle is actionable.
 - Completing a parent merely because one child finished loses remaining work.
-- Treating the Dashboard as another database creates conflicting state; all business data must come from SQLite.
+- Treating Dashboard view state as another database creates conflicting state; its status correction must still flow through taskd and authoritative SQLite snapshots.

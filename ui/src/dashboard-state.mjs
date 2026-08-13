@@ -10,6 +10,14 @@ export function createTaskIndex(tasks) {
   return { byId, childrenByParent }
 }
 
+const GRID_MIN_WIDTH = 240
+const TIMELINE_MIN_WIDTH = 320
+const TIMELINE_SPLITTER_WIDTH = 9
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value))
+}
+
 export function createGanttLayout({ showTimeline, gridWidth }) {
   const grid = {
     ...(showTimeline ? { width: gridWidth } : {}),
@@ -30,6 +38,11 @@ export function createGanttLayout({ showTimeline, gridWidth }) {
     css: 'gantt_container',
     cols: [
       grid,
+      {
+        html: '<div class="timeline-splitter" role="separator" aria-label="调整 Grid 与 Timeline 宽度" aria-orientation="vertical" tabindex="0"></div>',
+        css: 'timeline-splitter-cell',
+        width: TIMELINE_SPLITTER_WIDTH,
+      },
       {
         rows: [
           {
@@ -153,6 +166,70 @@ export function formatHomePath(value, homeDirectory) {
   return value.startsWith(`${home}/`) ? `~${value.slice(home.length)}` : value
 }
 
+export function contextPathPresentation(value, homeDirectory) {
+  if (typeof value !== 'string' || value === '') {
+    return { display: '—', full: null, empty: true }
+  }
+  return {
+    display: formatHomePath(value, homeDirectory),
+    full: value,
+    empty: false,
+  }
+}
+
+export function gridPanelWidthFor(containerWidth, columnWidth) {
+  const width = Number(containerWidth) || 0
+  const contentWidth = Number(columnWidth) || 0
+  if (width <= 720) return Math.min(contentWidth || 240, 240)
+  const preferred = Math.max(Math.round(width * 0.72), width - 346)
+  return Math.min(contentWidth || preferred, Math.max(240, preferred))
+}
+
+export function gridPanelWidthBounds(containerWidth) {
+  const width = Math.max(0, Number(containerWidth) || 0)
+  return {
+    minimum: GRID_MIN_WIDTH,
+    maximum: Math.max(GRID_MIN_WIDTH, width - TIMELINE_SPLITTER_WIDTH - TIMELINE_MIN_WIDTH),
+  }
+}
+
+export function effectiveGridPanelWidth({ containerWidth, preferredWidth = null }) {
+  const bounds = gridPanelWidthBounds(containerWidth)
+  const fallback = Math.round((Number(containerWidth) || 0) * 0.65)
+  const requested = Number.isFinite(preferredWidth) ? preferredWidth : fallback
+  return Math.round(clamp(requested, bounds.minimum, bounds.maximum))
+}
+
+export function nextGridPanelWidth({ key, currentWidth, minimum, maximum, step = 16 }) {
+  const candidates = {
+    ArrowLeft: currentWidth - step,
+    ArrowRight: currentWidth + step,
+    Home: minimum,
+    End: maximum,
+  }
+  return key in candidates ? Math.round(clamp(candidates[key], minimum, maximum)) : null
+}
+
+export function responsiveGridWidth({ timelineVisible, currentWidth, containerWidth, columnWidth }) {
+  if (!timelineVisible) return null
+  const next = gridPanelWidthFor(containerWidth, columnWidth)
+  return Math.abs((Number(currentWidth) || 0) - next) > 2 ? next : null
+}
+
+export function contextPopoverPosition({ anchor, popover, viewport }) {
+  const gap = 6
+  const edge = 8
+  const left = Math.min(
+    Math.max(edge, anchor.left),
+    Math.max(edge, viewport.width - popover.width - edge),
+  )
+  const below = anchor.bottom + gap
+  const top = below + popover.height <= viewport.height - edge
+    ? below
+    : Math.max(edge, anchor.top - popover.height - gap)
+  return { left, top }
+}
+
 export function statusMutationMessage(error) {
   switch (error?.code) {
     case 'TASK_VERSION_CONFLICT':
@@ -186,6 +263,25 @@ export function writeBooleanPreference(storage, key, value) {
   try {
     storage?.setItem(key, String(Boolean(value)))
     return true
+  } catch {
+    return false
+  }
+}
+
+export function readNumberPreference(storage, key, fallback = null) {
+  try {
+    const value = Number(storage?.getItem(key))
+    return Number.isFinite(value) && value >= 1 && value <= 10_000 ? value : fallback
+  } catch {
+    return fallback
+  }
+}
+
+export function writeNumberPreference(storage, key, value) {
+  if (!Number.isFinite(value) || value < 1 || value > 10_000) return false
+  try {
+    storage?.setItem(key, String(Math.round(value)))
+    return Boolean(storage)
   } catch {
     return false
   }

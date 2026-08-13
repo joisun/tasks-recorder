@@ -23,7 +23,7 @@ const [template, dashboardCss, dhtmlxCss, dhtmlxJs] = await Promise.all([
   readFile(join(projectRoot, 'node_modules/dhtmlx-gantt/codebase/dhtmlxgantt.css'), 'utf8'),
   readFile(join(projectRoot, 'node_modules/dhtmlx-gantt/codebase/dhtmlxgantt.js'), 'utf8'),
 ])
-const localDhtmlxCss = dhtmlxCss.replace(/@font-face\{[^}]*\}/g, '')
+const localDhtmlxCss = dhtmlxCss.replace(/@font-face\{[^}]*src:url\(https?:\/\/[^}]*\}/g, '')
 const html = template
   .replace('/*__DHTMLX_CSS__*/', () => localDhtmlxCss)
   .replace('/*__DASHBOARD_CSS__*/', () => dashboardCss)

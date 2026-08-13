@@ -1,7 +1,7 @@
 # Tasks Recorder Dashboard Context, Timeline, and Status Design
 
 > 日期：2026-08-12（Asia/Shanghai）  
-> 状态：用户已批准，待实现  
+> 状态：已实现并验证
 > 适用项目：`/Users/joi-com/Desktop/space/projects/tasks-recorder`
 
 ## 目标
@@ -13,7 +13,7 @@
 3. 允许用户从 Dashboard 安全地修正任务状态，补偿会话被直接关闭、Stop Hook 没有触发等 lifecycle 漏洞。
 4. 完全移除现有 auth token 与 Bearer authentication，采用明确的单用户 loopback trust model。
 
-本轮只开放 status mutation，不开放标题、层级、日期、说明、Agent、Git context、Timeline 拖动或其他任务 CRUD。
+本轮只开放 status mutation，不开放标题、层级、日期、说明、Agent、Git context、Timeline task bar 日期拖动或其他任务 CRUD；后续面板分隔线只调整显示宽度。
 
 ## 第一原则
 
@@ -31,7 +31,7 @@
 - 状态列使用自定义 button/menu，不启用 DHTMLX inline editor。
 - 新增一个只更新 status 的窄 HTTP endpoint，不复用需要 Agent session context 的完整 upsert。
 - 使用 custom layout 为 Grid 与 Timeline 提供各自的横向 scrollbar，并共享纵向 scrollbar。
-- 在 expanded/collapsed 两个 layout 之间切换，不依赖 PRO resizer。
+- 在 expanded/collapsed 两个 layout 之间切换，不依赖 PRO resizer；后续版本使用 custom HTML separator 调整面板宽度。
 
 没有选择 DHTMLX inline editor，因为它需要为 task 开放 editable exception，扩大只读边界；没有选择详情抽屉，因为路径需要直接作为独立展示列，状态修改也应保持一步操作。
 
@@ -88,8 +88,8 @@ Grid 列顺序固定为：
 
 - 三项上下文使用独立列。
 - `workfolder` 和 `worktree` 默认宽度 180px、最小宽度 140px；`branch` 默认宽度 160px、最小宽度 120px。
-- 使用 snapshot 顶层 `home_directory` 判断 `$HOME` 前缀，只在显示文字中缩写为 `~`；DOM `title` 保留绝对值。
-- 单元格单行省略；空值显示 `—`。
+- 使用 snapshot 顶层 `home_directory` 判断 `$HOME` 前缀，只在显示文字中缩写为 `~`；DOM `title`、accessible label 与 hover/focus popover 保留绝对值。
+- 单元格内容垂直居中；单行省略时可通过 hover/focus popover 读取完整值；空值显示 `—`。
 - 所有 task-controlled 字符串必须 HTML escape。
 - Grid 自己拥有横向 scrollbar；Timeline 使用另一条横向 scrollbar；二者共享一条纵向 scrollbar，使行始终对齐。
 - 现有任务列自定义 resizer 继续只调整任务列，不依赖 DHTMLX PRO column/grid resizer。

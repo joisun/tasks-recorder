@@ -1,14 +1,20 @@
 import {
+  contextPathPresentation,
+  contextPopoverPosition,
   createGanttLayout,
   createTaskIndex,
+  effectiveGridPanelWidth,
   endOf,
   escapeHtml,
   formatHomePath,
+  gridPanelWidthBounds,
   isHistoricalRoot,
   isTaskOpen,
   labelPlacement,
+  nextGridPanelWidth,
   progressOf,
   readBooleanPreference,
+  readNumberPreference,
   retainedGridScroll,
   relativeActivity,
   resolvePreferenceStorage,
@@ -16,6 +22,7 @@ import {
   tabCount,
   timelineBounds,
   writeBooleanPreference,
+  writeNumberPreference,
 } from './dashboard-state.mjs'
 import { createSnapshotCoordinator } from './snapshot-coordinator.mjs'
 import { createEventStream } from './event-stream.mjs'
@@ -24,6 +31,7 @@ const gantt = window.gantt
 
 const TIMELINE_LABEL_KEY = 'dashboard-show-timeline-labels'
 const TIMELINE_PANEL_KEY = 'dashboard-show-timeline'
+const GRID_WIDTH_KEY = 'dashboard-grid-width'
 const STATUS_LABELS = { active: '进行中', waiting: '等待中', blocked: '已阻塞', planned: '待安排', done: '已完成' }
 const STATUS_ORDER = ['planned', 'active', 'waiting', 'blocked', 'done']
 const TAB_DEFS = [
@@ -35,8 +43,11 @@ const AGENT_COLORS = ['var(--accent)', 'var(--accent-hover)', 'var(--success)', 
 let raw = []
 let index = createTaskIndex(raw)
 let activeFilter = 'all'
-let showTimelineLabels = readBooleanPreference(resolvePreferenceStorage(), TIMELINE_LABEL_KEY)
-let showTimeline = readBooleanPreference(resolvePreferenceStorage(), TIMELINE_PANEL_KEY, true)
+const preferenceStorage = resolvePreferenceStorage()
+let showTimelineLabels = readBooleanPreference(preferenceStorage, TIMELINE_LABEL_KEY)
+let showTimeline = readBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, true)
+let preferredGridWidth = readNumberPreference(preferenceStorage, GRID_WIDTH_KEY)
+let effectiveGridWidth = null
 let initialized = false
 let markerId = null
 let homeDirectory = ''
@@ -45,6 +56,7 @@ let rememberedTimelineX = 0
 let openStatusTaskId = null
 let openStatusTrigger = null
 let coordinator = null
+let layoutResizeFrame = 0
 const pendingStatus = new Set()
 const refreshMessages = { connection: '', freshness: '', mutation: '' }
 
@@ -84,10 +96,67 @@ function activityCell(task) {
 
 function pathCell(field) {
   return (task) => {
-    const absolute = task[field]
-    if (!absolute) return '<span class="context-path is-empty">—</span>'
-    return `<span class="context-path" title="${escapeHtml(absolute)}">${escapeHtml(formatHomePath(absolute, homeDirectory))}</span>`
+    const path = contextPathPresentation(task[field], homeDirectory)
+    if (path.empty) return '<span class="context-path is-empty">—</span>'
+    return `<span class="context-path" tabindex="0" title="${escapeHtml(path.full)}" aria-label="完整路径：${escapeHtml(path.full)}" data-full-path="${escapeHtml(path.full)}"><span>${escapeHtml(path.display)}</span></span>`
   }
+}
+
+function contextPopover() {
+  let popover = document.getElementById('context-popover')
+  if (popover) return popover
+  popover = document.createElement('div')
+  popover.id = 'context-popover'
+  popover.className = 'context-popover'
+  popover.setAttribute('role', 'tooltip')
+  popover.hidden = true
+  document.querySelector('.app').appendChild(popover)
+  return popover
+}
+
+function showContextPopover(anchor) {
+  const fullPath = anchor?.dataset?.fullPath
+  if (!fullPath) return
+  const popover = contextPopover()
+  popover.textContent = fullPath
+  popover.hidden = false
+  const anchorRect = anchor.getBoundingClientRect()
+  const popoverRect = popover.getBoundingClientRect()
+  const position = contextPopoverPosition({
+    anchor: anchorRect,
+    popover: popoverRect,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+  })
+  popover.style.left = `${position.left}px`
+  popover.style.top = `${position.top}px`
+  anchor.setAttribute('aria-describedby', popover.id)
+}
+
+function hideContextPopover(anchor) {
+  const popover = document.getElementById('context-popover')
+  if (popover) popover.hidden = true
+  anchor?.removeAttribute('aria-describedby')
+}
+
+function installContextInteractions() {
+  const ganttElement = document.getElementById('gantt_here')
+  ganttElement.addEventListener('pointerover', (event) => {
+    const anchor = event.target.closest?.('.context-path[data-full-path]')
+    if (anchor) showContextPopover(anchor)
+  })
+  ganttElement.addEventListener('pointerout', (event) => {
+    const anchor = event.target.closest?.('.context-path[data-full-path]')
+    if (anchor && !anchor.contains(event.relatedTarget)) hideContextPopover(anchor)
+  })
+  ganttElement.addEventListener('focusin', (event) => {
+    const anchor = event.target.closest?.('.context-path[data-full-path]')
+    if (anchor) showContextPopover(anchor)
+  })
+  ganttElement.addEventListener('focusout', (event) => {
+    const anchor = event.target.closest?.('.context-path[data-full-path]')
+    if (anchor) hideContextPopover(anchor)
+  })
+  window.addEventListener('resize', () => hideContextPopover(document.querySelector('.context-path[aria-describedby]')))
 }
 
 function rootTask(task) {
@@ -111,18 +180,18 @@ function renderTabs() {
   }))
   tabs.querySelector('.timeline-panel-toggle').addEventListener('click', () => {
     const next = !showTimeline
-    writeBooleanPreference(resolvePreferenceStorage(), TIMELINE_PANEL_KEY, next)
+    writeBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, next)
     applyLayout(next)
   })
   tabs.querySelector('.timeline-label-toggle').addEventListener('click', () => {
     showTimelineLabels = !showTimelineLabels
-    writeBooleanPreference(resolvePreferenceStorage(), TIMELINE_LABEL_KEY, showTimelineLabels)
+    writeBooleanPreference(preferenceStorage, TIMELINE_LABEL_KEY, showTimelineLabels)
     renderTabs()
     gantt.render()
   })
   tabs.querySelector('.locate-now').addEventListener('click', () => {
     if (!showTimeline) {
-      writeBooleanPreference(resolvePreferenceStorage(), TIMELINE_PANEL_KEY, true)
+      writeBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, true)
       applyLayout(true)
     }
     gantt.showDate(new Date())
@@ -157,6 +226,11 @@ function statusMenu() {
 function statusTrigger(taskId) {
   return [...document.querySelectorAll('[data-status-task-id]')]
     .find((element) => element.dataset.statusTaskId === taskId) ?? null
+}
+
+function restoreStatusFocus(taskId) {
+  const target = statusTrigger(taskId) ?? document.querySelector('.tab.is-active')
+  target?.focus({ preventScroll: true })
 }
 
 function closeStatusMenu({ restoreFocus = true } = {}) {
@@ -265,7 +339,7 @@ function installStatusInteractions() {
     const taskId = openStatusTaskId
     const status = option.dataset.status
     closeStatusMenu({ restoreFocus: false })
-    updateTaskStatus(taskId, status).finally(() => statusTrigger(taskId)?.focus({ preventScroll: true }))
+    updateTaskStatus(taskId, status).finally(() => restoreStatusFocus(taskId))
   })
   document.addEventListener('keydown', (event) => {
     const menu = event.target.closest?.('#status-menu')
@@ -323,9 +397,15 @@ function taskColumnWidthBounds() {
   return { minimum: 180, maximum: 520 }
 }
 
-function gridPanelWidth() {
-  const containerWidth = document.getElementById('gantt_here').clientWidth
-  return Math.min(680, Math.max(240, Math.round(containerWidth * 0.56)))
+function ganttContainerWidth() {
+  return document.getElementById('gantt_here').clientWidth
+}
+
+function resolveEffectiveGridWidth() {
+  return effectiveGridPanelWidth({
+    containerWidth: ganttContainerWidth(),
+    preferredWidth: preferredGridWidth,
+  })
 }
 
 function setTaskColumnWidth(width) {
@@ -382,7 +462,6 @@ function configureGantt() {
   gantt.config.row_height = 38
   gantt.config.bar_height = 14
   gantt.config.scale_height = 52
-  gantt.config.layout = createGanttLayout({ showTimeline, gridWidth: gridPanelWidth() })
   gantt.config.min_column_width = 56
   gantt.config.smart_rendering = true
   gantt.config.show_progress = true
@@ -401,6 +480,8 @@ function configureGantt() {
     { name: 'agent', label: 'Agent', width: 78, align: 'center', template: agentChip },
     { name: 'activity', label: '活动', width: 56, align: 'right', template: activityCell },
   ]
+  effectiveGridWidth = resolveEffectiveGridWidth()
+  gantt.config.layout = createGanttLayout({ showTimeline, gridWidth: effectiveGridWidth })
   gantt.templates.task_text = (start, end, task) => showTimelineLabels && labelSide(start, end, task) === 'inside' ? escapeHtml(task.text) : ''
   gantt.templates.rightside_text = (start, end, task) => showTimelineLabels && labelSide(start, end, task) === 'right' ? escapeHtml(task.text) : ''
   gantt.templates.leftside_text = (start, end, task) => showTimelineLabels && labelSide(start, end, task) === 'left' ? escapeHtml(task.text) : ''
@@ -411,17 +492,15 @@ function configureGantt() {
     if (root.archived) return false
     return activeFilter === 'all' || root.status === activeFilter
   })
-  gantt.attachEvent('onGanttRender', installTaskColumnResizer)
+  gantt.attachEvent('onGanttRender', () => {
+    installTaskColumnResizer()
+    syncTimelineSplitterA11y()
+  })
 }
 
-function viewScroll(viewName) {
-  const view = gantt.getLayoutView?.(viewName)
-  const horizontal = view?.$config?.scrollX
-    ? gantt.getLayoutView?.(view.$config.scrollX)?.getScrollState?.()
-    : null
-  const vertical = view?.$config?.scrollY
-    ? gantt.getLayoutView?.(view.$config.scrollY)?.getScrollState?.()
-    : null
+function viewScroll(horizontalId) {
+  const horizontal = gantt.getLayoutView?.(horizontalId)?.getScrollState?.()
+  const vertical = gantt.getLayoutView?.('sharedScroll')?.getScrollState?.()
   return {
     x: Number(horizontal?.position) || 0,
     y: Number(vertical?.position) || 0,
@@ -431,14 +510,20 @@ function viewScroll(viewName) {
 function captureState() {
   const openIds = new Set()
   if (initialized) gantt.eachTask((task) => { if (isTaskOpen(task)) openIds.add(String(task.id)) })
-  const gridScroll = initialized ? viewScroll('grid') : { x: 0, y: 0 }
-  const timelineScroll = initialized && showTimeline ? viewScroll('timeline') : { x: rememberedTimelineX, y: 0 }
-  const gridScrollbar = initialized ? gantt.getLayoutView?.('gridScroll')?.$view : null
+  const gridScroll = initialized ? viewScroll('gridScroll') : { x: 0, y: 0 }
+  const timelineScroll = initialized && showTimeline ? viewScroll('timelineScroll') : { x: rememberedTimelineX, y: 0 }
+  const gridScrollState = initialized
+    ? gantt.getLayoutView?.('gridScroll')?.getScrollState?.()
+    : null
+  const gridScrollRange = Math.max(
+    0,
+    (Number(gridScrollState?.scrollSize) || 0) - (Number(gridScrollState?.size) || 0),
+  )
   const gridX = retainedGridScroll({
     timelineVisible: showTimeline,
     gridX: gridScroll.x,
-    gridScrollable: Boolean(gridScrollbar && gridScrollbar.scrollWidth > gridScrollbar.clientWidth),
-    gridScrollRange: gridScrollbar ? gridScrollbar.scrollWidth - gridScrollbar.clientWidth : 0,
+    gridScrollable: Boolean(gridScrollState?.visible),
+    gridScrollRange,
     rememberedGridX,
   })
   return {
@@ -456,9 +541,99 @@ function restoreViewState(state) {
   if (showTimeline) gantt.scrollLayoutCell('timeline', state.timelineX, state.verticalY)
 }
 
-function scheduleLayoutStateRestore(state) {
+function scheduleLayoutStateRestore(state, { restoreSplitterFocus = false } = {}) {
   const resizeDelay = Number(gantt.config.container_resize_timeout) || 20
-  setTimeout(() => restoreViewState(state), resizeDelay + 16)
+  setTimeout(() => {
+    restoreViewState(state)
+    syncTimelineSplitterA11y()
+    if (restoreSplitterFocus) {
+      document.querySelector('.timeline-splitter')?.focus({ preventScroll: true })
+    }
+  }, resizeDelay + 16)
+}
+
+function syncTimelineSplitterA11y() {
+  const splitter = document.querySelector('.timeline-splitter')
+  if (!splitter || effectiveGridWidth === null) return
+  const bounds = gridPanelWidthBounds(ganttContainerWidth())
+  splitter.setAttribute('aria-valuemin', String(bounds.minimum))
+  splitter.setAttribute('aria-valuemax', String(bounds.maximum))
+  splitter.setAttribute('aria-valuenow', String(effectiveGridWidth))
+}
+
+function applyGridPanelWidth(preferredWidth, { restoreFocus = false } = {}) {
+  preferredGridWidth = Math.round(preferredWidth)
+  writeNumberPreference(preferenceStorage, GRID_WIDTH_KEY, preferredGridWidth)
+  const nextWidth = resolveEffectiveGridWidth()
+  if (!initialized || !showTimeline || nextWidth === effectiveGridWidth) {
+    syncTimelineSplitterA11y()
+    return
+  }
+  const state = captureState()
+  effectiveGridWidth = nextWidth
+  gantt.config.layout = createGanttLayout({ showTimeline: true, gridWidth: effectiveGridWidth })
+  gantt.resetLayout()
+  scheduleLayoutStateRestore(state, { restoreSplitterFocus: restoreFocus })
+}
+
+function installTimelineSplitterInteractions() {
+  const ganttElement = document.getElementById('gantt_here')
+  ganttElement.addEventListener('pointerdown', (event) => {
+    const splitter = event.target.closest?.('.timeline-splitter')
+    if (!splitter || event.button !== 0 || !showTimeline) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = effectiveGridWidth
+    let candidate = startWidth
+    let frame = 0
+    const guide = document.createElement('div')
+    guide.className = 'timeline-splitter-guide'
+    guide.style.left = `${candidate}px`
+    ganttElement.appendChild(guide)
+    document.documentElement.classList.add('is-resizing-timeline')
+
+    const move = (moveEvent) => {
+      const bounds = gridPanelWidthBounds(ganttContainerWidth())
+      candidate = Math.round(Math.min(
+        bounds.maximum,
+        Math.max(bounds.minimum, startWidth + moveEvent.clientX - startX),
+      ))
+      if (!frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          guide.style.left = `${candidate}px`
+        })
+      }
+    }
+    const finish = (apply) => {
+      if (frame) cancelAnimationFrame(frame)
+      guide.remove()
+      document.documentElement.classList.remove('is-resizing-timeline')
+      document.removeEventListener('pointermove', move)
+      document.removeEventListener('pointerup', up)
+      document.removeEventListener('pointercancel', cancel)
+      if (apply && candidate !== startWidth) applyGridPanelWidth(candidate)
+    }
+    const up = () => finish(true)
+    const cancel = () => finish(false)
+    document.addEventListener('pointermove', move)
+    document.addEventListener('pointerup', up)
+    document.addEventListener('pointercancel', cancel)
+  })
+  ganttElement.addEventListener('keydown', (event) => {
+    const splitter = event.target.closest?.('.timeline-splitter')
+    if (!splitter || !showTimeline) return
+    const bounds = gridPanelWidthBounds(ganttContainerWidth())
+    const nextWidth = nextGridPanelWidth({
+      key: event.key,
+      currentWidth: effectiveGridWidth,
+      minimum: bounds.minimum,
+      maximum: bounds.maximum,
+    })
+    if (nextWidth === null) return
+    event.preventDefault()
+    applyGridPanelWidth(nextWidth, { restoreFocus: true })
+  })
 }
 
 function applyLayout(nextShowTimeline) {
@@ -469,7 +644,8 @@ function applyLayout(nextShowTimeline) {
     rememberedTimelineX = state.timelineX
   }
   showTimeline = nextShowTimeline
-  gantt.config.layout = createGanttLayout({ showTimeline, gridWidth: gridPanelWidth() })
+  if (showTimeline) effectiveGridWidth = resolveEffectiveGridWidth()
+  gantt.config.layout = createGanttLayout({ showTimeline, gridWidth: effectiveGridWidth })
   gantt.resetLayout()
   renderTabs()
   scheduleLayoutStateRestore({
@@ -478,6 +654,25 @@ function applyLayout(nextShowTimeline) {
     timelineX: showTimeline ? rememberedTimelineX : state.timelineX,
   })
 }
+
+function applyResponsiveLayout() {
+  if (!initialized || !showTimeline) return
+  const nextWidth = resolveEffectiveGridWidth()
+  if (nextWidth === effectiveGridWidth) return
+  const state = captureState()
+  effectiveGridWidth = nextWidth
+  gantt.config.layout = createGanttLayout({ showTimeline: true, gridWidth: effectiveGridWidth })
+  gantt.resetLayout()
+  scheduleLayoutStateRestore(state)
+}
+
+window.addEventListener('resize', () => {
+  if (layoutResizeFrame) cancelAnimationFrame(layoutResizeFrame)
+  layoutResizeFrame = requestAnimationFrame(() => {
+    layoutResizeFrame = 0
+    applyResponsiveLayout()
+  })
+})
 
 function refreshMarker() {
   if (markerId !== null) gantt.deleteMarker(markerId)
@@ -521,7 +716,9 @@ async function loadSnapshot() {
 if (!gantt) {
   document.getElementById('gantt_here').innerHTML = '<p class="empty-state">DHTMLX Gantt 加载失败。</p>'
 } else {
+  installContextInteractions()
   installStatusInteractions()
+  installTimelineSplitterInteractions()
   let connectionState = 'connecting'
   coordinator = createSnapshotCoordinator({
     load: loadSnapshot,
