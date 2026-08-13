@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
+import { promisify } from 'node:util'
 
 import { buildAdapters } from '../scripts/build-adapters.mjs'
 
 const projectRoot = resolve(new URL('..', import.meta.url).pathname)
+const execFileAsync = promisify(execFile)
 
 async function readJson(path) {
   return JSON.parse(await readFile(join(projectRoot, path), 'utf8'))
@@ -162,6 +165,17 @@ test('both bundled MCP clients initialize and advertise task tools without proje
     }
   } finally {
     await rm(homeDirectory, { recursive: true, force: true })
+  }
+})
+
+test('concurrent adapter builds never publish partial bundles', async () => {
+  for (let round = 0; round < 10; round += 1) {
+    await Promise.all(Array.from({ length: 6 }, () => buildAdapters({ projectRoot })))
+    for (const host of ['codex', 'claude']) {
+      const bundle = join(projectRoot, 'adapters', host, 'tasks-recorder', 'dist', 'mcp-server.mjs')
+      await execFileAsync(process.execPath, ['--check', bundle])
+      assert.match(await readFile(bundle, 'utf8'), /await server\.connect\(new StdioServerTransport\(\)\);/)
+    }
   }
 })
 

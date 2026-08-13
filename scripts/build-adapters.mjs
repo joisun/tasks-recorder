@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -13,19 +13,25 @@ export async function buildAdapters({
   for (const host of ['codex', 'claude']) {
     const pluginRoot = resolve(projectRoot, 'adapters', host, 'tasks-recorder')
     const outfile = resolve(pluginRoot, 'dist', 'mcp-server.mjs')
+    const temporaryOutfile = `${outfile}.${process.pid}.${crypto.randomUUID()}.tmp`
     await mkdir(resolve(pluginRoot, 'dist'), { recursive: true })
-    await build({
-      entryPoints: [resolve(pluginRoot, 'mcp', 'server.mjs')],
-      outfile,
-      bundle: true,
-      platform: 'node',
-      target: 'node24',
-      format: 'esm',
-      legalComments: 'inline',
-      sourcemap: false,
-    })
-    const bundle = await readFile(outfile, 'utf8')
-    await writeFile(outfile, bundle.replace(/[ \t]+$/gm, ''))
+    try {
+      await build({
+        entryPoints: [resolve(pluginRoot, 'mcp', 'server.mjs')],
+        outfile: temporaryOutfile,
+        bundle: true,
+        platform: 'node',
+        target: 'node24',
+        format: 'esm',
+        legalComments: 'inline',
+        sourcemap: false,
+      })
+      const bundle = await readFile(temporaryOutfile, 'utf8')
+      await writeFile(temporaryOutfile, bundle.replace(/[ \t]+$/gm, ''))
+      await rename(temporaryOutfile, outfile)
+    } finally {
+      await rm(temporaryOutfile, { force: true })
+    }
     outputs.push(outfile)
   }
   return outputs
