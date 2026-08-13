@@ -45,15 +45,37 @@ async function fixture() {
   }
 }
 
-async function readSseEvent(reader, decoder = new TextDecoder()) {
-  let source = ''
-  while (!source.includes('\n\n')) {
+const sseReaderStates = new WeakMap()
+
+async function readSseEvent(reader) {
+  let state = sseReaderStates.get(reader)
+  if (!state) {
+    state = { source: '', decoder: new TextDecoder() }
+    sseReaderStates.set(reader, state)
+  }
+  while (!state.source.includes('\n\n')) {
     const { value, done } = await reader.read()
     if (done) throw new Error('SSE stream ended before an event arrived')
-    source += decoder.decode(value, { stream: true })
+    state.source += state.decoder.decode(value, { stream: true })
   }
-  return source.slice(0, source.indexOf('\n\n') + 2)
+  const boundary = state.source.indexOf('\n\n') + 2
+  const event = state.source.slice(0, boundary)
+  state.source = state.source.slice(boundary)
+  return event
 }
+
+test('SSE test reader preserves a second event received in the same network chunk', async () => {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('retry: 1000\n\nevent: ready\ndata: {"revision":0}\n\n'))
+      controller.close()
+    },
+  })
+  const reader = stream.getReader()
+
+  assert.equal(await readSseEvent(reader), 'retry: 1000\n\n')
+  assert.equal(await readSseEvent(reader), 'event: ready\ndata: {"revision":0}\n\n')
+})
 
 async function rawRequest(url, headers) {
   return new Promise((resolve, reject) => {
