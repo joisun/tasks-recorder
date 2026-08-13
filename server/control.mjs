@@ -78,6 +78,25 @@ async function defaultProbeHealth(baseUrl) {
   }
 }
 
+export function createInstallBuildStep({
+  projectRoot,
+  nodePath = process.execPath,
+  env = process.env,
+  run = runCommand,
+}) {
+  if (env.TASKS_RECORDER_PREBUILT === '1') {
+    const dashboardPath = join(projectRoot, 'ui', 'dist', 'index.html')
+    return async () => {
+      try {
+        await access(dashboardPath)
+      } catch {
+        throw new Error(`prebuilt Dashboard is missing at ${dashboardPath}`)
+      }
+    }
+  }
+  return () => run(nodePath, [join(projectRoot, 'ui', 'build.mjs')])
+}
+
 export function createTaskdController({
   projectRoot,
   config,
@@ -86,7 +105,7 @@ export function createTaskdController({
   nodeVersion = process.versions.node,
   uid = process.getuid(),
   run = runCommand,
-  build = () => run(nodePath, [join(projectRoot, 'ui', 'build.mjs')]),
+  build = createInstallBuildStep({ projectRoot, nodePath, run }),
   probeHealth = defaultProbeHealth,
 }) {
   const launchAgentsDirectory = join(homeDirectory, 'Library', 'LaunchAgents')

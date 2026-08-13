@@ -1,0 +1,20 @@
+{
+  "name": "tasks-recorder",
+  "interface": {
+    "displayName": "Tasks Recorder"
+  },
+  "plugins": [
+    {
+      "name": "tasks-recorder",
+      "source": {
+        "source": "local",
+        "path": "./adapters/codex/tasks-recorder"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

@@ -22,7 +22,10 @@ test('standalone config keeps user state under ~/.config/tasks-recorder', async 
     assert.equal(config.serverHost, '127.0.0.1')
     assert.equal(config.serverPort, 43127)
     assert.equal(config.serverBaseUrl, 'http://127.0.0.1:43127')
-    assert.equal('tokenPath' in config, false)
+    assert.deepEqual(Object.keys(config).sort(), [
+      'configPath', 'dataDirectory', 'databasePath', 'outputDir', 'projectRoot',
+      'serverBaseUrl', 'serverHost', 'serverPort',
+    ])
   } finally {
     await rm(homeDirectory, { recursive: true, force: true })
   }

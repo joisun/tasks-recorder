@@ -11,7 +11,9 @@
     "check": "node --check mcp/server.mjs && node --check hooks/stop-task-check.mjs && node --check hooks/user-prompt-task-sync.mjs && node --check hooks/task-heartbeat.mjs && node --check server/taskd.mjs && node --check server/control.mjs && node --check server/src/api-server.mjs && node --check mcp/src/task-client.mjs && node --check ui/src/dashboard.mjs",
     "taskd": "node server/control.mjs",
     "taskd:run": "node server/taskd.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "build:adapters": "node scripts/build-adapters.mjs",
+    "package:release": "node scripts/package-release.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
@@ -20,5 +22,15 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2"
+  },
+  "description": "Local task control plane and real-time dashboard for coding agents",
+  "license": "GPL-2.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joisun/tasks-recorder.git"
+  },
+  "homepage": "https://github.com/joisun/tasks-recorder#readme",
+  "bugs": {
+    "url": "https://github.com/joisun/tasks-recorder/issues"
   }
 }

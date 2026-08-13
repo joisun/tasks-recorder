@@ -1,111 +1,212 @@
 # Tasks Recorder
 
-Tasks Recorder 是独立运行的本地 **Agent Task Control Plane**。`taskd` 由 macOS `launchd` 常驻管理并独占 SQLite；Agent integration 通过 MCP 与 Hook 写入，独立浏览器 Dashboard 通过 REST + SSE 实时观察任务。
+Tasks Recorder 是面向 coding agent 的本地 Task Control Plane。它把 Codex 或 Claude Code 的工作记录到本机 SQLite，并提供可实时更新的 Tree + Timeline Dashboard。
 
-Dashboard 地址：<http://127.0.0.1:43127>
+- `taskd` 是唯一 SQLite writer，由 macOS `launchd` 常驻管理。
+- Dashboard 访问地址：<http://127.0.0.1:43127>。
+- Codex 与 Claude Code adapter 分别维护、分别安装，参考 Superpowers 的 multi-harness 做法。
+- 所有数据保存在本机，不需要 cloud account 或 auth token。
 
-## 目录边界
+## Requirements
 
-源码与用户状态严格分离：
+- macOS
+- Node.js 24 或更高版本
+- `curl` 与系统自带的 `tar`、`shasum`
 
-```text
-/Users/joi-com/Desktop/space/projects/tasks-recorder/  # 当前开发工作树
-~/.config/tasks-recorder/
-├── config.json                                       # 用户配置
-├── tasks.sqlite                                      # canonical task state
-└── auth-token                                        # 本地 Agent API 凭据，0600
+普通安装不需要 Git、clone repository、`npm install` 或 `npm ci`。`npm ci` 只用于源码开发。
+
+## Install the service
+
+一行安装 latest GitHub Release：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.sh | bash
 ```
 
-日志位于 `~/Library/Logs/tasks-recorder/`。源码目录不保存数据库、token 或用户配置。
+`curl | bash` 方便但会直接执行远端脚本。更审慎的方式是固定版本、先查看 installer，再执行；installer 会在解包前使用 Release 中的 `SHA256SUMS` 校验 runtime artifact：
 
-`config.json` 示例：
+```bash
+version=v0.3.0
+curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
+less install.sh
+bash install.sh --version "$version"
+```
+
+安装完成后打开 <http://127.0.0.1:43127>。若 `~/.local/bin` 已在 `PATH` 中，也可以运行：
+
+```bash
+tasks-recorder status
+tasks-recorder stop
+tasks-recorder start
+```
+
+Service 可以独立运行；下一步只安装你实际使用的 agent adapter。
+
+## Install the Codex adapter
+
+```bash
+codex plugin marketplace add joisun/tasks-recorder
+codex plugin add tasks-recorder@tasks-recorder
+```
+
+安装或启用 plugin 不会自动信任 bundled hooks。首次使用时请在 Codex 的 trust review 中检查并允许 Tasks Recorder hooks，然后新开一个 conversation 使 MCP 与 hooks 全部生效。
+
+## Install the Claude Code adapter
+
+```bash
+claude plugin marketplace add joisun/tasks-recorder
+claude plugin install tasks-recorder@tasks-recorder
+```
+
+安装后重启 Claude Code，或按 Claude Code 当前版本的提示 reload plugins。若出现 MCP approval，请确认其 command 只启动安装在 plugin cache 内的 `dist/mcp-server.mjs`，并连接 `127.0.0.1` 上的 Tasks Recorder service。
+
+Codex 和 Claude Code 的 adapter 是两个独立 plugin root：
+
+```text
+adapters/
+├── codex/tasks-recorder/
+└── claude/tasks-recorder/
+```
+
+它们各自维护 manifest、marketplace metadata、hooks、MCP config 与 MCP bundle；不会通过兼容层强行复用。两者只共享同一个 localhost HTTP API contract。
+
+## How it works
+
+```text
+Codex hooks + MCP ──┐
+                    ├── HTTP 127.0.0.1 ──▶ taskd ──▶ SQLite
+Claude hooks + MCP ─┘                         │
+                                             ├── REST snapshot
+Browser Dashboard ◀──────────── SSE changed ─┘
+```
+
+1. `UserPromptSubmit` hook 把 `session_id`、当前 working directory 与 host identity 注入 agent context，提示 agent 先用 `agent_tasks_context` 查找语义匹配的任务。
+2. Agent 通过 plugin 自带的 stdio MCP client 调用 `agent_tasks_upsert`、`agent_tasks_complete` 等 tools。MCP client 不读取数据库，只把请求发到 localhost `taskd`。
+3. `PostToolUse` hook 发送节流 heartbeat，更新当前 session 已绑定任务的 `last_seen_at`；它不会猜测或创建任务。
+4. `Stop` hook 在 conversation 结束前要求 agent 收口任务状态。若宿主被直接关闭、hook 没有触发，可以在 Dashboard 中手动修正 status。
+5. `taskd` 是唯一 SQLite owner。写事务 commit 后发布轻量 SSE `changed` event；Dashboard 再读取 authoritative snapshot，因此页面不需要定时 polling，也不会生成一个带静态数据的 `dashboard.html`。
+6. Dashboard 的 Tree/Grid 与 Timeline 读取同一份 snapshot。Timeline 可折叠，Grid/Timeline 分隔线可拖动，状态修改使用 optimistic concurrency 防止覆盖较新的 agent 更新。
+
+这是一种本机 C/S 架构：plugin adapter 是 client，`taskd` 是 server，Dashboard 是另一个 browser client。adapter 没有 service 时会报告 `SERVICE_UNAVAILABLE`；service 没有 adapter 时仍可以运行并查看已有数据。
+
+## Files and data
+
+```text
+~/.local/share/tasks-recorder/
+├── current -> releases/<version>
+└── releases/<version>/                 # immutable program files
+
+~/.local/bin/tasks-recorder             # service management command
+
+~/.config/tasks-recorder/
+├── config.json                         # user configuration
+└── tasks.sqlite                        # canonical data
+
+~/Library/Logs/tasks-recorder/
+├── taskd.stdout.log
+└── taskd.stderr.log
+```
+
+`tasks.sqlite-wal` 与 `tasks.sqlite-shm` 可能在 service 运行时出现在数据库旁边，这是 SQLite WAL 的正常 sidecar。
+Canonical database 的完整路径是 `~/.config/tasks-recorder/tasks.sqlite`。
+
+默认配置：
 
 ```json
 {
-  "output_dir": "/absolute/path/to/projections",
+  "output_dir": ".",
   "server_host": "127.0.0.1",
   "server_port": 43127
 }
 ```
 
-`output_dir` 只服务于旧版 `Tasks.md` / `History.md` projection；Dashboard 和任务数据库不依赖这些 Markdown 文件。
+`output_dir` 只用于兼容旧版 `Tasks.md` / `History.md` projection；Dashboard 不依赖这些 Markdown files。
 
-## 工作原理
+## Update and uninstall
 
-```text
-MCP / Hook ── authenticated HTTP ──▶ taskd ──▶ ~/.config/tasks-recorder/tasks.sqlite
-                                          │ commit 后发布 changed
-Browser ── GET snapshot + SSE events ─────┘
-```
-
-- `taskd` 是唯一 SQLite owner；MCP server 和 heartbeat Hook 都是 HTTP client。
-- 页面建立一条 `EventSource` 长连接。每次写事务成功提交后，Server 发布轻量 `changed`，页面随后读取 authoritative snapshot。
-- 没有固定间隔业务 polling。SSE keepalive 只维持连接，不查询数据库。
-- `ui/dist/index.html` 是 immutable static build asset，不包含任务数据，运行时不会生成或改写 Dashboard 文件。
-- SSE 断线时保留最后一次成功数据并自动重连；`ready` 事件触发全量校准。
-
-## 本地开发与生命周期
-
-开发环境要求 Node.js 24 或更高版本：
+升级 latest version 只需重新运行 installer。它先验证新 artifact，再原子切换 `current` symlink，不覆盖 `config.json` 或数据库：
 
 ```bash
-npm ci
-npm run build
-npm test
-npm run check
+curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.sh | bash
 ```
 
-安装本机常驻服务：
+只卸载 LaunchAgent、保留已安装程序：
+
+```bash
+tasks-recorder uninstall
+```
+
+卸载 LaunchAgent 与所有 program releases，同时保留数据库、配置和日志：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.sh | bash -s -- --uninstall
+```
+
+数据删除是独立的 destructive action；installer 不会自动删除 `~/.config/tasks-recorder`。
+
+Plugin adapter 通过对应宿主管理：
+
+```bash
+codex plugin remove tasks-recorder@tasks-recorder
+claude plugin uninstall tasks-recorder@tasks-recorder
+```
+
+## Troubleshooting
+
+查看 service 状态与日志：
+
+```bash
+tasks-recorder status
+tail -n 100 ~/Library/Logs/tasks-recorder/taskd.stderr.log
+curl -fsS http://127.0.0.1:43127/health/ready
+```
+
+常见情况：
+
+- `SERVICE_UNAVAILABLE`：先确认 service 已安装且 `health/ready` 返回成功。
+- Dashboard 无法打开：检查 `server_port` 是否被占用，以及 stderr log。
+- Dashboard 正常但没有自动记录：确认 adapter 已启用、重启宿主，并完成 hook trust/MCP approval。
+- 更新 plugin 后旧 conversation 没变化：新开 conversation，避免复用已经建立的 MCP process。
+- `~/.local/bin/tasks-recorder: command not found`：把 `~/.local/bin` 加入 shell `PATH`，或直接在浏览器访问 Dashboard。
+
+## Develop from source
+
+```bash
+git clone https://github.com/joisun/tasks-recorder.git
+cd tasks-recorder
+npm ci
+npm run build
+npm run build:adapters
+npm run check
+npm test
+```
+
+本地安装 source checkout 的 service：
 
 ```bash
 npm run taskd -- install
 npm run taskd -- status
 ```
 
-`install` 会固定当前 Node executable、生成或保留 `~/.config/tasks-recorder/auth-token`、写入 `~/Library/LaunchAgents/com.joi.tasks-recorder.taskd.plist`，并通过 `RunAtLoad + KeepAlive` 启动 Server。
-
-可用命令：
+构建 Release artifacts：
 
 ```bash
-npm run taskd -- start
-npm run taskd -- stop
-npm run taskd -- status
-npm run taskd -- uninstall
+npm run package:release
 ```
 
-`uninstall` 只卸载 LaunchAgent，不删除 `~/.config/tasks-recorder` 或日志。
-
-## Agent integrations
-
-仓库暂时保留以下 integration source：
-
-- `mcp/`：STDIO MCP adapter。
-- `hooks/`：UserPromptSubmit、PostToolUse heartbeat 与 Stop lifecycle hooks。
-- `skills/`：任务管理指令。
-
-它们不再通过 `.codex-plugin/plugin.json` 或本地 marketplace 自动安装。当前迁移阶段先移除旧 Codex plugin 注册；后续独立 installer 应把这些文件作为 thin integration 显式安装，并把 MCP command 指向独立项目或 release runtime。
-
-## Lifecycle
-
-- `UserPromptSubmit`：向 Agent 注入 session/workfolder/Agent context，要求所有具体工作不论时长都先完成 semantic matching 与 task upsert。
-- `PostToolUse`：通过 taskd 对当前 session 最近绑定的未完成任务做节流 heartbeat；只更新 `last_seen_at`，不创建任务或推断状态。
-- `Stop`：在 Agent 结束前要求语义收口当前任务状态。
-
-Hook 失败会 fail-open，不阻断正常工具调用。taskd 不可用时，MCP 返回 `SERVICE_UNAVAILABLE`，不会降级为直接写 SQLite。
+输出位于 `release/`：service runtime、Codex adapter 与 Claude Code adapter 各自一个 archive。GitHub Actions 在 pull request/push 上执行完整验证，在 `v*` tag 上校验 tag 与 `package.json` version 一致并创建带 `SHA256SUMS` 的 GitHub Release。
 
 ## Security
 
-- Server 只监听 `127.0.0.1:43127`，不开放 LAN 或公网访问。
-- Browser read API 校验 `Host/Origin`，不返回 CORS headers。
-- Agent API 使用随机 Bearer token；token 文件权限为 `0600`，Dashboard 不读取 token。
-- 请求体限制为 64 KiB；日志不主动记录 token 或任务正文。
-
-## 数据与兼容性
-
-持久化状态固定为 `planned | active | waiting | blocked | done`。`stale` 等仅由 Dashboard 根据 activity 计算；历史 session 没有 Agent 信息时显示 `Unknown`。
-
-`agent_tasks_render` 与 `Tasks.md` / `History.md` 仅作为旧版本兼容 projection 保留。不要直接编辑 `tasks.sqlite` 或把 UI state 写入业务表。
+- `taskd` 只监听 `127.0.0.1`，不会暴露给 LAN 或公网。
+- HTTP routes 校验 `Host`；browser request 带 `Origin` 时必须等于实际 loopback origin。
+- 设计信任同一 OS user 下运行的本机 process，因此不使用 auth token，也不隔离同一用户身份的其他程序。
+- 不要把 service 反向代理到 LAN/公网。
+- Hooks fail open：Tasks Recorder 故障不会阻断正常 tool call，但可能造成一次 activity/status 未记录。
+- Installer 在解包或执行 runtime 前校验 SHA-256，并拒绝 archive path traversal。
 
 ## License
 
-Dashboard bundle 包含 DHTMLX Gantt Standard 9.1.0，按 GPL-2.0 分发，详情见 `ui/THIRD_PARTY_NOTICES.md`。公开分发前仍需对完整组合进行 GPL 兼容性审查。
+Tasks Recorder 采用 [GPL-2.0-only](LICENSE)。你可以使用、修改、商用和再分发，但对外分发本项目或其修改版时，需要提供对应源码并继续按 GPL-2.0 授权。
+
+Dashboard bundle 包含 GPL-2.0 的 DHTMLX Gantt Standard 9.1.0，详情见 [Third-Party Notices](ui/THIRD_PARTY_NOTICES.md)。这段说明不是法律意见。

@@ -1,0 +1,38 @@
+{
+  "name": "tasks-recorder",
+  "version": "0.3.0",
+  "description": "Record Codex work in a local task service with a real-time dashboard.",
+  "author": {
+    "name": "Joi Sun",
+    "url": "https://github.com/joisun"
+  },
+  "homepage": "https://github.com/joisun/tasks-recorder",
+  "repository": "https://github.com/joisun/tasks-recorder",
+  "license": "GPL-2.0-only",
+  "keywords": [
+    "tasks",
+    "codex",
+    "hooks",
+    "mcp",
+    "dashboard"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Tasks Recorder",
+    "shortDescription": "Record Codex tasks locally",
+    "longDescription": "Connect Codex hooks and MCP tools to the local Tasks Recorder service and its real-time task dashboard.",
+    "developerName": "Joi Sun",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Show my active agent tasks.",
+      "Resume the matching task for this worktree."
+    ],
+    "websiteURL": "https://github.com/joisun/tasks-recorder"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "tasks-recorder",
+  "displayName": "Tasks Recorder",
+  "version": "0.3.0",
+  "description": "Record Claude Code work in a local task service with a real-time dashboard.",
+  "author": {
+    "name": "Joi Sun",
+    "url": "https://github.com/joisun"
+  },
+  "homepage": "https://github.com/joisun/tasks-recorder",
+  "repository": "https://github.com/joisun/tasks-recorder",
+  "license": "GPL-2.0-only",
+  "keywords": [
+    "tasks",
+    "claude-code",
+    "hooks",
+    "mcp",
+    "dashboard"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

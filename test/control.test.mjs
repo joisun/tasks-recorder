@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
 import {
   LAUNCH_AGENT_LABEL,
+  createInstallBuildStep,
   createTaskdController,
   renderLaunchAgentPlist,
 } from '../server/control.mjs'
@@ -88,4 +89,44 @@ test('controller rejects old Node and a foreign service occupying the configured
     }).install(),
     /occupied by another service/,
   )
+})
+
+test('release install validates the prebuilt dashboard without invoking the source builder', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'tasks-recorder-prebuilt-'))
+  const calls = []
+  try {
+    const run = async (...args) => { calls.push(args) }
+    const build = createInstallBuildStep({
+      projectRoot,
+      nodePath: '/opt/homebrew/bin/node',
+      env: { TASKS_RECORDER_PREBUILT: '1' },
+      run,
+    })
+    await assert.rejects(build(), /prebuilt Dashboard is missing/)
+    assert.deepEqual(calls, [])
+
+    const dashboardDirectory = join(projectRoot, 'ui', 'dist')
+    await mkdir(dashboardDirectory, { recursive: true })
+    await writeFile(join(dashboardDirectory, 'index.html'), '<!doctype html>')
+    await build()
+    assert.deepEqual(calls, [])
+  } finally {
+    await rm(projectRoot, { recursive: true, force: true })
+  }
+})
+
+test('source install invokes the Dashboard builder with the selected Node runtime', async () => {
+  const calls = []
+  const run = async (...args) => { calls.push(args) }
+  const build = createInstallBuildStep({
+    projectRoot: '/projects/tasks-recorder',
+    nodePath: '/opt/homebrew/bin/node',
+    env: {},
+    run,
+  })
+  await build()
+  assert.deepEqual(calls, [[
+    '/opt/homebrew/bin/node',
+    ['/projects/tasks-recorder/ui/build.mjs'],
+  ]])
 })
