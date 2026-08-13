@@ -190,7 +190,7 @@ if [ "$start_service" -eq 1 ]; then
   ready=0
   attempt=0
   while [ "$attempt" -lt 30 ]; do
-    if curl -fsS "$dashboard_url/health/ready" >/dev/null 2>&1; then
+    if curl -fsS --connect-timeout 1 --max-time 1 "$dashboard_url/health/ready" >/dev/null 2>&1; then
       ready=1
       break
     fi

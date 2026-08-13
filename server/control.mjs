@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { access, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -199,7 +200,7 @@ async function main() {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`)
     process.exitCode = 1
