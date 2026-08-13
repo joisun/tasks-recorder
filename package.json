@@ -1,0 +1,24 @@
+{
+  "name": "tasks-recorder",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "node ui/build.mjs",
+    "check": "node --check mcp/server.mjs && node --check hooks/stop-task-check.mjs && node --check hooks/user-prompt-task-sync.mjs && node --check hooks/task-heartbeat.mjs && node --check server/taskd.mjs && node --check server/control.mjs && node --check server/src/api-server.mjs && node --check mcp/src/task-client.mjs && node --check ui/src/dashboard.mjs",
+    "taskd": "node server/control.mjs",
+    "taskd:run": "node server/taskd.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "dhtmlx-gantt": "9.1.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
