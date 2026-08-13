@@ -169,7 +169,7 @@ fi
 
 temporary_link="$install_root/.current.$$.tmp"
 ln -s "$release_directory" "$temporary_link"
-mv -f "$temporary_link" "$current_link"
+node -e 'require("node:fs").renameSync(process.argv[1], process.argv[2])' "$temporary_link" "$current_link"
 
 cat > "$wrapper_path" <<'EOF'
 #!/usr/bin/env sh

@@ -31095,7 +31095,7 @@ function handle(operation) {
 }
 var client = createClient(await resolveBaseUrl());
 var server = new McpServer(
-  { name: "tasks-recorder", version: "0.3.1" },
+  { name: "tasks-recorder", version: "0.3.2" },
   { instructions: "Use this local task control plane for concrete Agent work. Call agent_tasks_context first and never edit SQLite directly." }
 );
 server.registerTool("agent_tasks_context", { description: "Find unfinished task candidates for this session and workfolder.", inputSchema: { session_id: external_exports.string().min(1), workfolder: external_exports.string().min(1), agent: external_exports.string().min(1).optional() }, outputSchema, annotations: readAnnotations }, handle(client.context));

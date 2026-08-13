@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.
 `curl | bash` 方便但会直接执行远端脚本。更审慎的方式是固定版本、先查看 installer，再执行；installer 会在解包前使用 Release 中的 `SHA256SUMS` 校验 runtime artifact：
 
 ```bash
-version=v0.3.1
+version=v0.3.2
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
