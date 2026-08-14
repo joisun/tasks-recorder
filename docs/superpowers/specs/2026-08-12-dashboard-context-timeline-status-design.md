@@ -8,7 +8,7 @@
 
 升级 standalone Tasks Recorder Dashboard，使它能够：
 
-1. 直接展示任务最近活动 session 的工作目录、worktree 和 branch。
+1. 直接展示任务最近活动 session 的 Session ID、工作目录、worktree 和 branch，并允许复制完整 Session ID。
 2. 把右侧 Timeline 作为可展开/折叠的面板；折叠后 Grid 占满宽度。
 3. 允许用户从 Dashboard 安全地修正任务状态，补偿会话被直接关闭、Stop Hook 没有触发等 lifecycle 漏洞。
 4. 完全移除现有 auth token 与 Bearer authentication，采用明确的单用户 loopback trust model。
@@ -18,10 +18,10 @@
 ## 第一原则
 
 - **Goal**：Dashboard 既能解释任务正在什么工作上下文中执行，也能对 Hook 漏掉的状态收口做最小人工修正。
-- **Facts**：`task_sessions` 已保存 `workfolder`、`worktree`、`branch` 和 `last_seen_at`；taskd 是唯一 SQLite owner；Dashboard 使用 REST snapshot + SSE invalidation；DHTMLX Gantt Standard 9.1 支持自定义列、custom layout、独立 scrollbar 和 Grid/Timeline view switching。
+- **Facts**：`task_sessions` 已保存 `session_id`、`workfolder`、`worktree`、`branch` 和 `last_seen_at`；taskd 是唯一 SQLite owner；Dashboard 使用 REST snapshot + SSE invalidation；DHTMLX Gantt Standard 9.1 支持自定义列、custom layout、独立 scrollbar 和 Grid/Timeline view switching。
 - **Assumptions**：任务的“当前上下文”定义为 `last_seen_at` 最新的有效 session，不代表实时扫描本机进程；本工具运行在单用户 macOS 环境，本机进程属于信任边界。
 - **Constraints**：只监听 `127.0.0.1`；SQLite 仍是唯一真源；不引入 DHTMLX PRO、WebSocket、第二份业务状态、完整编辑器或账号系统。
-- **Success Criteria**：三项上下文可见；Timeline 切换不丢 UI state；状态修改具备事务、并发、父子一致性与错误恢复；项目中不再存在 token/Bearer runtime contract。
+- **Success Criteria**：Session ID 与三项 Git/路径上下文可见，完整 Session ID 可复制；Timeline 切换不丢 UI state；状态修改具备事务、并发、父子一致性与错误恢复；项目中不再存在 token/Bearer runtime contract。
 
 ## 已选方案
 
@@ -57,6 +57,7 @@ interface DashboardTask {
   end: string | null;
   last_activity: string | null;
   next_action: string | null;
+  session_id: string | null;
   workfolder: string | null;
   worktree: string | null;
   branch: string | null;
@@ -72,9 +73,9 @@ Snapshot 顶层同时增加 `home_directory: string`。它只用于把 Grid 中�
 
 1. 过滤掉 `last_seen_at` 非法的 session。
 2. 按 `last_seen_at DESC` 选择一条最近 session。
-3. `workfolder`、`worktree`、`branch` 和 `last_activity` 全部来自这同一条 session。
+3. `session_id`、`workfolder`、`worktree`、`branch` 和 `last_activity` 全部来自这同一条 session。
 4. `agent` 仍允许回退到最近一条具有非空 Agent 的 session，兼容旧数据。
-5. 没有有效 session 时，三项上下文为 `null`，`last_activity` 回退到 task `updated_at`。
+5. 没有有效 session 时，Session ID 与三项上下文为 `null`，`last_activity` 回退到 task `updated_at`。
 
 不能分别选择最近的非空 worktree/branch，否则可能把不同 session 的上下文拼成不存在的组合。
 
@@ -83,10 +84,10 @@ Snapshot 顶层同时增加 `home_directory: string`。它只用于把 Grid 中�
 Grid 列顺序固定为：
 
 ```text
-任务 | 状态 | 工作目录 | Worktree | Branch | 说明 | Agent | 活动
+任务 | 状态 | Session ID | 工作目录 | Worktree | Branch | 说明 | Agent | 活动
 ```
 
-- 三项上下文使用独立列。
+- Session ID 与三项上下文使用独立列；Session ID 展示最近 session 的完整值，并提供复制按钮和成功反馈。
 - `workfolder` 和 `worktree` 默认宽度 180px、最小宽度 140px；`branch` 默认宽度 160px、最小宽度 120px。
 - 使用 snapshot 顶层 `home_directory` 判断 `$HOME` 前缀，只在显示文字中缩写为 `~`；DOM `title`、accessible label 与 hover/focus popover 保留绝对值。
 - 单元格内容垂直居中；单行省略时可通过 hover/focus popover 读取完整值；空值显示 `—`。
@@ -262,14 +263,14 @@ Server error message 不包含任务正文之外的新敏感信息；未完成 c
 
 ## 组件边界
 
-- `mcp/src/dashboard-data.mjs`：选择最近 session，产出 context 与 `updated_at`。
+- `mcp/src/dashboard-data.mjs`：选择最近 session，产出 Session ID、context 与 `updated_at`。
 - `mcp/src/task-store.mjs`：实现 status transaction、版本比较、完成时间和父子规则。
 - `mcp/src/task-service.mjs`：封装 status change notification，不重复发布事件。
 - `server/src/api-server.mjs`：新增 PATCH route，移除 Bearer gate，保留 Host/Origin/content-type/body guards。
 - `mcp/src/task-client.mjs`：移除 token；增加 status client method 只用于 contract 完整性，MCP tools 本轮不新增人工 status tool。
-- `ui/src/dashboard-state.mjs`：纯函数处理路径显示、layout/status state helpers。
-- `ui/src/dashboard.mjs`：列、custom layout、Timeline toggle、menu event delegation、pending/error 和 snapshot invalidation。
-- `ui/src/dashboard.css`：路径列、独立 scrollbar、toggle、menu、pending 与 focus styles。
+- `ui/src/dashboard-state.mjs`：纯函数处理 Session ID/路径显示、clipboard boundary、layout/status state helpers。
+- `ui/src/dashboard.mjs`：列、Session ID copy interaction、custom layout、Timeline toggle、menu event delegation、pending/error 和 snapshot invalidation。
+- `ui/src/dashboard.css`：Session ID/路径列、独立 scrollbar、toggle、menu、pending 与 focus styles。
 
 ## 测试与验收
 
@@ -285,7 +286,7 @@ Server error message 不包含任务正文之外的新敏感信息；未完成 c
 
 ### Snapshot
 
-- 三个 context 字段来自同一条最近 session。
+- Session ID 与三个 context 字段来自同一条最近 session。
 - 最近 session 字段为空时保持 null，不拼接旧 session。
 - Agent fallback 仍兼容 legacy session。
 - `updated_at` 被暴露且非法 task 仍安全过滤。
@@ -300,7 +301,7 @@ Server error message 不包含任务正文之外的新敏感信息；未完成 c
 
 ### Dashboard
 
-- 三列、`~` display、absolute tooltip 与 HTML escaping。
+- Session ID 完整展示与复制反馈，以及三列 context 的 `~` display、absolute tooltip 与 HTML escaping。
 - Grid/Timeline 独立横向 scroll、共享纵向 scroll。
 - expanded/collapsed toggle 与 local preference。
 - toggle 和 snapshot refresh 保留 tab、tree、scroll、task width 与 labels state。

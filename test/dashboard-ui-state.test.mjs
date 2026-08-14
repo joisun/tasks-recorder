@@ -66,6 +66,42 @@ test('escapes task-controlled HTML', () => {
   assert.equal(escapeHtml('<img src=x onerror="bad">'), '&lt;img src=x onerror=&quot;bad&quot;&gt;')
 })
 
+test('copies the complete session ID through the clipboard boundary', async () => {
+  const writes = []
+  const sessionId = '019fefb6-f2fb-7380-a949-20cd7d744e14'
+  const copied = await dashboardState.copyTextToClipboard?.(sessionId, {
+    writeText: async (value) => writes.push(value),
+  })
+
+  assert.equal(copied, true)
+  assert.deepEqual(writes, [sessionId])
+})
+
+test('does not invoke the clipboard for an empty session ID', async () => {
+  let writes = 0
+  const copied = await dashboardState.copyTextToClipboard?.('', {
+    writeText: async () => { writes += 1 },
+  })
+
+  assert.equal(copied, false)
+  assert.equal(writes, 0)
+})
+
+test('keeps the complete session ID available for display and copy', () => {
+  const sessionId = '019fefb6-f2fb-7380-a949-20cd7d744e14'
+
+  assert.deepEqual(dashboardState.sessionIdPresentation?.(sessionId), {
+    display: sessionId,
+    full: sessionId,
+    empty: false,
+  })
+  assert.deepEqual(dashboardState.sessionIdPresentation?.(null), {
+    display: '—',
+    full: null,
+    empty: true,
+  })
+})
+
 test('formats only the configured home path segment', () => {
   assert.equal(formatHomePath('/Users/me/project', '/Users/me'), '~/project')
   assert.equal(formatHomePath('/Users/me', '/Users/me'), '~')

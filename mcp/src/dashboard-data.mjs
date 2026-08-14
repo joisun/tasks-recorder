@@ -101,6 +101,7 @@ export function createDashboardSnapshot(snapshot, {
         end: taskEnd(task),
         last_activity: recent?.last_seen_at ?? validInstant(task.updated_at),
         next_action: task.next_action,
+        session_id: sessionString(recent?.session_id),
         workfolder: sessionString(recent?.workfolder),
         worktree: sessionString(recent?.worktree),
         branch: sessionString(recent?.branch),

@@ -158,6 +158,25 @@ export function escapeHtml(value) {
   })[character])
 }
 
+export async function copyTextToClipboard(value, clipboard = globalThis.navigator?.clipboard) {
+  if (typeof value !== 'string' || value === '' || typeof clipboard?.writeText !== 'function') {
+    return false
+  }
+  try {
+    await clipboard.writeText(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function sessionIdPresentation(value) {
+  if (typeof value !== 'string' || value === '') {
+    return { display: '—', full: null, empty: true }
+  }
+  return { display: value, full: value, empty: false }
+}
+
 export function formatHomePath(value, homeDirectory) {
   if (typeof value !== 'string' || value === '') return '—'
   if (typeof homeDirectory !== 'string' || homeDirectory === '') return value

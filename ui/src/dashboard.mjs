@@ -1,4 +1,5 @@
 import {
+  copyTextToClipboard,
   contextPathPresentation,
   contextPopoverPosition,
   createGanttLayout,
@@ -18,6 +19,7 @@ import {
   retainedGridScroll,
   relativeActivity,
   resolvePreferenceStorage,
+  sessionIdPresentation,
   statusMutationMessage,
   tabCount,
   timelineBounds,
@@ -94,6 +96,13 @@ function activityCell(task) {
   return `<span class="activity-time ${activity.tone === 'default' ? '' : `is-${activity.tone}`}">${activity.text}</span>`
 }
 
+function sessionIdCell(task) {
+  const session = sessionIdPresentation(task.session_id)
+  if (session.empty) return '<span class="session-id-cell is-empty">—</span>'
+  const id = escapeHtml(session.full)
+  return `<span class="session-id-cell" title="${id}"><span class="session-id-value">${escapeHtml(session.display)}</span><button class="session-copy" type="button" data-copy-session-id="${id}" aria-label="复制 Session ID ${id}" title="复制 Session ID"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.25" y="5.25" width="7" height="7" rx="1" fill="none" stroke="currentColor"/><path d="M10.5 5.25V3.8a1 1 0 0 0-1-1H3.8a1 1 0 0 0-1 1v5.7a1 1 0 0 0 1 1h1.45" fill="none" stroke="currentColor"/></svg><span class="session-copy-check" aria-hidden="true">✓</span></button></span>`
+}
+
 function pathCell(field) {
   return (task) => {
     const path = contextPathPresentation(task[field], homeDirectory)
@@ -157,6 +166,31 @@ function installContextInteractions() {
     if (anchor) hideContextPopover(anchor)
   })
   window.addEventListener('resize', () => hideContextPopover(document.querySelector('.context-path[aria-describedby]')))
+}
+
+function installSessionCopyInteractions() {
+  const ganttElement = document.getElementById('gantt_here')
+  ganttElement.addEventListener('click', async (event) => {
+    const button = event.target.closest?.('[data-copy-session-id]')
+    if (!button) return
+    event.preventDefault()
+    event.stopPropagation()
+    const sessionId = button.dataset.copySessionId
+    const copied = await copyTextToClipboard(sessionId)
+    if (!copied) {
+      setRefreshMessage('mutation', 'Session ID 复制失败，请手动选择文本复制')
+      return
+    }
+    button.classList.add('is-copied')
+    button.setAttribute('aria-label', `已复制 Session ID ${sessionId}`)
+    button.title = '已复制'
+    setTimeout(() => {
+      if (!button.isConnected) return
+      button.classList.remove('is-copied')
+      button.setAttribute('aria-label', `复制 Session ID ${sessionId}`)
+      button.title = '复制 Session ID'
+    }, 1_600)
+  }, true)
 }
 
 function rootTask(task) {
@@ -375,7 +409,7 @@ function ganttData({ openIds = new Set(), preserveOpen = false } = {}) {
       parent: task.parent_id || 0, open: preserveOpen ? openIds.has(task.id) : true,
       progress: progressOf(task, index), status: archived && !task.parent_id ? 'done' : task.status,
       archived, agent: task.agent, note: task.next_action || '', last_activity: task.last_activity || null,
-      workfolder: task.workfolder, worktree: task.worktree, branch: task.branch,
+      session_id: task.session_id, workfolder: task.workfolder, worktree: task.worktree, branch: task.branch,
       updated_at: task.updated_at,
       type: hasChildren ? gantt.config.types.project : gantt.config.types.task, source: task,
     }
@@ -473,6 +507,7 @@ function configureGantt() {
   gantt.config.columns = [
     { name: 'text', label: '任务', tree: true, width: 240, min_width: 180, template: taskLabel },
     { name: 'status', label: '状态', width: 72, align: 'center', template: statusPill },
+    { name: 'session_id', label: 'Session ID', width: 276, min_width: 248, template: sessionIdCell },
     { name: 'workfolder', label: '工作目录', width: 180, min_width: 140, template: pathCell('workfolder') },
     { name: 'worktree', label: 'Worktree', width: 180, min_width: 140, template: pathCell('worktree') },
     { name: 'branch', label: 'Branch', width: 160, min_width: 120, template: pathCell('branch') },
@@ -717,6 +752,7 @@ if (!gantt) {
   document.getElementById('gantt_here').innerHTML = '<p class="empty-state">DHTMLX Gantt 加载失败。</p>'
 } else {
   installContextInteractions()
+  installSessionCopyInteractions()
   installStatusInteractions()
   installTimelineSplitterInteractions()
   let connectionState = 'connecting'

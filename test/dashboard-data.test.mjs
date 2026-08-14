@@ -22,6 +22,7 @@ test('dashboard snapshot uses newest session activity and agent', () => {
     id: 'task-a', parent_id: null, title: 'Task A', status: 'active', agent: 'Codex',
     start: '2026-08-10T08:00:00.000Z', end: null,
     last_activity: '2026-08-12T09:30:00.000Z', next_action: 'Continue',
+    session_id: 'new',
     workfolder: null, worktree: null, branch: null,
     updated_at: '2026-08-10T08:00:00.000Z',
   })
@@ -58,6 +59,7 @@ test('dashboard snapshot takes context from one newest valid session', () => {
     id: 'task-a', parent_id: null, title: 'Task A', status: 'active', agent: 'Claude',
     start: '2026-08-10T08:00:00.000Z', end: null,
     last_activity: '2026-08-12T09:30:00.000Z', next_action: 'Continue',
+    session_id: 'new',
     workfolder: '/Users/me/new', worktree: null, branch: null,
     updated_at: '2026-08-10T08:00:00.000Z',
   })
