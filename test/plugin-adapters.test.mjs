@@ -51,9 +51,18 @@ function runScript(script, env = {}) {
 }
 
 function mcpExchange(script, homeDirectory) {
+  return mcpProcessExchange({
+    command: process.execPath,
+    args: [script],
+    cwd: projectRoot,
+    homeDirectory,
+  })
+}
+
+function mcpProcessExchange({ command, args, cwd, homeDirectory }) {
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, [script], {
-      cwd: projectRoot,
+    const child = spawn(command, args, {
+      cwd,
       env: { ...process.env, HOME: homeDirectory },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -108,7 +117,8 @@ test('Codex adapter uses a native manifest, marketplace entry, and MCP config', 
     installation: 'AVAILABLE', authentication: 'ON_INSTALL',
   })
   assert.equal(mcp.mcpServers['tasks-recorder'].command, 'node')
-  assert.deepEqual(mcp.mcpServers['tasks-recorder'].args, ['${PLUGIN_ROOT}/dist/mcp-server.mjs'])
+  assert.deepEqual(mcp.mcpServers['tasks-recorder'].args, ['dist/mcp-server.mjs'])
+  assert.equal(mcp.mcpServers['tasks-recorder'].cwd, '.')
 })
 
 test('Claude adapter uses a native manifest, marketplace entry, and wrapped MCP config', async () => {
@@ -162,6 +172,37 @@ test('both bundled MCP clients initialize and advertise task tools without proje
       assert.equal(initialized.result.serverInfo.name, 'tasks-recorder')
       assert.ok(tools.result.tools.some(({ name }) => name === 'agent_tasks_context'))
       assert.ok(tools.result.tools.some(({ name }) => name === 'agent_tasks_complete'))
+    }
+  } finally {
+    await rm(homeDirectory, { recursive: true, force: true })
+  }
+})
+
+test('Codex MCP config launches its bundled server outside the plugin directory', async () => {
+  await buildAdapters({ projectRoot })
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-codex-mcp-'))
+  try {
+    const configDirectory = join(homeDirectory, '.config', 'tasks-recorder')
+    await mkdir(configDirectory, { recursive: true })
+    await writeFile(join(configDirectory, 'config.json'), JSON.stringify({
+      output_dir: '.', server_host: '127.0.0.1', server_port: 43127,
+    }))
+
+    const pluginRoot = join(projectRoot, 'adapters', 'codex', 'tasks-recorder')
+    const config = await readJson('adapters/codex/tasks-recorder/.mcp.json')
+    const server = config.mcpServers['tasks-recorder']
+    const workspace = await mkdtemp(join(tmpdir(), 'tasks-recorder-workspace-'))
+    try {
+      const responses = await mcpProcessExchange({
+        command: server.command,
+        args: server.args,
+        cwd: server.cwd ? resolve(pluginRoot, server.cwd) : workspace,
+        homeDirectory,
+      })
+      const tools = responses.find((entry) => entry.id === 2)
+      assert.ok(tools.result.tools.some(({ name }) => name === 'agent_tasks_context'))
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
     }
   } finally {
     await rm(homeDirectory, { recursive: true, force: true })

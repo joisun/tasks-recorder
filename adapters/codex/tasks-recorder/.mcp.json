@@ -3,8 +3,9 @@
     "tasks-recorder": {
       "command": "node",
       "args": [
-        "${PLUGIN_ROOT}/dist/mcp-server.mjs"
-      ]
+        "dist/mcp-server.mjs"
+      ],
+      "cwd": "."
     }
   }
 }
