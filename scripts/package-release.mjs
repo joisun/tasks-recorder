@@ -67,16 +67,14 @@ export async function packageRelease({
       const adapterRoot = join(adapterStage, 'tasks-recorder')
       await mkdir(adapterRoot, { recursive: true })
       const sourceRoot = join(projectRoot, 'adapters', host, 'tasks-recorder')
-      for (const entry of [
+      await copyEntries(sourceRoot, adapterRoot, [
         host === 'codex' ? '.codex-plugin' : '.claude-plugin',
         '.mcp.json',
         'hooks',
         'skills',
-        'dist',
+        'dist/mcp-server.mjs',
         'THIRD_PARTY_NOTICES.md',
-      ]) {
-        await cp(join(sourceRoot, entry), join(adapterRoot, entry), { recursive: true })
-      }
+      ])
       await cp(join(projectRoot, 'LICENSE'), join(adapterRoot, 'LICENSE'))
       artifacts.push(await archive(
         adapterStage,

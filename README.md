@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.
 `curl | bash` 方便但会直接执行远端脚本。更审慎的方式是固定版本、先查看 installer，再执行；installer 会在解包前使用 Release 中的 `SHA256SUMS` 校验 runtime artifact：
 
 ```bash
-version=v0.3.2
+version=v0.3.3
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -49,7 +49,7 @@ codex plugin marketplace add joisun/tasks-recorder
 codex plugin add tasks-recorder@tasks-recorder
 ```
 
-安装或启用 plugin 不会自动信任 bundled hooks。首次使用时请在 Codex 的 trust review 中检查并允许 Tasks Recorder hooks，然后新开一个 conversation 使 MCP 与 hooks 全部生效。
+安装或启用 plugin 不会自动信任 bundled hooks。首次使用时在 Codex 中运行 `/hooks`，确认 Tasks Recorder 的 `UserPromptSubmit`、`PostToolUse` 和 `Stop` 三个 hooks 都显示为 trusted，然后新开一个 conversation 使 MCP 与 hooks 全部生效。只信任前两个可见 hooks 中的一部分时，Dashboard 可能能显示任务，但 heartbeat 不会更新 `last_seen_at`。
 
 ## Install the Claude Code adapter
 
@@ -85,7 +85,7 @@ Browser Dashboard ◀──────────── SSE changed ─┘
 3. `PostToolUse` hook 发送节流 heartbeat，更新当前 session 已绑定任务的 `last_seen_at`；它不会猜测或创建任务。
 4. `Stop` hook 在 conversation 结束前要求 agent 收口任务状态。若宿主被直接关闭、hook 没有触发，可以在 Dashboard 中手动修正 status。
 5. `taskd` 是唯一 SQLite owner。写事务 commit 后发布轻量 SSE `changed` event；Dashboard 再读取 authoritative snapshot，因此页面不需要定时 polling，也不会生成一个带静态数据的 `dashboard.html`。
-6. Dashboard 的 Tree/Grid 与 Timeline 读取同一份 snapshot。Timeline 可折叠，Grid/Timeline 分隔线可拖动，状态修改使用 optimistic concurrency 防止覆盖较新的 agent 更新。
+6. Dashboard 的 Tree/Grid 与 Timeline 读取同一份 snapshot。Grid 展示最近活动 session 的完整 Session ID、工作目录、Worktree 与 Branch，Session ID 可一键复制；Timeline 可折叠，Grid/Timeline 分隔线可拖动，状态修改使用 optimistic concurrency 防止覆盖较新的 agent 更新。
 
 这是一种本机 C/S 架构：plugin adapter 是 client，`taskd` 是 server，Dashboard 是另一个 browser client。adapter 没有 service 时会报告 `SERVICE_UNAVAILABLE`；service 没有 adapter 时仍可以运行并查看已有数据。
 
@@ -166,6 +166,7 @@ curl -fsS http://127.0.0.1:43127/health/ready
 - `SERVICE_UNAVAILABLE`：先确认 service 已安装且 `health/ready` 返回成功。
 - Dashboard 无法打开：检查 `server_port` 是否被占用，以及 stderr log。
 - Dashboard 正常但没有自动记录：确认 adapter 已启用、重启宿主，并完成 hook trust/MCP approval。
+- Codex 显示 `Stop hook (blocked)`：这通常表示 hook 已成功要求 agent 收口状态，不代表 hook 自身崩溃；若随后提示 `agent_tasks_context` unavailable，运行 `codex mcp get tasks-recorder`，正常配置应显示 `args: dist/mcp-server.mjs` 和 `cwd: .`。若仍显示 `${PLUGIN_ROOT}`，请升级或重新安装 Codex adapter。
 - 更新 plugin 后旧 conversation 没变化：新开 conversation，避免复用已经建立的 MCP process。
 - `~/.local/bin/tasks-recorder: command not found`：把 `~/.local/bin` 加入 shell `PATH`，或直接在浏览器访问 Dashboard。
 

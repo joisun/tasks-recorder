@@ -19,7 +19,7 @@ test('public package and native adapter metadata share version, license, and rep
   const claudeManifest = await json('adapters/claude/tasks-recorder/.claude-plugin/plugin.json')
   const claudeMarketplace = await json('.claude-plugin/marketplace.json')
 
-  assert.equal(packageManifest.version, '0.3.2')
+  assert.equal(packageManifest.version, '0.3.3')
   assert.equal(packageManifest.license, 'GPL-2.0-only')
   assert.equal(packageManifest.repository.url, 'git+https://github.com/joisun/tasks-recorder.git')
   for (const manifest of [codexManifest, claudeManifest]) {

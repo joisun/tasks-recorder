@@ -112,7 +112,7 @@ function handle(operation) {
 
 const client = createClient(await resolveBaseUrl())
 const server = new McpServer(
-  { name: 'tasks-recorder', version: '0.3.2' },
+  { name: 'tasks-recorder', version: '0.3.3' },
   { instructions: 'Use this local task control plane for concrete Agent work. Call agent_tasks_context first and never edit SQLite directly.' },
 )
 
