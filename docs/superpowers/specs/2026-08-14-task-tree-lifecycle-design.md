@@ -1,7 +1,7 @@
 # Tasks Recorder Task Tree and Execution Lifecycle Design
 
 > 日期：2026-08-14（Asia/Shanghai）
-> 状态：Phase 1–3 已实现并通过 release-readiness 验证，等待外部动作授权
+> 状态：Phase 1–3 已实现，v0.4.0 已发布并完成本机 service/adapter 升级；真实历史 import apply 未执行
 > 适用项目：`/Users/joi-com/Desktop/space/projects/tasks-recorder`
 
 ## 目标

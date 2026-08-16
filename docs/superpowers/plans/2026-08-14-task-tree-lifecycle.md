@@ -764,8 +764,8 @@
 
 - [x] 汇总自动测试、packaged runtime、browser、真实 session dry-run 和文档扫描证据。
 - [x] 列出仍需单独授权的外部动作：真实数据库 migration/import、phase/final commits、version bump、tag、GitHub release、本地 reinstall。
-- [ ] 若用户授权 commit，只提交本计划实际产生的文件，不混入其他修改；建议 final commit subject：`feat: add task tree and execution lifecycle`。
-- [ ] 若用户授权发布，再单独执行 version/release workflow；发布成功后才更新本机 installed runtime 和真实数据库。
+- [x] 已按授权创建并推送 `1d8de59 feat: add task tree and execution lifecycle`，没有混入 release archives、真实 transcript 或数据库文件。
+- [x] 已发布 `v0.4.0`，并将本机 service、Codex adapter 与 Claude adapter 更新到 0.4.0；真实历史 import 仍只执行 dry-run，未 apply。
 
 验证结果（2026-08-16）：
 
@@ -776,4 +776,7 @@
 - 最终 review 修复并覆盖跨 root parent、nested subagent parent 和 main-with-parent 三类非法 import；reviewer 复核 cleared，focused tests 8/8 与全量 tests 163/163 均通过。
 - 完整文档树已扫描并同步 README、design spec、implementation plan 及 root/Codex/Claude task-manager skills；dated historical documents 保留原始决策语境。
 - worktree 审计确认 release archives 位于 ignored `release/`，仅 synthetic JSONL fixtures 进入变更；没有 database/WAL、真实 transcript、credentials 或临时产物进入 diff。
-- 尚未授权且未执行：真实数据库 migration/import、Git commit、version bump、tag、GitHub release、本机 reinstall/已安装服务更新。
+- 发布结果：GitHub CI 与 Release workflow 均通过；`v0.4.0` 为 latest Release，assets 的 `SHA256SUMS` 全部验证成功。
+- 本机升级结果：schema v1 -> v2 migration 成功，`integrity_check=ok`，原有 33 个 Tasks 保留；service、Codex adapter、Claude adapter 均为 0.4.0。
+- 真实 session 的 installed CLI dry-run 仍为 180 root turns、98 direct child executions、278 would-create、7 warnings；`persisted=false`，数据库保持 33 Tasks / 0 executions。
+- 尚未执行：真实历史 import apply。升级前的 schema v1 SQLite/config 备份已验证并保留。
