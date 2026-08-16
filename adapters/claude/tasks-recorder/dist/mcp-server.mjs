@@ -31071,13 +31071,27 @@ function createClient(baseUrl) {
     show: ({ id }) => request(`/api/v1/tasks/${encodeURIComponent(id)}`),
     upsert: (input) => request(`/api/v1/tasks/${encodeURIComponent(input.id)}`, { method: "PUT", body: input }),
     complete: (input) => request(`/api/v1/tasks/${encodeURIComponent(input.id)}/complete`, { method: "POST", body: input }),
+    syncTree: (input) => request("/api/v1/tasks/sync-tree", { method: "POST", body: input }),
+    updateTask: ({ id, ...body }) => request(`/api/v1/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+    archiveTask: ({ id, ...body }) => request(`/api/v1/tasks/${encodeURIComponent(id)}/archive`, { method: "POST", body }),
+    restoreTask: ({ id, ...body }) => request(`/api/v1/tasks/${encodeURIComponent(id)}/restore`, { method: "POST", body }),
+    listExecutions: (filters) => {
+      const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value != null));
+      return request(`/api/v1/executions${query.size ? `?${query}` : ""}`);
+    },
+    assignExecution: ({ id, ...body }) => request(`/api/v1/executions/${encodeURIComponent(id)}/task`, { method: "PATCH", body }),
+    classifyExecution: ({ id, ...body }) => request(`/api/v1/executions/${encodeURIComponent(id)}/classification`, { method: "PATCH", body }),
     render: () => request("/api/v1/render", { method: "POST" }),
     check: () => request("/api/v1/check")
   };
 }
 var taskId = external_exports.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-var taskStatus = external_exports.enum(["planned", "active", "waiting", "blocked", "done"]);
+var taskStatus = external_exports.enum(["planned", "active", "waiting", "blocked", "done", "canceled"]);
 var date5 = external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+var revision = external_exports.number().int().positive();
+var taskPatch = external_exports.object({ parent_id: taskId.nullable().optional(), project: external_exports.string().min(1).optional(), title: external_exports.string().min(1).optional(), description: external_exports.string().min(1).nullable().optional(), status: taskStatus.optional(), start_date: date5.optional(), due_date: date5.nullable().optional(), next_action: external_exports.string().min(1).nullable().optional(), agent_key: external_exports.string().min(1).nullable().optional(), sort_order: external_exports.number().int().nonnegative().optional() });
+var treeRoot = external_exports.object({ id: taskId.optional(), project: external_exports.string().min(1).optional(), title: external_exports.string().min(1), description: external_exports.string().min(1).nullable().optional(), status: taskStatus, start_date: date5.optional(), due_date: date5.nullable().optional(), next_action: external_exports.string().min(1).nullable().optional() });
+var treeChild = external_exports.object({ id: taskId.optional(), title: external_exports.string().min(1), description: external_exports.string().min(1).nullable().optional(), status: taskStatus, sort_order: external_exports.number().int().nonnegative(), agent_key: external_exports.string().min(1).nullable().optional(), due_date: date5.nullable().optional(), next_action: external_exports.string().min(1).nullable().optional() });
 var outputSchema = external_exports.object({}).catchall(external_exports.unknown());
 var readAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 var writeAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -31095,7 +31109,7 @@ function handle(operation) {
 }
 var client = createClient(await resolveBaseUrl());
 var server = new McpServer(
-  { name: "tasks-recorder", version: "0.3.3" },
+  { name: "tasks-recorder", version: "0.4.0" },
   { instructions: "Use this local task control plane for concrete Agent work. Call agent_tasks_context first and never edit SQLite directly." }
 );
 server.registerTool("agent_tasks_context", { description: "Find unfinished task candidates for this session and workfolder.", inputSchema: { session_id: external_exports.string().min(1), workfolder: external_exports.string().min(1), agent: external_exports.string().min(1).optional() }, outputSchema, annotations: readAnnotations }, handle(client.context));
@@ -31103,6 +31117,13 @@ server.registerTool("agent_tasks_list", { description: "List persisted tasks usi
 server.registerTool("agent_tasks_show", { description: "Show one task and its linked contexts.", inputSchema: { id: taskId }, outputSchema, annotations: readAnnotations }, handle(client.show));
 server.registerTool("agent_tasks_upsert", { description: "Create or update a concrete Agent work task.", inputSchema: { id: taskId, title: external_exports.string().min(1), status: taskStatus, session_id: external_exports.string().min(1), workfolder: external_exports.string().min(1), agent: external_exports.string().min(1).optional(), project: external_exports.string().min(1).optional(), parent_id: taskId.nullable().optional(), start_date: date5.optional(), due_date: date5.nullable().optional(), next_action: external_exports.string().min(1).nullable().optional() }, outputSchema, annotations: writeAnnotations }, handle(client.upsert));
 server.registerTool("agent_tasks_complete", { description: "Mark a task done and record final session activity.", inputSchema: { id: taskId, session_id: external_exports.string().min(1), workfolder: external_exports.string().min(1), agent: external_exports.string().min(1).optional() }, outputSchema, annotations: writeAnnotations }, handle(client.complete));
+server.registerTool("agent_tasks_sync_tree", { description: "Atomically synchronize one root task and its direct children.", inputSchema: { session_id: external_exports.string().min(1), turn_id: external_exports.string().min(1), workfolder: external_exports.string().min(1), expected_revision: revision.nullable(), root: treeRoot, children: external_exports.array(treeChild), focus_task_id: taskId.nullable().optional() }, outputSchema, annotations: writeAnnotations }, handle((input) => client.syncTree({ ...input, actor: "agent" })));
+server.registerTool("agent_tasks_update", { description: "Update Task metadata with revision concurrency.", inputSchema: { id: taskId, expected_revision: revision, patch: taskPatch }, outputSchema, annotations: writeAnnotations }, handle((input) => client.updateTask({ ...input, actor: "agent" })));
+server.registerTool("agent_tasks_archive", { description: "Archive a done or canceled Task.", inputSchema: { id: taskId, expected_revision: revision }, outputSchema, annotations: writeAnnotations }, handle((input) => client.archiveTask({ ...input, actor: "agent" })));
+server.registerTool("agent_tasks_restore", { description: "Restore an archived or soft-deleted Task.", inputSchema: { id: taskId, expected_revision: revision }, outputSchema, annotations: writeAnnotations }, handle((input) => client.restoreTask({ ...input, actor: "agent" })));
+server.registerTool("agent_task_executions_list", { description: "List main and subagent execution intervals.", inputSchema: { task_id: taskId.optional(), root_session_id: external_exports.string().min(1).optional(), session_id: external_exports.string().min(1).optional(), status: external_exports.enum(["active", "completed", "interrupted", "unknown"]).optional(), unassigned: external_exports.boolean().optional() }, outputSchema, annotations: readAnnotations }, handle(client.listExecutions));
+server.registerTool("agent_task_execution_assign", { description: "Assign or unassign an execution using expected task state.", inputSchema: { id: external_exports.string().min(1), task_id: taskId.nullable(), expected_task_id: taskId.nullable() }, outputSchema, annotations: writeAnnotations }, handle((input) => client.assignExecution({ ...input, actor: "agent" })));
+server.registerTool("agent_task_execution_classify", { description: "Classify an execution using expected state.", inputSchema: { id: external_exports.string().min(1), classification: external_exports.enum(["unknown", "work", "non_work"]), expected_classification: external_exports.enum(["unknown", "work", "non_work"]), expected_task_id: taskId.nullable() }, outputSchema, annotations: writeAnnotations }, handle((input) => client.classifyExecution({ ...input, actor: "agent" })));
 server.registerTool("agent_tasks_render", { description: "Rebuild legacy Markdown projections.", inputSchema: {}, outputSchema, annotations: writeAnnotations }, handle(client.render));
 server.registerTool("agent_tasks_check", { description: "Check service and storage integrity.", inputSchema: {}, outputSchema, annotations: readAnnotations }, handle(client.check));
 await server.connect(new StdioServerTransport());

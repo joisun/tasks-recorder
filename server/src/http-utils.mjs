@@ -12,7 +12,7 @@ export async function readJson(request, { limit = 64 * 1024 } = {}) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     size += buffer.byteLength
     if (size > limit) {
-      throw requestError('REQUEST_BODY_TOO_LARGE', 'request body exceeds 64 KiB', 413)
+      throw requestError('REQUEST_BODY_TOO_LARGE', `request body exceeds ${limit} bytes`, 413)
     }
     chunks.push(buffer)
   }

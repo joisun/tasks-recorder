@@ -13,6 +13,7 @@ import {
   isTaskOpen,
   labelPlacement,
   nextGridPanelWidth,
+  progressPresentation,
   progressOf,
   readBooleanPreference,
   readNumberPreference,
@@ -28,14 +29,18 @@ import {
 } from './dashboard-state.mjs'
 import { createSnapshotCoordinator } from './snapshot-coordinator.mjs'
 import { createEventStream } from './event-stream.mjs'
+import { createDashboardApi } from './dashboard-api.mjs'
+import { createTaskDetailsSheet } from './task-details-sheet.mjs'
+import { createExecutionInbox, inboxButtonLabel } from './execution-inbox.mjs'
 
 const gantt = window.gantt
+const dashboardApi = createDashboardApi()
 
 const TIMELINE_LABEL_KEY = 'dashboard-show-timeline-labels'
 const TIMELINE_PANEL_KEY = 'dashboard-show-timeline'
 const GRID_WIDTH_KEY = 'dashboard-grid-width'
-const STATUS_LABELS = { active: '进行中', waiting: '等待中', blocked: '已阻塞', planned: '待安排', done: '已完成' }
-const STATUS_ORDER = ['planned', 'active', 'waiting', 'blocked', 'done']
+const STATUS_LABELS = { active: '进行中', waiting: '等待中', blocked: '已阻塞', planned: '待安排', done: '已完成', canceled: '已取消' }
+const STATUS_ORDER = ['planned', 'active', 'waiting', 'blocked', 'done', 'canceled']
 const TAB_DEFS = [
   ['all', '全部'], ['blocked', '已阻塞'], ['active', '进行中'], ['waiting', '等待中'],
   ['planned', '待安排'], ['history', '历史'],
@@ -58,6 +63,9 @@ let rememberedTimelineX = 0
 let openStatusTaskId = null
 let openStatusTrigger = null
 let coordinator = null
+let detailsSheet = null
+let executionInbox = null
+let unassignedExecutionCount = 0
 let layoutResizeFrame = 0
 const pendingStatus = new Set()
 const refreshMessages = { connection: '', freshness: '', mutation: '' }
@@ -69,7 +77,39 @@ function hashString(value) {
 }
 
 function taskLabel(task) {
-  return `<span class="task-label"><span class="status-dot status-${task.status}" aria-hidden="true"></span><span class="task-name">${escapeHtml(task.text)}</span></span>`
+  return `<button class="task-label task-details-trigger" type="button" data-task-details-id="${escapeHtml(task.id)}" aria-label="打开 ${escapeHtml(task.text)} 的任务详情"><span class="status-dot status-${task.status}" aria-hidden="true"></span><span class="task-name">${escapeHtml(task.text)}</span></button>`
+}
+
+function installTaskDetailsInteractions() {
+  const element = document.getElementById('task-details-sheet')
+  const backdrop = document.getElementById('task-details-backdrop')
+  detailsSheet = createTaskDetailsSheet({
+    element,
+    backdrop,
+    api: dashboardApi,
+    getTasks: () => raw,
+    onChanged: () => coordinator?.invalidate(),
+  })
+  document.getElementById('gantt_here').addEventListener('click', (event) => {
+    const trigger = event.target.closest?.('[data-task-details-id]')
+    if (!trigger) return
+    event.preventDefault()
+    event.stopPropagation()
+    executionInbox?.close()
+    detailsSheet.open(trigger.dataset.taskDetailsId, { trigger })
+  }, true)
+}
+
+function installExecutionInboxInteractions() {
+  const element = document.getElementById('execution-inbox')
+  const backdrop = document.getElementById('execution-inbox-backdrop')
+  executionInbox = createExecutionInbox({
+    element,
+    backdrop,
+    api: dashboardApi,
+    getTasks: () => raw,
+    onChanged: () => coordinator?.invalidate(),
+  })
 }
 
 function statusPill(task) {
@@ -80,15 +120,36 @@ function statusPill(task) {
   return `<button class="status-pill status-${status}" type="button" data-status-task-id="${escapeHtml(id)}" aria-label="修改 ${escapeHtml(task.text)} 状态，当前${escapeHtml(label)}" aria-haspopup="listbox" aria-controls="status-menu" aria-expanded="${openStatusTaskId === id}" aria-busy="${pending}" ${pending ? 'disabled' : ''}><span>${escapeHtml(label)}</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
 }
 
+function progressCell(task) {
+  const id = String(task.id)
+  const status = task.source?.status ?? task.status
+  const label = STATUS_LABELS[status] ?? status
+  const presentation = progressPresentation(task.source, label)
+  if (!presentation.ring) return statusPill(task)
+  const pending = pendingStatus.has(id)
+  const percentage = Math.round(presentation.ratio * 100)
+  return `<button class="progress-control" type="button" data-status-task-id="${escapeHtml(id)}" aria-label="修改任务状态。${escapeHtml(presentation.ariaLabel)}" aria-haspopup="listbox" aria-controls="status-menu" aria-expanded="${openStatusTaskId === id}" aria-busy="${pending}" ${pending ? 'disabled' : ''}><svg class="progress-ring" viewBox="0 0 20 20" aria-hidden="true"><circle class="progress-ring-track" cx="10" cy="10" r="7.5"/><circle class="progress-ring-value" cx="10" cy="10" r="7.5" pathLength="100" stroke-dasharray="${percentage} 100"/></svg><span>${escapeHtml(presentation.text)}</span><svg class="progress-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
+}
+
 function noteCell(task) {
   return task.note
     ? `<span class="task-note" title="${escapeHtml(task.note)}">${escapeHtml(task.note)}</span>`
     : '<span class="task-note is-empty">—</span>'
 }
 
-function agentChip(task) {
-  const color = AGENT_COLORS[hashString(task.agent) % AGENT_COLORS.length]
-  return `<span class="agent-chip" title="执行 Agent：${escapeHtml(task.agent)}"><span class="agent-dot" style="background:${color}"></span>${escapeHtml(task.agent)}</span>`
+function activeAgentCell(task) {
+  const activeCount = Number.isInteger(task.active_agent_count) ? task.active_agent_count : 0
+  const color = activeCount > 0
+    ? AGENT_COLORS[hashString(task.agent) % AGENT_COLORS.length]
+    : 'var(--meta)'
+  const text = `${activeCount} ${activeCount === 1 ? 'agent' : 'agents'}`
+  return `<span class="execution-summary" title="最近 Agent：${escapeHtml(task.agent)}；当前 ${escapeHtml(text)}"><span class="agent-dot" style="background:${color}"></span>${escapeHtml(text)}</span>`
+}
+
+function executionCountCell(task) {
+  const executionCount = Number.isInteger(task.execution_count) ? task.execution_count : 0
+  const text = `${executionCount} ${executionCount === 1 ? 'execution' : 'executions'}`
+  return `<span class="execution-count" aria-label="${escapeHtml(task.text)}：${escapeHtml(text)}">${escapeHtml(text)}</span>`
 }
 
 function activityCell(task) {
@@ -204,6 +265,7 @@ function renderTabs() {
   tabs.innerHTML = TAB_DEFS.map(([key, label]) => (
     `<button class="tab ${activeFilter === key ? 'is-active' : ''}" type="button" role="tab" aria-selected="${activeFilter === key}" data-key="${key}">${label}<span class="tab-count">${tabCount(key, raw, index)}</span></button>`
   )).join('') +
+    `<button class="inbox-toggle${unassignedExecutionCount > 0 ? ' has-items' : ''}" type="button" data-execution-inbox-toggle aria-label="打开未绑定 Execution Inbox，${unassignedExecutionCount} 个待处理"><span>${inboxButtonLabel(unassignedExecutionCount)}</span></button>` +
     `<button class="timeline-tool timeline-panel-toggle ${showTimeline ? 'is-active' : ''}" type="button" aria-pressed="${showTimeline}" aria-label="${showTimeline ? '折叠 Timeline' : '展开 Timeline'}" title="${showTimeline ? '折叠 Timeline' : '展开 Timeline'}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 5v14" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>` +
     `<button class="timeline-tool timeline-label-toggle ${showTimelineLabels ? 'is-active' : ''}" type="button" aria-pressed="${showTimelineLabels}" aria-label="${showTimelineLabels ? '隐藏任务名称' : '显示任务名称'}" title="${showTimelineLabels ? '隐藏 Timeline 任务名称' : '显示 Timeline 任务名称'}" ${showTimeline ? '' : 'disabled'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M12 6v12M8.5 18h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>` +
     '<button class="timeline-tool locate-now" type="button" aria-label="定位到当前时间" title="定位到当前时间"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>'
@@ -212,6 +274,10 @@ function renderTabs() {
     renderTabs()
     gantt.refreshData()
   }))
+  tabs.querySelector('.inbox-toggle').addEventListener('click', (event) => {
+    detailsSheet?.close()
+    executionInbox?.open(event.currentTarget)
+  })
   tabs.querySelector('.timeline-panel-toggle').addEventListener('click', () => {
     const next = !showTimeline
     writeBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, next)
@@ -409,6 +475,7 @@ function ganttData({ openIds = new Set(), preserveOpen = false } = {}) {
       parent: task.parent_id || 0, open: preserveOpen ? openIds.has(task.id) : true,
       progress: progressOf(task, index), status: archived && !task.parent_id ? 'done' : task.status,
       archived, agent: task.agent, note: task.next_action || '', last_activity: task.last_activity || null,
+      active_agent_count: task.active_agent_count, execution_count: task.execution_count,
       session_id: task.session_id, workfolder: task.workfolder, worktree: task.worktree, branch: task.branch,
       updated_at: task.updated_at,
       type: hasChildren ? gantt.config.types.project : gantt.config.types.task, source: task,
@@ -506,13 +573,14 @@ function configureGantt() {
   ]
   gantt.config.columns = [
     { name: 'text', label: '任务', tree: true, width: 240, min_width: 180, template: taskLabel },
-    { name: 'status', label: '状态', width: 72, align: 'center', template: statusPill },
+    { name: 'status', label: '状态 / 进度', width: 142, align: 'center', template: progressCell },
     { name: 'session_id', label: 'Session ID', width: 276, min_width: 248, template: sessionIdCell },
     { name: 'workfolder', label: '工作目录', width: 180, min_width: 140, template: pathCell('workfolder') },
     { name: 'worktree', label: 'Worktree', width: 180, min_width: 140, template: pathCell('worktree') },
     { name: 'branch', label: 'Branch', width: 160, min_width: 120, template: pathCell('branch') },
     { name: 'note', label: '说明', width: 160, min_width: 120, template: noteCell },
-    { name: 'agent', label: 'Agent', width: 78, align: 'center', template: agentChip },
+    { name: 'agent', label: 'Active Agents', width: 92, align: 'center', template: activeAgentCell },
+    { name: 'executions', label: 'Executions', width: 92, align: 'center', template: executionCountCell },
     { name: 'activity', label: '活动', width: 56, align: 'right', template: activityCell },
   ]
   effectiveGridWidth = resolveEffectiveGridWidth()
@@ -719,6 +787,9 @@ function renderSnapshot(snapshot, { initial = false } = {}) {
   closeStatusMenu({ restoreFocus: false })
   const state = captureState()
   raw = snapshot.tasks
+  unassignedExecutionCount = Number.isInteger(snapshot.unassigned_execution_count)
+    ? snapshot.unassigned_execution_count
+    : 0
   homeDirectory = typeof snapshot.home_directory === 'string' ? snapshot.home_directory : ''
   index = createTaskIndex(raw)
   renderTabs()
@@ -737,15 +808,12 @@ function renderSnapshot(snapshot, { initial = false } = {}) {
   if (!initial) restoreViewState(state)
   refreshMarker()
   if (initial && showTimeline) gantt.showDate(new Date())
+  if (!initial && detailsSheet?.isOpen()) void detailsSheet.refresh()
+  if (!initial && executionInbox?.isOpen()) void executionInbox.refresh()
 }
 
 async function loadSnapshot() {
-  const response = await fetch('/api/v1/snapshot', {
-    headers: { Accept: 'application/json' },
-    cache: 'no-store',
-  })
-  if (!response.ok) throw new Error(`snapshot request failed with HTTP ${response.status}`)
-  return response.json()
+  return dashboardApi.snapshot()
 }
 
 if (!gantt) {
@@ -755,6 +823,8 @@ if (!gantt) {
   installSessionCopyInteractions()
   installStatusInteractions()
   installTimelineSplitterInteractions()
+  installTaskDetailsInteractions()
+  installExecutionInboxInteractions()
   let connectionState = 'connecting'
   coordinator = createSnapshotCoordinator({
     load: loadSnapshot,

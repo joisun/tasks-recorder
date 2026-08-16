@@ -3,11 +3,44 @@ import { z } from 'zod'
 
 import { TaskRecorderError } from './errors.mjs'
 
-export const SERVER_INSTRUCTIONS = `Operate this local Agent Task Control Plane. Record every concrete Agent work task regardless of duration, including short tasks completed in one turn; exclude only ordinary chat, non-work questions, and sessions without a work objective. Start with agent_tasks_context, preserve task identity across sessions and worktrees, and prefer updating a semantically matching task. Use only this server to change task state; never edit tasks.sqlite directly. SQLite is canonical and owned by the local taskd service; agent_tasks_render exists only for legacy Markdown projection compatibility.`
+export const SERVER_INSTRUCTIONS = `Operate this local Agent Task Control Plane. A Task is a delivery outcome, not a session, turn, or subagent execution. Record every concrete work objective regardless of duration; exclude ordinary chat and non-work questions. Start with agent_tasks_context, preserve Task identity across sessions and worktrees, and use agent_tasks_sync_tree for one root with at most one direct child level. Distinct goals handled in the same conversation remain distinct Tasks. Bind the current execution only to the Task actually being worked; never infer Task identity from timing or prompt similarity. Use only this server to change state; never edit tasks.sqlite directly. SQLite is canonical and owned by taskd; agent_tasks_render is compatibility-only.`
 
 const taskId = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-const taskStatus = z.enum(['planned', 'active', 'waiting', 'blocked', 'done'])
+const taskStatus = z.enum(['planned', 'active', 'waiting', 'blocked', 'done', 'canceled'])
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const revision = z.number().int().positive()
+const taskPatch = z.object({
+  parent_id: taskId.nullable().optional(),
+  project: z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
+  description: z.string().min(1).nullable().optional(),
+  status: taskStatus.optional(),
+  start_date: date.optional(),
+  due_date: date.nullable().optional(),
+  next_action: z.string().min(1).nullable().optional(),
+  agent_key: z.string().min(1).nullable().optional(),
+  sort_order: z.number().int().nonnegative().optional(),
+})
+const treeRoot = z.object({
+  id: taskId.optional(),
+  project: z.string().min(1).optional(),
+  title: z.string().min(1),
+  description: z.string().min(1).nullable().optional(),
+  status: taskStatus,
+  start_date: date.optional(),
+  due_date: date.nullable().optional(),
+  next_action: z.string().min(1).nullable().optional(),
+})
+const treeChild = z.object({
+  id: taskId.optional(),
+  title: z.string().min(1),
+  description: z.string().min(1).nullable().optional(),
+  status: taskStatus,
+  sort_order: z.number().int().nonnegative(),
+  agent_key: z.string().min(1).nullable().optional(),
+  due_date: date.nullable().optional(),
+  next_action: z.string().min(1).nullable().optional(),
+})
 const outputSchema = z.object({}).catchall(z.unknown())
 
 const readAnnotations = Object.freeze({
@@ -58,7 +91,7 @@ function handler(operation) {
 
 export function createTasksRecorderServer({ service }) {
   const server = new McpServer(
-    { name: 'tasks-recorder', version: '0.3.3' },
+    { name: 'tasks-recorder', version: '0.4.0' },
     { instructions: SERVER_INSTRUCTIONS },
   )
 
@@ -106,6 +139,9 @@ export function createTasksRecorderServer({ service }) {
       start_date: date.optional(),
       due_date: date.nullable().optional(),
       next_action: z.string().min(1).nullable().optional(),
+      description: z.string().min(1).nullable().optional(),
+      agent_key: z.string().min(1).nullable().optional(),
+      sort_order: z.number().int().nonnegative().optional(),
     },
     outputSchema,
     annotations: writeAnnotations,
@@ -122,6 +158,78 @@ export function createTasksRecorderServer({ service }) {
     outputSchema,
     annotations: writeAnnotations,
   }, handler((input) => service.complete(input)))
+
+  server.registerTool('agent_tasks_sync_tree', {
+    description: 'Atomically synchronize one root task and its direct children, then bind the current turn focus.',
+    inputSchema: {
+      session_id: z.string().min(1),
+      turn_id: z.string().min(1),
+      workfolder: z.string().min(1),
+      expected_revision: revision.nullable(),
+      root: treeRoot,
+      children: z.array(treeChild),
+      focus_task_id: taskId.nullable().optional(),
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.syncTree({ ...input, actor: 'agent' })))
+
+  server.registerTool('agent_tasks_update', {
+    description: 'Update Task metadata using optimistic revision concurrency.',
+    inputSchema: { id: taskId, expected_revision: revision, patch: taskPatch },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.updateTask({ ...input, actor: 'agent' })))
+
+  server.registerTool('agent_tasks_archive', {
+    description: 'Archive a done or canceled Task without deleting its history.',
+    inputSchema: { id: taskId, expected_revision: revision },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.archiveTask({ ...input, actor: 'agent' })))
+
+  server.registerTool('agent_tasks_restore', {
+    description: 'Restore an archived or soft-deleted Task.',
+    inputSchema: { id: taskId, expected_revision: revision },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.restoreTask({ ...input, actor: 'agent' })))
+
+  server.registerTool('agent_task_executions_list', {
+    description: 'List main and subagent execution intervals, including unassigned inbox items.',
+    inputSchema: {
+      task_id: taskId.optional(),
+      root_session_id: z.string().min(1).optional(),
+      session_id: z.string().min(1).optional(),
+      status: z.enum(['active', 'completed', 'interrupted', 'unknown']).optional(),
+      unassigned: z.boolean().optional(),
+    },
+    outputSchema,
+    annotations: readAnnotations,
+  }, handler(async (filters) => ({ executions: await service.listExecutions(filters) })))
+
+  server.registerTool('agent_task_execution_assign', {
+    description: 'Assign or unassign an execution using compare-and-set task identity.',
+    inputSchema: {
+      id: z.string().min(1),
+      task_id: taskId.nullable(),
+      expected_task_id: taskId.nullable(),
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.assignExecution({ ...input, actor: 'agent' })))
+
+  server.registerTool('agent_task_execution_classify', {
+    description: 'Classify an execution as unknown, work, or non-work using expected state.',
+    inputSchema: {
+      id: z.string().min(1),
+      classification: z.enum(['unknown', 'work', 'non_work']),
+      expected_classification: z.enum(['unknown', 'work', 'non_work']),
+      expected_task_id: taskId.nullable(),
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.classifyExecution({ ...input, actor: 'agent' })))
 
   server.registerTool('agent_tasks_render', {
     description: 'Compatibility tool: rebuild legacy Tasks.md and History.md projections from canonical SQLite.',

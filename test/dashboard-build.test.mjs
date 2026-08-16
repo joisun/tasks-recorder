@@ -18,6 +18,8 @@ test('standalone dashboard bundle uses REST + SSE and contains no embedded MCP A
   assert.match(html, /EventSource/)
   assert.match(html, /dashboard-grid-width/)
   assert.match(html, /timeline-splitter/)
+  assert.match(html, /execution-inbox/)
+  assert.match(html, /\/api\/v1\/executions\/tasks/)
   assert.doesNotMatch(html, /getLayoutView\?\.\(["']grid["']\)\?\.\$view/)
   assert.doesNotMatch(html, /DHTMLX Gantt Standard 9\.1 · GPL-2\.0 · SQLite 实时视图/)
   assert.doesNotMatch(html, /class="license-note"/)

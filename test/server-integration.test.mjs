@@ -36,8 +36,11 @@ test('stdio MCP is a thin client of taskd and exposes no embedded Dashboard reso
     assert.deepEqual(
       tools.tools.map(({ name }) => name).sort(),
       [
+        'agent_task_execution_assign', 'agent_task_execution_classify',
+        'agent_task_executions_list', 'agent_tasks_archive',
         'agent_tasks_check', 'agent_tasks_complete', 'agent_tasks_context', 'agent_tasks_list',
-        'agent_tasks_render', 'agent_tasks_show', 'agent_tasks_upsert',
+        'agent_tasks_render', 'agent_tasks_restore', 'agent_tasks_show',
+        'agent_tasks_sync_tree', 'agent_tasks_update', 'agent_tasks_upsert',
       ],
     )
 

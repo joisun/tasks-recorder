@@ -13,6 +13,7 @@ import {
   isArchivedGroup,
   isHistoricalRoot,
   labelPlacement,
+  progressPresentation,
   progressOf,
   readBooleanPreference,
   retainedGridScroll,
@@ -43,6 +44,49 @@ test('merges completed roots and fully completed groups into history', () => {
   assert.equal(tabCount('history', tasks, index), 2)
   assert.equal(tabCount('all', tasks, index), 1)
   assert.equal(tabCount('blocked', tasks, index), 1)
+})
+
+test('history follows explicit root lifecycle instead of inferred child completion', () => {
+  const lifecycleTasks = [
+    { id: 'active-root', parent_id: null, status: 'active', archived_at: null },
+    { id: 'done-child', parent_id: 'active-root', status: 'done', archived_at: null },
+    { id: 'canceled-root', parent_id: null, status: 'canceled', archived_at: null },
+    { id: 'archived-root', parent_id: null, status: 'done', archived_at: '2026-08-12T10:00:00.000Z' },
+  ]
+  const lifecycleIndex = createTaskIndex(lifecycleTasks)
+
+  assert.equal(isHistoricalRoot(lifecycleIndex.byId.get('active-root'), lifecycleIndex), false)
+  assert.equal(isHistoricalRoot(lifecycleIndex.byId.get('canceled-root'), lifecycleIndex), true)
+  assert.equal(isHistoricalRoot(lifecycleIndex.byId.get('archived-root'), lifecycleIndex), true)
+  assert.equal(tabCount('history', lifecycleTasks, lifecycleIndex), 2)
+  assert.equal(tabCount('all', lifecycleTasks, lifecycleIndex), 1)
+})
+
+test('presents root progress accessibly and avoids an empty ring for leaf tasks', () => {
+  const root = {
+    id: 'root',
+    parent_id: null,
+    title: '升级任务模型',
+    status: 'active',
+    progress: { remaining: 1, total: 4, completed: 3, ratio: 0.75 },
+  }
+  const leaf = {
+    id: 'leaf', parent_id: null, title: '独立任务', status: 'planned', progress: null,
+  }
+
+  assert.equal(progressOf(root, createTaskIndex([root])), 0.75)
+  assert.deepEqual(progressPresentation(root, '进行中'), {
+    ring: true,
+    ratio: 0.75,
+    text: '未完成 1 / 4',
+    ariaLabel: '升级任务模型：未完成 1 / 4，已完成 75%',
+  })
+  assert.deepEqual(progressPresentation(leaf, '待安排'), {
+    ring: false,
+    ratio: null,
+    text: '待安排',
+    ariaLabel: '独立任务：待安排',
+  })
 })
 
 test('computes runtime end, project progress, and relative activity', () => {

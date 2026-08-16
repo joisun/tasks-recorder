@@ -90,7 +90,7 @@ export function isArchivedGroup(task, index) {
 
 export function isHistoricalRoot(task, index) {
   return task.parent_id === null
-    && (task.status === 'done' || isArchivedGroup(task, index))
+    && (task.status === 'done' || task.status === 'canceled' || Boolean(task.archived_at))
 }
 
 export function tabCount(key, tasks, index = createTaskIndex(tasks)) {
@@ -120,11 +120,39 @@ export function timelineBounds(tasks, now = new Date()) {
 }
 
 export function progressOf(task, index) {
+  if (task?.progress && Number.isFinite(task.progress.ratio)) {
+    return Math.min(1, Math.max(0, task.progress.ratio))
+  }
   const children = index.childrenByParent.get(task.id) ?? []
   if (children.length > 0) {
-    return Math.min(1, Math.max(0, children.filter(({ status }) => status === 'done').length / children.length))
+    const included = children.filter(({ status, deleted_at: deletedAt }) => (
+      status !== 'canceled' && !deletedAt
+    ))
+    if (included.length === 0) return 0
+    return Math.min(1, Math.max(0, included.filter(({ status }) => status === 'done').length / included.length))
   }
-  return ({ done: 1, planned: 0, blocked: 0.18, waiting: 0.28, active: 0.55 })[task.status] ?? 0
+  return ({ done: 1, canceled: 1, planned: 0, blocked: 0.18, waiting: 0.28, active: 0.55 })[task.status] ?? 0
+}
+
+export function progressPresentation(task, statusLabel) {
+  const progress = task?.progress
+  if (!progress || !Number.isInteger(progress.total) || progress.total < 1) {
+    return {
+      ring: false,
+      ratio: null,
+      text: statusLabel,
+      ariaLabel: `${task.title}：${statusLabel}`,
+    }
+  }
+  const ratio = Math.min(1, Math.max(0, Number(progress.ratio) || 0))
+  const percentage = Math.round(ratio * 100)
+  const text = `未完成 ${progress.remaining} / ${progress.total}`
+  return {
+    ring: true,
+    ratio,
+    text,
+    ariaLabel: `${task.title}：${text}，已完成 ${percentage}%`,
+  }
 }
 
 export function relativeActivity(task, now = new Date()) {

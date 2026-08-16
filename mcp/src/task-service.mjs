@@ -105,6 +105,119 @@ export function createTaskService({
     }
   }
 
+  async function mutateTask(operation, input) {
+    const result = store[operation](input)
+    if (!result.changed) {
+      return { ok: true, persisted: false, ...result }
+    }
+    const change = onChange({
+      type: 'tasks.changed',
+      operation,
+      task_id: result.task.id,
+      affected_parent_id: result.affected_parent?.id ?? null,
+    })
+    return {
+      ok: true,
+      persisted: true,
+      ...result,
+      ...(change === undefined ? {} : { change }),
+    }
+  }
+
+  async function syncTree(input) {
+    const enriched = await enrichContext(input)
+    const result = store.syncTree(enriched)
+    if (!result.changed) return { ok: true, persisted: false, ...result }
+    const change = onChange({
+      type: 'tasks.changed',
+      operation: 'syncTree',
+      task_id: result.root.id,
+      focus_task_id: result.focused_task?.id ?? null,
+    })
+    return {
+      ok: true,
+      persisted: true,
+      ...result,
+      ...(change === undefined ? {} : { change }),
+    }
+  }
+
+  async function lifecycle(operation, input, { enrichGit = false } = {}) {
+    const payload = enrichGit ? await enrichContext(input) : input
+    const result = store[operation](payload)
+    if (!result.changed) return { ok: true, persisted: false, ...result }
+    const change = onChange({
+      type: 'executions.changed',
+      operation,
+      execution_id: result.execution?.id ?? null,
+      root_session_id: result.execution?.root_session_id
+        ?? result.executions?.[0]?.root_session_id
+        ?? input.root_session_id
+        ?? null,
+    })
+    return {
+      ok: true,
+      persisted: true,
+      ...result,
+      ...(change === undefined ? {} : { change }),
+    }
+  }
+
+  async function mutateExecution(operation, input) {
+    const result = store[operation](input)
+    if (!result.changed) return { ok: true, persisted: false, ...result }
+    const change = onChange({
+      type: 'executions.changed',
+      operation,
+      execution_id: result.execution.id,
+      task_id: result.execution.task_id,
+    })
+    return {
+      ok: true,
+      persisted: true,
+      ...result,
+      ...(change === undefined ? {} : { change }),
+    }
+  }
+
+  async function mutateExecutionBatch(input) {
+    const result = store.updateExecutionAssignments(input)
+    if (!result.changed) return { ok: true, persisted: false, ...result }
+    const change = onChange({
+      type: 'executions.changed',
+      operation: 'updateExecutionAssignments',
+      execution_ids: result.executions.map(({ id }) => id),
+    })
+    return {
+      ok: true,
+      persisted: true,
+      ...result,
+      ...(change === undefined ? {} : { change }),
+    }
+  }
+
+  async function importExecutions(input) {
+    const warnings = Array.isArray(input?.warnings) ? input.warnings : []
+    const result = store.importExecutions(input)
+    if (!result.changed) {
+      return { ok: true, persisted: false, ...result, warnings }
+    }
+    const change = onChange({
+      type: 'executions.changed',
+      operation: 'importExecutions',
+      root_session_id: result.session_id,
+      created: result.created,
+      updated: result.updated,
+    })
+    return {
+      ok: true,
+      persisted: true,
+      ...result,
+      warnings,
+      ...(change === undefined ? {} : { change }),
+    }
+  }
+
   async function projectionStatus() {
     const tasksPath = join(outputDir, 'Tasks.md')
     const historyPath = join(outputDir, 'History.md')
@@ -160,6 +273,24 @@ export function createTaskService({
     show: (id) => store.show(id),
     upsert: (input) => write('upsert', input),
     complete: (input) => write('complete', input),
+    syncTree,
+    updateTask: (input) => mutateTask('updateTask', input),
+    archiveTask: (input) => mutateTask('archiveTask', input),
+    deleteTask: (input) => mutateTask('deleteTask', input),
+    restoreTask: (input) => mutateTask('restoreTask', input),
+    taskEvents: (filters) => store.taskEvents(filters),
+    sessionStart: (input) => lifecycle('sessionStart', input),
+    turnStart: (input) => lifecycle('turnStart', input, { enrichGit: true }),
+    toolUse: (input) => lifecycle('toolUse', input),
+    subagentStart: (input) => lifecycle('subagentStart', input, { enrichGit: true }),
+    subagentStop: (input) => lifecycle('subagentStop', input),
+    sessionEnd: (input) => lifecycle('sessionEnd', input),
+    sessionContext: (id) => store.sessionContext(id),
+    listExecutions: (filters) => store.listExecutions(filters),
+    assignExecution: (input) => mutateExecution('assignExecution', input),
+    classifyExecution: (input) => mutateExecution('classifyExecution', input),
+    updateExecutionAssignments: mutateExecutionBatch,
+    importExecutions,
     updateStatus,
     render,
     dashboardSnapshot,

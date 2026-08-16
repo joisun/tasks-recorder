@@ -50,8 +50,12 @@ export async function packageRelease({
       'mcp/src/errors.mjs',
       'mcp/src/git-context.mjs',
       'mcp/src/renderer.mjs',
+      'mcp/src/task-execution-store.mjs',
+      'mcp/src/task-client.mjs',
       'mcp/src/task-service.mjs',
+      'mcp/src/task-schema.mjs',
       'mcp/src/task-store.mjs',
+      'mcp/src/task-tree.mjs',
       'ui/dist',
       'ui/THIRD_PARTY_NOTICES.md',
     ])

@@ -157,13 +157,14 @@ test('status mutation blocks incomplete parent and reopens a done parent with it
   let current = new Date('2026-08-12T08:00:00.000Z')
   const fixture = await temporaryStore({ clock: () => current })
   try {
-    const parent = fixture.store.upsert(taskInput({ id: 'parent', title: 'Parent' })).task
+    fixture.store.upsert(taskInput({ id: 'parent', title: 'Parent' }))
     const child = fixture.store.upsert(taskInput({
       id: 'child',
       parent_id: 'parent',
       title: 'Child',
       status: 'active',
     })).task
+    const parent = fixture.store.show('parent').task
 
     assert.throws(
       () => fixture.store.updateStatus({
@@ -181,10 +182,11 @@ test('status mutation blocks incomplete parent and reopens a done parent with it
       status: 'done',
       expected_updated_at: child.updated_at,
     }).task
+    const parentReady = fixture.store.show('parent').task
     const parentDone = fixture.store.updateStatus({
       id: 'parent',
       status: 'done',
-      expected_updated_at: parent.updated_at,
+      expected_updated_at: parentReady.updated_at,
     }).task
 
     current = new Date('2026-08-12T08:20:00.000Z')

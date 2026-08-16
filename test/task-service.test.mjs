@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { createTaskService } from '../mcp/src/task-service.mjs'
+import { taskInput, temporaryStore } from './helpers.mjs'
 
 test('dashboardSnapshot reads the authoritative store on every call without Git or rendering', async () => {
   let snapshotCalls = 0
@@ -144,4 +145,98 @@ test('status service publishes exactly once only for a committed change', async 
   assert.equal(noop.changed, false)
   assert.equal('change' in noop, false)
   assert.equal(notifications.length, 1)
+})
+
+test('revisioned task mutations publish once while no-op and activity reads stay silent', async () => {
+  const fixture = await temporaryStore()
+  const notifications = []
+  try {
+    const root = fixture.store.upsert(taskInput({ id: 'root', title: 'Root' })).task
+    const service = createTaskService({
+      store: fixture.store,
+      gitResolver: async () => { throw new Error('must not resolve Git') },
+      renderer: async () => { throw new Error('must not render') },
+      outputDir: fixture.directory,
+      onChange: (event) => {
+        notifications.push(event)
+        return { server_instance_id: 'server-a', revision: notifications.length }
+      },
+    })
+    assert.equal(typeof service.updateTask, 'function')
+
+    const updated = await service.updateTask({
+      id: 'root',
+      expected_revision: root.revision,
+      patch: { description: 'Outcome' },
+      actor: 'user',
+    })
+    assert.equal(updated.changed, true)
+    assert.equal(updated.change.revision, 1)
+
+    const replayed = await service.updateTask({
+      id: 'root',
+      expected_revision: updated.task.revision,
+      patch: { description: 'Outcome' },
+      actor: 'user',
+    })
+    assert.equal(replayed.changed, false)
+    assert.equal('change' in replayed, false)
+
+    const events = await service.taskEvents({ task_id: 'root' })
+    assert.deepEqual(events.map(({ event_type }) => event_type), ['created', 'description_changed'])
+    assert.equal(notifications.length, 1)
+  } finally {
+    await fixture.cleanup()
+  }
+})
+
+test('tree sync enriches Git context and publishes one change for the whole transaction', async () => {
+  const fixture = await temporaryStore({
+    clock: () => new Date('2026-08-14T01:00:00.000Z'),
+  })
+  const notifications = []
+  try {
+    fixture.store.turnStart({
+      external_key: 'codex:turn:session-1:turn-1:0',
+      root_session_id: 'session-1',
+      session_id: 'session-1',
+      turn_id: 'turn-1',
+      workfolder: '/workspace',
+    })
+    const service = createTaskService({
+      store: fixture.store,
+      gitResolver: async () => ({
+        gitRoot: '/workspace', worktree: '/workspace/.worktree/a', branch: 'feature/a',
+      }),
+      renderer: async () => ({}),
+      outputDir: fixture.directory,
+      onChange: (event) => {
+        notifications.push(event)
+        return { server_instance_id: 'server-a', revision: notifications.length }
+      },
+    })
+    assert.equal(typeof service.syncTree, 'function')
+    const input = {
+      session_id: 'session-1', turn_id: 'turn-1', workfolder: '/workspace',
+      expected_revision: null,
+      root: { id: 'root', title: 'Root', status: 'active' },
+      children: [],
+      focus_task_id: 'root',
+    }
+
+    const created = await service.syncTree(input)
+    assert.equal(created.changed, true)
+    assert.equal(created.change.revision, 1)
+    assert.equal(created.bound_execution.worktree, null)
+    assert.equal(fixture.store.show('root').sessions[0].worktree, '/workspace/.worktree/a')
+
+    const replayed = await service.syncTree({
+      ...input, expected_revision: created.root.revision,
+    })
+    assert.equal(replayed.changed, false)
+    assert.equal('change' in replayed, false)
+    assert.equal(notifications.length, 1)
+  } finally {
+    await fixture.cleanup()
+  }
 })

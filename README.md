@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.
 `curl | bash` 方便但会直接执行远端脚本。更审慎的方式是固定版本、先查看 installer，再执行；installer 会在解包前使用 Release 中的 `SHA256SUMS` 校验 runtime artifact：
 
 ```bash
-version=v0.3.3
+version=v0.4.0
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -49,7 +49,7 @@ codex plugin marketplace add joisun/tasks-recorder
 codex plugin add tasks-recorder@tasks-recorder
 ```
 
-安装或启用 plugin 不会自动信任 bundled hooks。首次使用时在 Codex 中运行 `/hooks`，确认 Tasks Recorder 的 `UserPromptSubmit`、`PostToolUse` 和 `Stop` 三个 hooks 都显示为 trusted，然后新开一个 conversation 使 MCP 与 hooks 全部生效。只信任前两个可见 hooks 中的一部分时，Dashboard 可能能显示任务，但 heartbeat 不会更新 `last_seen_at`。
+安装或启用 plugin 不会自动信任 bundled hooks。首次使用时在 Codex 中运行 `/hooks`，确认 Tasks Recorder 的 `SessionStart`、`UserPromptSubmit`、`PostToolUse`、`SubagentStart`、`SubagentStop`、`SessionEnd` 和 `Stop` hooks 都显示为 trusted，然后新开一个 conversation 使 MCP 与 hooks 全部生效。只信任其中一部分时，Task 仍可通过 MCP 写入，但 execution lifecycle 会出现缺口。
 
 ## Install the Claude Code adapter
 
@@ -80,12 +80,21 @@ Claude hooks + MCP ─┘                         │
 Browser Dashboard ◀──────────── SSE changed ─┘
 ```
 
-1. `UserPromptSubmit` hook 把 `session_id`、当前 working directory 与 host identity 注入 agent context，提示 agent 先用 `agent_tasks_context` 查找语义匹配的任务。
-2. Agent 通过 plugin 自带的 stdio MCP client 调用 `agent_tasks_upsert`、`agent_tasks_complete` 等 tools。MCP client 不读取数据库，只把请求发到 localhost `taskd`。
-3. `PostToolUse` hook 发送节流 heartbeat，更新当前 session 已绑定任务的 `last_seen_at`；它不会猜测或创建任务。
-4. `Stop` hook 在 conversation 结束前要求 agent 收口任务状态。若宿主被直接关闭、hook 没有触发，可以在 Dashboard 中手动修正 status。
-5. `taskd` 是唯一 SQLite owner。写事务 commit 后发布轻量 SSE `changed` event；Dashboard 再读取 authoritative snapshot，因此页面不需要定时 polling，也不会生成一个带静态数据的 `dashboard.html`。
-6. Dashboard 的 Tree/Grid 与 Timeline 读取同一份 snapshot。Grid 展示最近活动 session 的完整 Session ID、工作目录、Worktree 与 Branch，Session ID 可一键复制；Timeline 可折叠，Grid/Timeline 分隔线可拖动，状态修改使用 optimistic concurrency 防止覆盖较新的 agent 更新。
+Tasks Recorder 把两个容易混淆的对象分开：
+
+- **Task** 表示要交付的目标，ID 跨 session、turn、branch 和 worktree 保持稳定。一个 root Task 可有一层 direct child；同一 conversation 先做 A、再做 B 时，应记录两个独立 Task，而不是把整个 conversation 当成一个 Task。
+- **Execution** 表示某个 session、turn 或 subagent 的一次执行区间。一个 Task 可对应多个 executions，一个 execution 也可以先保持未绑定，等待用户或 Agent 归类。
+
+实时链路如下：
+
+1. `SessionStart` 注册或恢复 root session；`UserPromptSubmit` 为新的 main turn 创建幂等 execution，并把 `session_id`、`turn_id` 与 working directory 注入 Agent context。
+2. Agent 先调用 `agent_tasks_context`，再通过 `agent_tasks_sync_tree` 同步 root 与完整的一层 children，并用 `focus_task_id` 把当前 main execution 绑定到正在执行的 Task。旧的 `agent_tasks_upsert` / `agent_tasks_complete` contract 继续兼容。
+3. `PostToolUse` 更新 execution heartbeat；遇到 `update_plan` 时只记录结构化 plan observation，等待 Agent 明确同步 Task tree，不按 prompt 或文本相似度猜造 Task。
+4. `SubagentStart` / `SubagentStop` 记录 child execution。只有 `agent_key` 在当前 root tree 中唯一匹配时才自动绑定；否则进入 Dashboard 的未绑定 inbox。subagent 结束不等于 child Task 自动完成。
+5. `SessionEnd` 关闭仍 active 的 execution；`Stop` 仅在存在待同步 plan、未绑定 work execution 或需收口的 Task 时要求 Agent 处理。宿主被直接关闭造成的状态缺口可在 Dashboard 中修正。
+6. `taskd` 是唯一 SQLite owner。写事务 commit 后发布轻量 SSE `changed` event；Dashboard 再读取 authoritative snapshot，因此页面不需要定时 polling，也不会生成一个带静态数据的 `dashboard.html`。
+7. Dashboard 的 Tree/Grid 与 Timeline 读取同一份 snapshot。Grid 展示 progress、active agents、execution count、完整 Session ID、工作目录、Worktree 与 Branch；Session ID 可复制，root 可折叠，Grid/Timeline 分隔线可拖动。
+8. 选中 Task 可打开 details Sheet，编辑 Summary、查看 Executions 与 Activity，并执行 archive、soft delete、restore 等操作。所有编辑使用 revision/compare-and-set，避免覆盖较新的 Agent 或浏览器更新。工具栏的未绑定 inbox 支持筛选、批量分配 Task 或标记 `non_work`。
 
 这是一种本机 C/S 架构：plugin adapter 是 client，`taskd` 是 server，Dashboard 是另一个 browser client。adapter 没有 service 时会报告 `SERVICE_UNAVAILABLE`；service 没有 adapter 时仍可以运行并查看已有数据。
 
@@ -96,7 +105,7 @@ Browser Dashboard ◀──────────── SSE changed ─┘
 ├── current -> releases/<version>
 └── releases/<version>/                 # immutable program files
 
-~/.local/bin/tasks-recorder             # service management command
+~/.local/bin/tasks-recorder             # service management and import CLI
 
 ~/.config/tasks-recorder/
 ├── config.json                         # user configuration
@@ -121,6 +130,32 @@ Canonical database 的完整路径是 `~/.config/tasks-recorder/tasks.sqlite`。
 ```
 
 `output_dir` 只用于兼容旧版 `Tasks.md` / `History.md` projection；Dashboard 不依赖这些 Markdown files。
+
+数据库使用 schema v2。首次由新版 `taskd` 打开 schema v1 数据库时，会在单事务中保留原有 `tasks` / `task_sessions` 并增加 Task tree、execution、event 和 plan observation 表；失败会 rollback。旧版 runtime 无法打开已经迁移到 v2 的数据库，如需可回退能力，应在首次启动新版 service 前停止 `taskd` 并备份 `tasks.sqlite`，回退时同时恢复该备份。
+
+## Import historical Codex sessions
+
+历史记录不会在后台自动扫描或导入。先对一个精确 root Session ID 做 dry-run：
+
+```bash
+tasks-recorder import codex --session <session-id> --dry-run
+```
+
+CLI 会在 `~/.codex/sessions` 中用 exact ID 解析 root，读取各 transcript 的 bounded `session_meta` 以发现 direct child，然后只从该 root 与 direct child transcripts 投影 lifecycle metadata。输出包括 root turns、subagent executions、`would_create` / `would_update` / `skipped`、未绑定数量与 warnings；dry-run 对 SQLite 零写入。
+
+确认预览后，去掉 `--dry-run` 才会 apply：
+
+```bash
+tasks-recorder import codex --session <session-id>
+```
+
+Apply 通过 localhost API 由 `taskd` 在一个事务中写入，并使用 immutable host IDs 生成的 external keys 保证重复执行幂等。Importer 不修改 Task title/status，也不会按时间范围把 execution 强制分给 Task；只有 existing session binding 能唯一证明归属时才绑定，其余进入未绑定 inbox。
+
+若使用非默认 Codex home，可显式传入：
+
+```bash
+tasks-recorder import codex --session <session-id> --dry-run --codex-home /path/to/.codex
+```
 
 ## Update and uninstall
 
@@ -166,6 +201,9 @@ curl -fsS http://127.0.0.1:43127/health/ready
 - `SERVICE_UNAVAILABLE`：先确认 service 已安装且 `health/ready` 返回成功。
 - Dashboard 无法打开：检查 `server_port` 是否被占用，以及 stderr log。
 - Dashboard 正常但没有自动记录：确认 adapter 已启用、重启宿主，并完成 hook trust/MCP approval。
+- 历史 import 返回 `CODEX_SESSION_NOT_FOUND`：确认使用完整、精确的 root Session ID；非默认 Codex 数据目录需要传 `--codex-home`。
+- 历史 import 后 execution 仍未绑定：这是无法唯一证明 Task 归属时的预期行为，请在 Dashboard 未绑定 inbox 中分配或标记 `non_work`。
+- 历史 import route 不存在：service runtime 版本早于 importer，请先升级 service；只升级 adapter 不会更新 `taskd`。
 - Codex 显示 `Stop hook (blocked)`：这通常表示 hook 已成功要求 agent 收口状态，不代表 hook 自身崩溃；若随后提示 `agent_tasks_context` unavailable，运行 `codex mcp get tasks-recorder`，正常配置应显示 `args: dist/mcp-server.mjs` 和 `cwd: .`。若仍显示 `${PLUGIN_ROOT}`，请升级或重新安装 Codex adapter。
 - 更新 plugin 后旧 conversation 没变化：新开 conversation，避免复用已经建立的 MCP process。
 - `~/.local/bin/tasks-recorder: command not found`：把 `~/.local/bin` 加入 shell `PATH`，或直接在浏览器访问 Dashboard。
@@ -204,6 +242,7 @@ npm run package:release
 - 设计信任同一 OS user 下运行的本机 process，因此不使用 auth token，也不隔离同一用户身份的其他程序。
 - 不要把 service 反向代理到 LAN/公网。
 - Hooks fail open：Tasks Recorder 故障不会阻断正常 tool call，但可能造成一次 activity/status 未记录。
+- SQLite 只保存 Task metadata、plan observation 和 lifecycle fields。Importer 不写入 prompt、reasoning、assistant message、tool output、token 或 transcript 正文；只保留本机 `transcript_path` 便于审计定位。
 - Installer 在解包或执行 runtime 前校验 SHA-256，并拒绝 archive path traversal。
 
 ## License

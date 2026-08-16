@@ -3,6 +3,8 @@ import { createServer } from 'node:http'
 import { TaskRecorderError } from '../../mcp/src/errors.mjs'
 import { readJson, sendJson } from './http-utils.mjs'
 
+const IMPORT_BODY_LIMIT = 8 * 1024 * 1024
+
 function httpError(code, message, statusCode) {
   const error = new Error(message)
   error.code = code
@@ -12,8 +14,19 @@ function httpError(code, message, statusCode) {
 
 function statusFor(error) {
   if (error.statusCode) return error.statusCode
-  if (error.code === 'TASK_NOT_FOUND' || error.code === 'PARENT_NOT_FOUND') return 404
-  if (error.code === 'TASK_VERSION_CONFLICT' || error.code === 'CHILD_TASKS_INCOMPLETE') return 409
+  if (
+    error.code === 'TASK_NOT_FOUND'
+    || error.code === 'PARENT_NOT_FOUND'
+    || error.code === 'EXECUTION_NOT_FOUND'
+  ) return 404
+  if (
+    error.code === 'TASK_VERSION_CONFLICT'
+    || error.code === 'TASK_TREE_VERSION_CONFLICT'
+    || error.code === 'CHILD_TASKS_INCOMPLETE'
+    || error.code === 'EXECUTION_ASSIGNMENT_CONFLICT'
+    || error.code === 'EXECUTION_CLASSIFICATION_CONFLICT'
+    || error.code === 'EXECUTION_BATCH_CONFLICT'
+  ) return 409
   if (error instanceof TaskRecorderError) return 400
   return 500
 }
@@ -101,6 +114,45 @@ export function createApiServer({
         sendJson(response, 200, await service.context(await readJson(request)))
         return
       }
+      if (request.method === 'POST' && pathname === '/api/v1/tasks/sync-tree') {
+        requireJson(request)
+        sendJson(response, 200, await service.syncTree(await readJson(request)))
+        return
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/import/executions') {
+        requireJson(request)
+        sendJson(response, 200, await service.importExecutions(await readJson(request, {
+          limit: IMPORT_BODY_LIMIT,
+        })))
+        return
+      }
+      const lifecycleOperations = {
+        '/api/v1/lifecycle/session-start': 'sessionStart',
+        '/api/v1/lifecycle/turn-start': 'turnStart',
+        '/api/v1/lifecycle/tool-use': 'toolUse',
+        '/api/v1/lifecycle/subagent-start': 'subagentStart',
+        '/api/v1/lifecycle/subagent-stop': 'subagentStop',
+        '/api/v1/lifecycle/session-end': 'sessionEnd',
+      }
+      if (request.method === 'POST' && lifecycleOperations[pathname]) {
+        requireJson(request)
+        sendJson(response, 200, await service[lifecycleOperations[pathname]](await readJson(request)))
+        return
+      }
+      const sessionContext = pathname.match(/^\/api\/v1\/sessions\/([^/]+)\/context$/)
+      if (request.method === 'GET' && sessionContext) {
+        sendJson(response, 200, await service.sessionContext(decodeURIComponent(sessionContext[1])))
+        return
+      }
+      if (request.method === 'GET' && pathname === '/api/v1/executions') {
+        const filters = Object.fromEntries(
+          ['task_id', 'root_session_id', 'session_id', 'status', 'unassigned']
+            .map((key) => [key, url.searchParams.get(key)])
+            .filter(([, value]) => value !== null),
+        )
+        sendJson(response, 200, { executions: await service.listExecutions(filters) })
+        return
+      }
       if (request.method === 'GET' && pathname === '/api/v1/tasks') {
         const filters = Object.fromEntries(
           ['project', 'status', 'workfolder', 'branch']
@@ -133,6 +185,52 @@ export function createApiServer({
         sendJson(response, 200, await service.complete({ ...input, id: decodeURIComponent(complete[1]) }))
         return
       }
+      const taskEvents = pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/events$/)
+      if (request.method === 'GET' && taskEvents) {
+        sendJson(response, 200, {
+          events: await service.taskEvents({ task_id: decodeURIComponent(taskEvents[1]) }),
+        })
+        return
+      }
+      const taskLifecycle = pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/(archive|delete|restore)$/)
+      if (request.method === 'POST' && taskLifecycle) {
+        requireJson(request)
+        const operation = {
+          archive: 'archiveTask',
+          delete: 'deleteTask',
+          restore: 'restoreTask',
+        }[taskLifecycle[2]]
+        sendJson(response, 200, await service[operation]({
+          ...await readJson(request),
+          id: decodeURIComponent(taskLifecycle[1]),
+        }))
+        return
+      }
+      const executionTask = pathname.match(/^\/api\/v1\/executions\/([^/]+)\/task$/)
+      if (request.method === 'PATCH' && pathname === '/api/v1/executions/tasks') {
+        requireJson(request)
+        sendJson(response, 200, await service.updateExecutionAssignments(await readJson(request)))
+        return
+      }
+      if (request.method === 'PATCH' && executionTask) {
+        requireJson(request)
+        sendJson(response, 200, await service.assignExecution({
+          ...await readJson(request),
+          id: decodeURIComponent(executionTask[1]),
+        }))
+        return
+      }
+      const executionClassification = pathname.match(
+        /^\/api\/v1\/executions\/([^/]+)\/classification$/,
+      )
+      if (request.method === 'PATCH' && executionClassification) {
+        requireJson(request)
+        sendJson(response, 200, await service.classifyExecution({
+          ...await readJson(request),
+          id: decodeURIComponent(executionClassification[1]),
+        }))
+        return
+      }
       const taskStatus = pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/status$/)
       if (request.method === 'PATCH' && taskStatus) {
         requireJson(request)
@@ -146,6 +244,14 @@ export function createApiServer({
       const task = pathname.match(/^\/api\/v1\/tasks\/([^/]+)$/)
       if (request.method === 'GET' && task) {
         sendJson(response, 200, await service.show(decodeURIComponent(task[1])))
+        return
+      }
+      if (request.method === 'PATCH' && task) {
+        requireJson(request)
+        sendJson(response, 200, await service.updateTask({
+          ...await readJson(request),
+          id: decodeURIComponent(task[1]),
+        }))
         return
       }
       if (request.method === 'PUT' && task) {

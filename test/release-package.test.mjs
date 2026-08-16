@@ -32,6 +32,11 @@ test('release packaging creates allowlisted service and independent adapter arch
       '/package-lock.json',
       '/server/taskd.mjs',
       '/server/control.mjs',
+      '/server/cli.mjs',
+      '/server/src/codex/importer.mjs',
+      '/server/src/codex/transcript-reader.mjs',
+      '/mcp/src/task-client.mjs',
+      '/mcp/src/task-execution-store.mjs',
       '/mcp/src/task-store.mjs',
       '/ui/dist/index.html',
       '/ui/THIRD_PARTY_NOTICES.md',
@@ -44,7 +49,6 @@ test('release packaging creates allowlisted service and independent adapter arch
     assert.ok(runtimeEntries.every((entry) => !entry.includes('/node_modules/')))
     assert.ok(runtimeEntries.every((entry) => !entry.includes('/.git/')))
     assert.ok(runtimeEntries.every((entry) => !entry.endsWith('/mcp/server.mjs')))
-    assert.ok(runtimeEntries.every((entry) => !entry.endsWith('/mcp/src/task-client.mjs')))
     assert.ok(runtimeEntries.every((entry) => !entry.endsWith('/mcp/src/tools.mjs')))
 
     for (const host of ['codex', 'claude']) {
@@ -74,7 +78,7 @@ test('runtime package keeps production dependencies and excludes build-only depe
       '-C', extractDirectory,
     ])
     const packageSource = await readFile(
-      join(extractDirectory, 'tasks-recorder-0.3.3', 'package.json'),
+      join(extractDirectory, 'tasks-recorder-0.4.0', 'package.json'),
       'utf8',
     )
     const manifest = JSON.parse(packageSource)

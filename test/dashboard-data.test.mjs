@@ -5,7 +5,9 @@ import { createDashboardSnapshot } from '../mcp/src/dashboard-data.mjs'
 
 const baseTask = {
   id: 'task-a', parent_id: null, project: 'Project', title: 'Task A', status: 'active',
+  description: null, agent_key: null, sort_order: 0, revision: 1,
   start_date: '2026-08-10', due_date: null, next_action: 'Continue', completed_at: null,
+  archived_at: null, deleted_at: null,
   created_at: '2026-08-10T08:00:00.000Z', updated_at: '2026-08-10T08:00:00.000Z',
 }
 
@@ -19,7 +21,10 @@ test('dashboard snapshot uses newest session activity and agent', () => {
   }, { now: new Date('2026-08-12T09:47:00.000Z') })
 
   assert.deepEqual(result.tasks[0], {
-    id: 'task-a', parent_id: null, title: 'Task A', status: 'active', agent: 'Codex',
+    id: 'task-a', parent_id: null, title: 'Task A', description: null,
+    status: 'active', agent_key: null, sort_order: 0, revision: 1, archived_at: null,
+    progress: null, execution_count: 0, active_execution_count: 0, active_agent_count: 0,
+    agent: 'Codex',
     start: '2026-08-10T08:00:00.000Z', end: null,
     last_activity: '2026-08-12T09:30:00.000Z', next_action: 'Continue',
     session_id: 'new',
@@ -56,7 +61,10 @@ test('dashboard snapshot takes context from one newest valid session', () => {
 
   assert.equal(result.home_directory, '/Users/me')
   assert.deepEqual(result.tasks[0], {
-    id: 'task-a', parent_id: null, title: 'Task A', status: 'active', agent: 'Claude',
+    id: 'task-a', parent_id: null, title: 'Task A', description: null,
+    status: 'active', agent_key: null, sort_order: 0, revision: 1, archived_at: null,
+    progress: null, execution_count: 0, active_execution_count: 0, active_agent_count: 0,
+    agent: 'Claude',
     start: '2026-08-10T08:00:00.000Z', end: null,
     last_activity: '2026-08-12T09:30:00.000Z', next_action: 'Continue',
     session_id: 'new',
@@ -115,4 +123,84 @@ test('dashboard snapshot exposes completed and due-date end instants', () => {
 
   assert.equal(result.tasks[0].end, '2026-08-11T11:12:00.000Z')
   assert.equal(result.tasks[1].end, '2026-08-14T23:59:59.999Z')
+})
+
+test('dashboard snapshot exposes v2 tree and execution aggregates without full histories', () => {
+  const result = createDashboardSnapshot({
+    tasks: [
+      {
+        ...baseTask,
+        id: 'root',
+        title: 'Ship task tree',
+        description: 'One delivery goal',
+        revision: 7,
+        agent_key: 'codex',
+        sort_order: 0,
+        archived_at: null,
+        deleted_at: null,
+      },
+      { ...baseTask, id: 'done-child', parent_id: 'root', status: 'done', revision: 2 },
+      { ...baseTask, id: 'active-child', parent_id: 'root', status: 'active', revision: 3 },
+      { ...baseTask, id: 'canceled-child', parent_id: 'root', status: 'canceled', revision: 4 },
+      {
+        ...baseTask,
+        id: 'deleted-child',
+        parent_id: 'root',
+        status: 'active',
+        revision: 5,
+        deleted_at: '2026-08-12T08:00:00.000Z',
+      },
+      {
+        ...baseTask,
+        id: 'archived-root',
+        status: 'done',
+        revision: 2,
+        archived_at: '2026-08-12T08:00:00.000Z',
+      },
+      {
+        ...baseTask,
+        id: 'deleted-root',
+        revision: 2,
+        deleted_at: '2026-08-12T08:00:00.000Z',
+      },
+    ],
+    sessions: [],
+    task_execution_aggregates: [{
+      task_id: 'root',
+      execution_count: 5,
+      active_execution_count: 2,
+      active_agent_count: 2,
+      recent_execution: {
+        session_id: 'session-new',
+        agent_type: 'Codex',
+        workfolder: '/Users/me/project',
+        worktree: '/Users/me/project/.worktree/feature-tree',
+        branch: 'feature/tree',
+        last_seen_at: '2026-08-12T09:45:00.000Z',
+      },
+    }],
+    unassigned_execution_count: 3,
+  }, {
+    now: new Date('2026-08-12T09:47:00.000Z'),
+    homeDirectory: '/Users/me',
+  })
+
+  assert.deepEqual(result.tasks.map(({ id }) => id), [
+    'root', 'done-child', 'active-child', 'canceled-child', 'archived-root',
+  ])
+  const root = result.tasks.find(({ id }) => id === 'root')
+  assert.deepEqual(root.progress, { remaining: 1, total: 2, completed: 1, ratio: 0.5 })
+  assert.equal(root.description, 'One delivery goal')
+  assert.equal(root.revision, 7)
+  assert.equal(root.agent_key, 'codex')
+  assert.equal(root.execution_count, 5)
+  assert.equal(root.active_execution_count, 2)
+  assert.equal(root.active_agent_count, 2)
+  assert.equal(root.session_id, 'session-new')
+  assert.equal(root.worktree, '/Users/me/project/.worktree/feature-tree')
+  assert.equal(result.tasks.find(({ id }) => id === 'active-child').progress, null)
+  assert.equal(result.tasks.find(({ id }) => id === 'archived-root').archived_at, '2026-08-12T08:00:00.000Z')
+  assert.equal(result.unassigned_execution_count, 3)
+  assert.equal('executions' in result, false)
+  assert.equal('task_events' in result, false)
 })

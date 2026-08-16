@@ -30,12 +30,45 @@ async function resolveServerBaseUrl(env = process.env) {
   return requireLocalOrigin(`http://${host}:${port}`)
 }
 
-export async function sendHeartbeat(input, env = process.env) {
-  const response = await fetch(`${await resolveServerBaseUrl(env)}/api/v1/heartbeat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(input),
+const LIFECYCLE_EVENTS = new Set([
+  'session-start',
+  'turn-start',
+  'tool-use',
+  'subagent-start',
+  'subagent-stop',
+  'session-end',
+])
+
+async function request(path, { method = 'GET', body } = {}, env = process.env) {
+  const response = await fetch(`${await resolveServerBaseUrl(env)}${path}`, {
+    method,
+    headers: {
+      Accept: 'application/json',
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(1_500),
   })
-  if (!response.ok) throw new Error(`tasks-recorder heartbeat failed with HTTP ${response.status}`)
+  const result = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(`tasks-recorder request failed with HTTP ${response.status}`)
+  }
+  if (result === null) throw new Error('tasks-recorder returned invalid JSON')
+  return result
+}
+
+export async function sendLifecycle(event, input, env = process.env) {
+  if (!LIFECYCLE_EVENTS.has(event)) throw new TypeError('tasks-recorder lifecycle event is invalid')
+  return request(`/api/v1/lifecycle/${event}`, { method: 'POST', body: input }, env)
+}
+
+export async function fetchSessionContext(sessionId, env = process.env) {
+  if (typeof sessionId !== 'string' || sessionId.trim() === '') {
+    throw new TypeError('sessionId must be a non-empty string')
+  }
+  return request(`/api/v1/sessions/${encodeURIComponent(sessionId.trim())}/context`, {}, env)
+}
+
+export async function sendHeartbeat(input, env = process.env) {
+  return request('/api/v1/heartbeat', { method: 'POST', body: input }, env)
 }

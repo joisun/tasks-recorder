@@ -179,7 +179,7 @@ runtime="$HOME/.local/share/tasks-recorder/current"
   printf 'Tasks Recorder is not installed.\n' >&2
   exit 1
 }
-TASKS_RECORDER_PREBUILT=1 exec node "$runtime/server/control.mjs" "${1:-status}"
+TASKS_RECORDER_PREBUILT=1 exec node "$runtime/server/cli.mjs" "$@"
 EOF
 chmod 755 "$wrapper_path"
 

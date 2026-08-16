@@ -50,6 +50,30 @@ function runScript(script, env = {}) {
   })
 }
 
+async function hookServer({ sessionContext = {} } = {}) {
+  const requests = []
+  const server = createServer(async (request, response) => {
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    requests.push({
+      method: request.method,
+      url: request.url,
+      body: chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null,
+    })
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify(request.method === 'GET' ? sessionContext : { changed: true }))
+  })
+  await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen))
+  const { port } = server.address()
+  return {
+    requests,
+    url: `http://127.0.0.1:${port}`,
+    close: () => new Promise((resolveClose, reject) => server.close((error) => (
+      error ? reject(error) : resolveClose()
+    ))),
+  }
+}
+
 function mcpExchange(script, homeDirectory) {
   return mcpProcessExchange({
     command: process.execPath,
@@ -154,6 +178,143 @@ test('each adapter hook emits host-specific task context', async () => {
   }
 })
 
+test('Codex adapter config registers the complete native lifecycle hook surface', async () => {
+  const config = await readJson('adapters/codex/tasks-recorder/hooks/hooks.json')
+  assert.deepEqual(Object.keys(config.hooks).sort(), [
+    'PostToolUse',
+    'SessionEnd',
+    'SessionStart',
+    'Stop',
+    'SubagentStart',
+    'SubagentStop',
+    'UserPromptSubmit',
+  ])
+  assert.match(config.hooks.PostToolUse[0].matcher, /\.\*/)
+  assert.equal('matcher' in config.hooks.Stop[0], false)
+  assert.equal(config.hooks.SessionEnd[0].hooks[0].timeout <= 3, true)
+})
+
+test('Codex native hooks send stable lifecycle records and state-aware sync feedback', async () => {
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-codex-hooks-'))
+  const sessionsRoot = join(homeDirectory, '.codex', 'sessions')
+  await mkdir(sessionsRoot, { recursive: true })
+  const parentTranscript = join(sessionsRoot, 'root.jsonl')
+  const childTranscript = join(sessionsRoot, 'child.jsonl')
+  await writeFile(parentTranscript, JSON.stringify({
+    type: 'session_meta', payload: { id: 'root-session', cwd: '/workspace' },
+  }))
+  await writeFile(childTranscript, JSON.stringify({
+    type: 'session_meta',
+    payload: {
+      id: 'child-session', cwd: '/workspace',
+      source: { subagent: { thread_spawn: {
+        parent_thread_id: 'root-session', agent_path: '/root/researcher', agent_type: 'explorer',
+      } } },
+    },
+  }))
+  const server = await hookServer({
+    sessionContext: {
+      root_session_id: 'root-session',
+      pending_plan_observation_count: 1,
+      unassigned_execution_count: 1,
+      active_executions: [{ id: 'execution-1', task_id: 'task-a', classification: 'work' }],
+    },
+  })
+  const env = { HOME: homeDirectory, AGENT_TASKS_SERVER_URL: server.url }
+  try {
+    const cases = [
+      ['session-start.mjs', {
+        hook_event_name: 'SessionStart', session_id: 'root-session', cwd: '/workspace',
+        transcript_path: parentTranscript, source: 'startup', model: 'gpt-5.6',
+      }],
+      ['user-prompt-task-sync.mjs', {
+        hook_event_name: 'UserPromptSubmit', session_id: 'root-session', turn_id: 'turn-1',
+        cwd: '/workspace', transcript_path: parentTranscript, prompt: 'Implement the task tree',
+      }],
+      ['task-heartbeat.mjs', {
+        hook_event_name: 'PostToolUse', session_id: 'root-session', turn_id: 'turn-1',
+        cwd: '/workspace', transcript_path: parentTranscript, tool_name: 'update_plan',
+        tool_use_id: 'tool-use-1',
+        tool_input: { explanation: 'Refine', plan: [{ step: 'Build', status: 'in_progress' }] },
+        tool_response: { private: 'must-not-be-forwarded' },
+      }],
+      ['subagent-start.mjs', {
+        hook_event_name: 'SubagentStart', session_id: 'root-session', turn_id: 'turn-1',
+        cwd: '/workspace', transcript_path: parentTranscript,
+        agent_id: 'child-session', agent_type: 'explorer',
+      }],
+      ['subagent-stop.mjs', {
+        hook_event_name: 'SubagentStop', session_id: 'root-session', turn_id: 'turn-1',
+        cwd: '/workspace', transcript_path: parentTranscript, agent_transcript_path: childTranscript,
+        agent_id: 'child-session', agent_type: 'explorer', stop_hook_active: false,
+      }],
+      ['session-end.mjs', {
+        hook_event_name: 'SessionEnd', session_id: 'root-session', cwd: '/workspace',
+        transcript_path: parentTranscript, reason: 'other',
+      }],
+      ['stop-task-check.mjs', {
+        hook_event_name: 'Stop', session_id: 'root-session', turn_id: 'turn-1',
+        cwd: '/workspace', transcript_path: parentTranscript, stop_hook_active: false,
+      }],
+    ]
+    const results = []
+    for (const [name, input] of cases) {
+      const result = await runHook(`adapters/codex/tasks-recorder/hooks/${name}`, input, env)
+      assert.equal(result.code, 0, `${name}: ${result.stderr}`)
+      results.push(result.stdout === '' ? null : JSON.parse(result.stdout))
+    }
+
+    assert.match(results[1].hookSpecificOutput.additionalContext, /agent_tasks_sync_tree/)
+    assert.match(results[2].hookSpecificOutput.additionalContext, /update_plan/)
+    assert.deepEqual(results[4], {})
+    assert.equal(results[6].decision, 'block')
+    assert.match(results[6].reason, /未绑定|unassigned/i)
+
+    assert.deepEqual(server.requests.map(({ method, url }) => [method, url]), [
+      ['POST', '/api/v1/lifecycle/session-start'],
+      ['POST', '/api/v1/lifecycle/turn-start'],
+      ['POST', '/api/v1/lifecycle/tool-use'],
+      ['POST', '/api/v1/lifecycle/subagent-start'],
+      ['POST', '/api/v1/lifecycle/subagent-stop'],
+      ['POST', '/api/v1/lifecycle/session-end'],
+      ['GET', '/api/v1/sessions/root-session/context'],
+    ])
+    assert.equal(server.requests[1].body.external_key, 'codex:turn:root-session:turn-1:0')
+    assert.equal(server.requests[2].body.external_key, 'codex:tool:root-session:turn-1:tool-use-1')
+    assert.deepEqual(server.requests[2].body.plan, {
+      explanation: 'Refine', plan: [{ step: 'Build', status: 'in_progress' }],
+    })
+    assert.equal(JSON.stringify(server.requests[2].body).includes('must-not-be-forwarded'), false)
+    assert.equal(server.requests[3].body.external_key, 'codex:subagent:root-session:child-session')
+    assert.equal(server.requests[3].body.session_id, 'child-session')
+    assert.equal(server.requests[4].body.agent_path, '/root/researcher')
+    assert.equal(server.requests[4].body.transcript_path.endsWith('/child.jsonl'), true)
+  } finally {
+    await server.close()
+    await rm(homeDirectory, { recursive: true, force: true })
+  }
+})
+
+test('Codex lifecycle hooks fail open and Stop does not loop', async () => {
+  const env = { AGENT_TASKS_SERVER_URL: 'http://127.0.0.1:9' }
+  for (const [name, input] of [
+    ['session-start.mjs', { hook_event_name: 'SessionStart', session_id: 's', cwd: '/w' }],
+    ['user-prompt-task-sync.mjs', { hook_event_name: 'UserPromptSubmit', session_id: 's', turn_id: 't', cwd: '/w' }],
+    ['task-heartbeat.mjs', { hook_event_name: 'PostToolUse', session_id: 's', turn_id: 't', cwd: '/w', tool_name: 'Bash', tool_use_id: 'u' }],
+    ['subagent-start.mjs', { hook_event_name: 'SubagentStart', session_id: 's', turn_id: 't', cwd: '/w', agent_id: 'a', agent_type: 'worker' }],
+    ['subagent-stop.mjs', { hook_event_name: 'SubagentStop', session_id: 's', turn_id: 't', cwd: '/w', agent_id: 'a', agent_type: 'worker' }],
+    ['session-end.mjs', { hook_event_name: 'SessionEnd', session_id: 's', cwd: '/w', reason: 'other' }],
+    ['stop-task-check.mjs', { hook_event_name: 'Stop', session_id: 's', turn_id: 't', cwd: '/w', stop_hook_active: false }],
+    ['stop-task-check.mjs', { hook_event_name: 'Stop', session_id: 's', turn_id: 't', cwd: '/w', stop_hook_active: true }],
+  ]) {
+    const result = await runHook(`adapters/codex/tasks-recorder/hooks/${name}`, input, env)
+    assert.equal(result.code, 0, name)
+    if (name === 'subagent-stop.mjs' || name === 'stop-task-check.mjs') {
+      assert.deepEqual(JSON.parse(result.stdout), {})
+    }
+  }
+})
+
 test('both bundled MCP clients initialize and advertise task tools without project node_modules', async () => {
   await buildAdapters({ projectRoot })
   const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-adapter-'))
@@ -170,8 +331,20 @@ test('both bundled MCP clients initialize and advertise task tools without proje
       const initialized = responses.find((entry) => entry.id === 1)
       const tools = responses.find((entry) => entry.id === 2)
       assert.equal(initialized.result.serverInfo.name, 'tasks-recorder')
-      assert.ok(tools.result.tools.some(({ name }) => name === 'agent_tasks_context'))
-      assert.ok(tools.result.tools.some(({ name }) => name === 'agent_tasks_complete'))
+      const names = new Set(tools.result.tools.map(({ name }) => name))
+      for (const name of [
+        'agent_tasks_context',
+        'agent_tasks_complete',
+        'agent_tasks_sync_tree',
+        'agent_tasks_update',
+        'agent_tasks_archive',
+        'agent_tasks_restore',
+        'agent_task_executions_list',
+        'agent_task_execution_assign',
+        'agent_task_execution_classify',
+      ]) {
+        assert.ok(names.has(name), `${host} adapter is missing ${name}`)
+      }
     }
   } finally {
     await rm(homeDirectory, { recursive: true, force: true })

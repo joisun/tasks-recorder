@@ -189,7 +189,7 @@ test('API routes cover context, list, show, complete, heartbeat, render, check, 
     const rendered = await fetch(`${current.url}/api/v1/render`, { method: 'POST' }).then((response) => response.json())
     assert.equal(rendered.projection_updated, true)
     const checked = await fetch(`${current.url}/api/v1/check`).then((response) => response.json())
-    assert.equal(checked.schemaVersion, 1)
+    assert.equal(checked.schemaVersion, 2)
   } finally {
     await current.cleanup()
   }
@@ -211,6 +211,79 @@ test('invalid writes return stable errors without publishing a revision', async 
     assert.equal(malformed.status, 400)
     assert.equal((await malformed.json()).error.code, 'JSON_INVALID')
     assert.equal(current.hub.current().revision, 0)
+  } finally {
+    await current.cleanup()
+  }
+})
+
+test('execution import previews without writes and publishes once after an atomic apply', async () => {
+  const current = await fixture()
+  const record = {
+    external_key: 'codex:turn:import-session:turn-1:0',
+    kind: 'main',
+    root_session_id: 'import-session',
+    session_id: 'import-session',
+    turn_id: 'turn-1',
+    agent_id: null,
+    agent_type: 'Codex',
+    agent_path: null,
+    parent_external_key: null,
+    transcript_path: '/sessions/import-session.jsonl',
+    task_id: null,
+    classification: 'unknown',
+    workfolder: '/workspace/import',
+    git_root: null,
+    worktree: '/workspace/import',
+    branch: 'main',
+    status: 'completed',
+    started_at: '2026-08-14T01:00:00.000Z',
+    last_seen_at: '2026-08-14T01:10:00.000Z',
+    ended_at: '2026-08-14T01:10:00.000Z',
+  }
+  const records = Array.from({ length: 278 }, (_, index) => ({
+    ...record,
+    external_key: `codex:turn:import-session:turn-${index}:0`,
+    turn_id: `turn-${index}`,
+  }))
+  try {
+    const previewResponse = await fetch(`${current.url}/api/v1/import/executions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'codex', dry_run: true, session_id: 'import-session',
+        root_turns: 278, subagent_executions: 0, records, warnings: [],
+      }),
+    })
+    const preview = await previewResponse.json()
+    assert.equal(previewResponse.status, 200)
+    assert.equal(preview.would_create, 278)
+    assert.equal(preview.persisted, false)
+    assert.equal(current.store.listExecutions().length, 0)
+    assert.equal(current.hub.current().revision, 0)
+
+    const applyResponse = await fetch(`${current.url}/api/v1/import/executions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'codex', dry_run: false, session_id: 'import-session',
+        root_turns: 278, subagent_executions: 0, records, warnings: [],
+      }),
+    })
+    const applied = await applyResponse.json()
+    assert.equal(applyResponse.status, 200)
+    assert.equal(applied.created, 278)
+    assert.equal(applied.persisted, true)
+    assert.equal(applied.change.revision, 1)
+    assert.equal(current.store.listExecutions().length, 278)
+
+    const replay = await fetch(`${current.url}/api/v1/import/executions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: 'codex', dry_run: false, session_id: 'import-session',
+        root_turns: 278, subagent_executions: 0, records, warnings: [],
+      }),
+    }).then((response) => response.json())
+    assert.equal(replay.skipped, 278)
+    assert.equal(replay.persisted, false)
+    assert.equal(current.hub.current().revision, 1)
   } finally {
     await current.cleanup()
   }
@@ -255,16 +328,18 @@ test('status PATCH validates version and publishes one revision', async () => {
 test('status PATCH preserves transport guards and stable domain errors', async () => {
   const current = await fixture()
   try {
-    const parent = await fetch(`${current.url}/api/v1/tasks/parent`, {
+    await fetch(`${current.url}/api/v1/tasks/parent`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(taskInput({ id: 'parent', title: 'Parent' })),
-    }).then((response) => response.json())
+    })
     await fetch(`${current.url}/api/v1/tasks/child`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(taskInput({ id: 'child', parent_id: 'parent', title: 'Child' })),
     })
+    const parent = await fetch(`${current.url}/api/v1/tasks/parent`)
+      .then((response) => response.json())
     const revision = current.hub.current().revision
 
     const cases = [
@@ -332,6 +407,143 @@ test('status PATCH preserves transport guards and stable domain errors', async (
       assert.equal((await response.json()).error.code, currentCase.expectedCode, currentCase.name)
     }
     assert.equal(current.hub.current().revision, revision)
+  } finally {
+    await current.cleanup()
+  }
+})
+
+test('lifecycle, tree sync, session context, and execution routes share one revisioned API', async () => {
+  const current = await fixture()
+  const jsonHeaders = { 'Content-Type': 'application/json', Origin: current.url }
+  try {
+    const turnResponse = await fetch(`${current.url}/api/v1/lifecycle/turn-start`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        external_key: 'codex:turn:session-1:turn-1:0',
+        root_session_id: 'session-1',
+        session_id: 'session-1',
+        turn_id: 'turn-1',
+        workfolder: '/workspace',
+      }),
+    })
+    assert.equal(turnResponse.status, 200)
+    const turn = await turnResponse.json()
+    assert.equal(turn.execution.classification, 'unknown')
+    assert.equal(turn.change.revision, 1)
+
+    const syncResponse = await fetch(`${current.url}/api/v1/tasks/sync-tree`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        session_id: 'session-1',
+        turn_id: 'turn-1',
+        workfolder: '/workspace',
+        expected_revision: null,
+        root: { id: 'root', title: 'Root', status: 'active' },
+        children: [],
+        focus_task_id: 'root',
+      }),
+    })
+    assert.equal(syncResponse.status, 200)
+    const synced = await syncResponse.json()
+    assert.equal(synced.bound_execution.task_id, 'root')
+    assert.equal(synced.change.revision, 2)
+
+    const session = await fetch(`${current.url}/api/v1/sessions/session-1/context`)
+      .then((response) => response.json())
+    assert.equal(session.active_execution_count, 1)
+    assert.equal(session.unassigned_execution_count, 0)
+    const executions = await fetch(
+      `${current.url}/api/v1/executions?root_session_id=session-1`,
+    ).then((response) => response.json())
+    assert.equal(executions.executions[0].task_id, 'root')
+
+    const endResponse = await fetch(`${current.url}/api/v1/lifecycle/session-end`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ root_session_id: 'session-1' }),
+    })
+    assert.equal(endResponse.status, 200)
+    const ended = await endResponse.json()
+    assert.equal(ended.executions[0].status, 'completed')
+    assert.equal(ended.change.revision, 3)
+  } finally {
+    await current.cleanup()
+  }
+})
+
+test('execution batch assignment is atomic and publishes one revision', async () => {
+  const current = await fixture()
+  const headers = { 'Content-Type': 'application/json' }
+  try {
+    const first = await fetch(`${current.url}/api/v1/lifecycle/turn-start`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        external_key: 'codex:turn:batch-session:turn-1:0',
+        root_session_id: 'batch-session', session_id: 'batch-session', turn_id: 'turn-1',
+        workfolder: '/workspace',
+      }),
+    }).then((response) => response.json())
+    const second = await fetch(`${current.url}/api/v1/lifecycle/subagent-start`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        external_key: 'codex:subagent:batch-child', root_session_id: 'batch-session',
+        session_id: 'batch-child', parent_session_id: 'batch-session', turn_id: 'turn-1',
+        agent_id: 'batch-child', agent_path: '/root/worker', workfolder: '/workspace',
+      }),
+    }).then((response) => response.json())
+    for (const id of ['task-a', 'task-b']) {
+      await fetch(`${current.url}/api/v1/tasks/${id}`, {
+        method: 'PUT', headers,
+        body: JSON.stringify(taskInput({ id, title: id })),
+      })
+    }
+    const revisionBeforeBatch = current.hub.current().revision
+
+    const assignedResponse = await fetch(`${current.url}/api/v1/executions/tasks`, {
+      method: 'PATCH', headers,
+      body: JSON.stringify({
+        actor: 'user',
+        changes: [first.execution, second.execution].map((execution) => ({
+          id: execution.id,
+          expected_task_id: null,
+          expected_classification: 'unknown',
+          task_id: 'task-a',
+          classification: 'work',
+        })),
+      }),
+    })
+    assert.equal(assignedResponse.status, 200)
+    const assigned = await assignedResponse.json()
+    assert.equal(assigned.executions.length, 2)
+    assert.equal(assigned.change.revision, revisionBeforeBatch + 1)
+    assert.deepEqual(assigned.executions.map(({ task_id }) => task_id), ['task-a', 'task-a'])
+
+    const conflictResponse = await fetch(`${current.url}/api/v1/executions/tasks`, {
+      method: 'PATCH', headers,
+      body: JSON.stringify({
+        actor: 'user',
+        changes: [
+          {
+            id: first.execution.id, expected_task_id: null, expected_classification: 'unknown',
+            task_id: 'task-b', classification: 'work',
+          },
+          {
+            id: second.execution.id, expected_task_id: 'task-a', expected_classification: 'work',
+            task_id: 'task-b', classification: 'work',
+          },
+        ],
+      }),
+    })
+    assert.equal(conflictResponse.status, 409)
+    const conflict = await conflictResponse.json()
+    assert.equal(conflict.error.code, 'EXECUTION_BATCH_CONFLICT')
+    assert.equal(conflict.error.details.conflicts[0].id, first.execution.id)
+    const afterConflict = await fetch(
+      `${current.url}/api/v1/executions?root_session_id=batch-session`,
+    ).then((response) => response.json())
+    assert.deepEqual(afterConflict.executions.map(({ task_id }) => task_id), ['task-a', 'task-a'])
   } finally {
     await current.cleanup()
   }

@@ -187,16 +187,27 @@ export function createTaskdController({
   return { install, start, stop, status, uninstall, paths }
 }
 
-async function main() {
-  if (process.platform !== 'darwin') throw new Error('tasks-recorder taskd controller currently requires macOS')
-  const projectRoot = fileURLToPath(new URL('..', import.meta.url))
-  const config = await resolveAppConfig({ projectRoot })
-  const controller = createTaskdController({ projectRoot, config })
-  const command = process.argv[2] ?? 'status'
+export async function runControlCommand(command = 'status', {
+  projectRoot = fileURLToPath(new URL('..', import.meta.url)),
+  platform = process.platform,
+  env = process.env,
+  homeDirectory = homedir(),
+  configResolver = resolveAppConfig,
+  controllerFactory = createTaskdController,
+} = {}) {
+  if (platform !== 'darwin') {
+    throw new Error('tasks-recorder taskd controller currently requires macOS')
+  }
   if (!['install', 'start', 'stop', 'status', 'uninstall'].includes(command)) {
     throw new Error('usage: npm run taskd -- install|start|stop|status|uninstall')
   }
-  const result = await controller[command]()
+  const config = await configResolver({ projectRoot, env, homeDirectory })
+  const controller = controllerFactory({ projectRoot, config, homeDirectory })
+  return controller[command]()
+}
+
+async function main() {
+  const result = await runControlCommand(process.argv[2] ?? 'status')
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
 }
 

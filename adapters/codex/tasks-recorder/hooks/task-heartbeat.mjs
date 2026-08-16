@@ -1,22 +1,20 @@
 #!/usr/bin/env node
 
-import { readHookInput } from './src/hook-context.mjs'
-import { sendHeartbeat } from './src/taskd-client.mjs'
+import { readHookInput, toolLifecycleInput } from './src/hook-context.mjs'
+import { sendLifecycle } from './src/taskd-client.mjs'
 
 try {
   const input = await readHookInput()
-  const toolName = String(input.tool_name ?? '')
-  if (
-    process.env.AGENT_SUPERVISOR_ROLE !== 'worker'
-    && input.session_id
-    && !toolName.includes('tasks-recorder')
-    && !toolName.includes('agent_tasks_')
-  ) {
-    await sendHeartbeat({
-      session_id: input.session_id,
-      agent: 'Codex',
-      minimum_interval_ms: 10_000,
-    })
+  if (process.env.AGENT_SUPERVISOR_ROLE !== 'worker' && input.session_id) {
+    await sendLifecycle('tool-use', toolLifecycleInput(input))
+    if (input.tool_name === 'update_plan') {
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PostToolUse',
+          additionalContext: 'update_plan was observed by tasks-recorder; synchronize the same root/child identities with agent_tasks_sync_tree before stopping.',
+        },
+      }))
+    }
   }
 } catch {
   // Activity tracking must never interfere with the completed tool call.
