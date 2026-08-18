@@ -78,11 +78,14 @@ test('runtime package keeps production dependencies and excludes build-only depe
       '-C', extractDirectory,
     ])
     const packageSource = await readFile(
-      join(extractDirectory, 'tasks-recorder-0.4.0', 'package.json'),
+      join(extractDirectory, 'tasks-recorder-0.5.0', 'package.json'),
       'utf8',
     )
     const manifest = JSON.parse(packageSource)
-    assert.equal(manifest.dependencies['dhtmlx-gantt'], '9.1.0')
+    assert.equal(manifest.dependencies['@svar-ui/react-gantt'], '2.7.1')
+    assert.equal(manifest.dependencies.react, '19.2.8')
+    assert.equal(manifest.dependencies['react-dom'], '19.2.8')
+    assert.equal('dhtmlx-gantt' in manifest.dependencies, false)
     assert.equal(manifest.devDependencies.esbuild, '0.28.2')
   } finally {
     await rm(outputDirectory, { recursive: true, force: true })

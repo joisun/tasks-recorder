@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.
 `curl | bash` 方便但会直接执行远端脚本。更审慎的方式是固定版本、先查看 installer，再执行；installer 会在解包前使用 Release 中的 `SHA256SUMS` 校验 runtime artifact：
 
 ```bash
-version=v0.4.0
+version=v0.5.0
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -93,8 +93,9 @@ Tasks Recorder 把两个容易混淆的对象分开：
 4. `SubagentStart` / `SubagentStop` 记录 child execution。只有 `agent_key` 在当前 root tree 中唯一匹配时才自动绑定；否则进入 Dashboard 的未绑定 inbox。subagent 结束不等于 child Task 自动完成。
 5. `SessionEnd` 关闭仍 active 的 execution；`Stop` 仅在存在待同步 plan、未绑定 work execution 或需收口的 Task 时要求 Agent 处理。宿主被直接关闭造成的状态缺口可在 Dashboard 中修正。
 6. `taskd` 是唯一 SQLite owner。写事务 commit 后发布轻量 SSE `changed` event；Dashboard 再读取 authoritative snapshot，因此页面不需要定时 polling，也不会生成一个带静态数据的 `dashboard.html`。
-7. Dashboard 的 Tree/Grid 与 Timeline 读取同一份 snapshot。Grid 展示 progress、active agents、execution count、完整 Session ID、工作目录、Worktree 与 Branch；Session ID 可复制，root 可折叠，Grid/Timeline 分隔线可拖动。
-8. 选中 Task 可打开 details Sheet，编辑 Summary、查看 Executions 与 Activity，并执行 archive、soft delete、restore 等操作。所有编辑使用 revision/compare-and-set，避免覆盖较新的 Agent 或浏览器更新。工具栏的未绑定 inbox 支持筛选、批量分配 Task 或标记 `non_work`。
+7. Dashboard 的 Tree/Grid 与 Timeline 读取同一份 snapshot。UI 使用 MIT 许可的 SVAR React Gantt 作为 virtualized Tree + Timeline renderer；Tasks Recorder 自己维护筛选、SSE refresh、视图状态恢复、可访问的 splitter、当前时间 marker 与任务详情交互。默认 Grid 只保留任务、状态/进度、执行上下文、Session ID 与活动五个决策字段；工作目录、Worktree 与 Branch 在执行上下文中合并展示，聚焦或悬停可查看完整值。Session ID 使用紧凑显示但始终复制完整值，root 可折叠，Grid/Timeline 分隔线可拖动或用键盘调整。
+8. Timeline 默认使用周视图展示至少 8 周项目窗口，并提供日、周、月三种粒度。日视图至少覆盖 21 天，月视图至少覆盖 8 个月；切换后自动定位到今天。summary Task 的时间范围取自身及全部 descendants 的最早开始与最晚结束，因此父任务始终包络子任务，不会出现 scope 交叉。
+9. 选中 Task 可打开 details Sheet，编辑 Summary、查看 Executions 与 Activity，并执行 archive、soft delete、restore 等操作。所有编辑使用 revision/compare-and-set，避免覆盖较新的 Agent 或浏览器更新。工具栏的未绑定 inbox 支持筛选、批量分配 Task 或标记 `non_work`。
 
 这是一种本机 C/S 架构：plugin adapter 是 client，`taskd` 是 server，Dashboard 是另一个 browser client。adapter 没有 service 时会报告 `SERVICE_UNAVAILABLE`；service 没有 adapter 时仍可以运行并查看已有数据。
 
@@ -249,4 +250,4 @@ npm run package:release
 
 Tasks Recorder 采用 [GPL-2.0-only](LICENSE)。你可以使用、修改、商用和再分发，但对外分发本项目或其修改版时，需要提供对应源码并继续按 GPL-2.0 授权。
 
-Dashboard bundle 包含 GPL-2.0 的 DHTMLX Gantt Standard 9.1.0，详情见 [Third-Party Notices](ui/THIRD_PARTY_NOTICES.md)。这段说明不是法律意见。
+Dashboard bundle 使用 MIT 许可的 SVAR React Gantt、React 与 React DOM，详情见 [Third-Party Notices](ui/THIRD_PARTY_NOTICES.md)。这段说明不是法律意见。

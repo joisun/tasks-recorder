@@ -3,6 +3,7 @@ node_modules/
 *.tmp
 .render.lock
 /.vdut-log/
+/.vdr-log/
 /release/
 /.vscode/
 /.worktree/

@@ -1,6 +1,6 @@
 {
   "name": "tasks-recorder",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -20,7 +20,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
-    "dhtmlx-gantt": "9.1.0",
+    "@svar-ui/react-gantt": "2.7.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "zod": "4.4.3"
   },
   "devDependencies": {

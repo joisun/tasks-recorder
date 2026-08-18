@@ -216,6 +216,7 @@ test('details sheet markup exposes editable summary and complete execution ident
 
   assert.match(html, /role="tablist"/)
   assert.match(html, /<form[^>]+data-details-form/)
+  assert.match(html, /<textarea name="next_action"[^>]*maxlength="1000"/)
   assert.match(html, /Task &lt;A&gt;/)
   assert.match(html, /019fa297-4567-7bf0-a69a-84fd23b3aaab/)
   assert.match(html, /data-details-action="add-child"/)

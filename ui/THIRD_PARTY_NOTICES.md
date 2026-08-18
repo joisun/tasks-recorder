@@ -1,8 +1,26 @@
 # Third-Party Notices
 
-The embedded dashboard bundles DHTMLX Gantt Standard 9.1.0 under GPL-2.0.
+The standalone Dashboard bundle includes these MIT-licensed packages:
 
-- Project: https://github.com/DHTMLX/gantt
-- License: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+- SVAR React Gantt 2.7.1 — Copyright (c) 2025 XB Software Sp. z o.o.
+- React 19.2.8 and React DOM 19.2.8 — Copyright (c) Meta Platforms, Inc. and affiliates.
 
-Non-GPL products require an appropriate commercial DHTMLX license.
+The MIT License text applicable to these packages follows:
+
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.

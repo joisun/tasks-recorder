@@ -18,64 +18,6 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value))
 }
 
-export function createGanttLayout({ showTimeline, gridWidth }) {
-  const grid = {
-    ...(showTimeline ? { width: gridWidth } : {}),
-    rows: [
-      {
-        view: 'grid',
-        id: 'grid',
-        scrollable: true,
-        scrollX: 'gridScroll',
-        scrollY: 'sharedScroll',
-      },
-      { view: 'scrollbar', id: 'gridScroll', scroll: 'x', group: 'horizontal' },
-    ],
-  }
-  const vertical = { view: 'scrollbar', id: 'sharedScroll', scroll: 'y' }
-  if (!showTimeline) return { css: 'gantt_container', cols: [grid, vertical] }
-  return {
-    css: 'gantt_container',
-    cols: [
-      grid,
-      {
-        html: '<div class="timeline-splitter" role="separator" aria-label="调整 Grid 与 Timeline 宽度" aria-orientation="vertical" tabindex="0"></div>',
-        css: 'timeline-splitter-cell',
-        width: TIMELINE_SPLITTER_WIDTH,
-      },
-      {
-        rows: [
-          {
-            view: 'timeline',
-            id: 'timeline',
-            scrollX: 'timelineScroll',
-            scrollY: 'sharedScroll',
-          },
-          { view: 'scrollbar', id: 'timelineScroll', scroll: 'x', group: 'horizontal' },
-        ],
-      },
-      vertical,
-    ],
-  }
-}
-
-export function isTaskOpen(task) {
-  if (typeof task?.$open === 'boolean') return task.$open
-  if (typeof task?.open === 'boolean') return task.open
-  return true
-}
-
-export function retainedGridScroll({
-  timelineVisible,
-  gridX,
-  gridScrollable,
-  gridScrollRange = 0,
-  rememberedGridX,
-}) {
-  if (timelineVisible || (gridScrollable && gridScrollRange > 16)) return gridX
-  return rememberedGridX
-}
-
 function leavesOf(task, index) {
   const children = index.childrenByParent.get(task.id) ?? []
   return children.length === 0 ? [task] : children.flatMap((child) => leavesOf(child, index))
@@ -161,7 +103,11 @@ export function relativeActivity(task, now = new Date()) {
   const minutes = Math.max(0, Math.round((now - new Date(task.last_activity)) / 60_000))
   const hours = Math.floor(minutes / 60)
   const rest = minutes % 60
-  const text = minutes < 60 ? `${minutes}m` : `${hours}h${rest ? `${rest}m` : ''}`
+  const days = Math.floor(hours / 24)
+  const dayHours = hours % 24
+  const text = days > 0
+    ? `${days}d${dayHours ? ` ${dayHours}h` : ''}`
+    : minutes < 60 ? `${minutes}m` : `${hours}h${rest ? ` ${rest}m` : ''}`
   const tone = minutes >= 60 ? 'dead' : minutes >= 30 ? 'stale' : 'default'
   return { text, tone, minutes }
 }
@@ -176,7 +122,11 @@ export function estimatedTimelineLabelWidth(text) {
 
 export function labelPlacement({ text, barLeft, barWidth, scrollLeft, clientWidth }) {
   const labelWidth = estimatedTimelineLabelWidth(text)
-  if (barWidth >= labelWidth) return 'inside'
+  const viewportStart = scrollLeft
+  const viewportEnd = scrollLeft + clientWidth
+  const visibleStart = Math.max(barLeft, viewportStart)
+  const visibleEnd = Math.min(barLeft + barWidth, viewportEnd)
+  if (Math.max(0, visibleEnd - visibleStart) >= labelWidth) return 'inside'
   return barLeft + barWidth + labelWidth + 12 > scrollLeft + clientWidth ? 'left' : 'right'
 }
 
@@ -202,7 +152,8 @@ export function sessionIdPresentation(value) {
   if (typeof value !== 'string' || value === '') {
     return { display: '—', full: null, empty: true }
   }
-  return { display: value, full: value, empty: false }
+  const display = value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value
+  return { display, full: value, empty: false }
 }
 
 export function formatHomePath(value, homeDirectory) {
@@ -224,14 +175,6 @@ export function contextPathPresentation(value, homeDirectory) {
   }
 }
 
-export function gridPanelWidthFor(containerWidth, columnWidth) {
-  const width = Number(containerWidth) || 0
-  const contentWidth = Number(columnWidth) || 0
-  if (width <= 720) return Math.min(contentWidth || 240, 240)
-  const preferred = Math.max(Math.round(width * 0.72), width - 346)
-  return Math.min(contentWidth || preferred, Math.max(240, preferred))
-}
-
 export function gridPanelWidthBounds(containerWidth) {
   const width = Math.max(0, Number(containerWidth) || 0)
   return {
@@ -242,7 +185,7 @@ export function gridPanelWidthBounds(containerWidth) {
 
 export function effectiveGridPanelWidth({ containerWidth, preferredWidth = null }) {
   const bounds = gridPanelWidthBounds(containerWidth)
-  const fallback = Math.round((Number(containerWidth) || 0) * 0.65)
+  const fallback = Math.round((Number(containerWidth) || 0) * 0.55)
   const requested = Number.isFinite(preferredWidth) ? preferredWidth : fallback
   return Math.round(clamp(requested, bounds.minimum, bounds.maximum))
 }
@@ -255,12 +198,6 @@ export function nextGridPanelWidth({ key, currentWidth, minimum, maximum, step =
     End: maximum,
   }
   return key in candidates ? Math.round(clamp(candidates[key], minimum, maximum)) : null
-}
-
-export function responsiveGridWidth({ timelineVisible, currentWidth, containerWidth, columnWidth }) {
-  if (!timelineVisible) return null
-  const next = gridPanelWidthFor(containerWidth, columnWidth)
-  return Math.abs((Number(currentWidth) || 0) - next) > 2 ? next : null
 }
 
 export function contextPopoverPosition({ anchor, popover, viewport }) {
@@ -310,6 +247,25 @@ export function writeBooleanPreference(storage, key, value) {
   try {
     storage?.setItem(key, String(Boolean(value)))
     return true
+  } catch {
+    return false
+  }
+}
+
+export function readChoicePreference(storage, key, choices, fallback) {
+  try {
+    const value = storage?.getItem(key)
+    return Array.isArray(choices) && choices.includes(value) ? value : fallback
+  } catch {
+    return fallback
+  }
+}
+
+export function writeChoicePreference(storage, key, value, choices) {
+  if (!Array.isArray(choices) || !choices.includes(value)) return false
+  try {
+    storage?.setItem(key, value)
+    return Boolean(storage)
   } catch {
     return false
   }

@@ -19,7 +19,7 @@ test('public package and native adapter metadata share version, license, and rep
   const claudeManifest = await json('adapters/claude/tasks-recorder/.claude-plugin/plugin.json')
   const claudeMarketplace = await json('.claude-plugin/marketplace.json')
 
-  assert.equal(packageManifest.version, '0.4.0')
+  assert.equal(packageManifest.version, '0.5.0')
   assert.equal(packageManifest.license, 'GPL-2.0-only')
   assert.equal(packageManifest.repository.url, 'git+https://github.com/joisun/tasks-recorder.git')
   for (const manifest of [codexManifest, claudeManifest]) {
@@ -40,6 +40,8 @@ test('README installation commands target published service and separate native 
   assert.match(readme, /^## How it works$/m)
   assert.match(readme, /~\/\.config\/tasks-recorder\/tasks\.sqlite/)
   assert.match(readme, /GPL-2\.0-only/)
+  assert.match(readme, /SVAR React Gantt/)
+  assert.doesNotMatch(readme, /DHTMLX/)
 })
 
 test('CI and release workflows use pinned actions and the installer artifact contract', async () => {

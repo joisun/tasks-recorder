@@ -1,5 +1,9 @@
 # Tasks Recorder Dashboard Timeline Splitter Design
 
+> Historical baseline: 本文描述 v0.4.0 的 DHTMLX custom splitter。当前 SVAR native pointer resizer 与 application-owned keyboard separator 见 [SVAR Gantt Dashboard 替代实现设计](2026-08-16-svar-gantt-dashboard-design.md)。
+>
+> 当前 desktop 默认比例已根据项目周期观察目标调整为约 `55/45`（1440px 下 Grid 792px、Timeline 约 643px），用户保存的绝对宽度仍优先。
+
 > 日期：2026-08-13（Asia/Shanghai）
 > 状态：已实现并验证
 > 适用项目：`/Users/joi-com/Desktop/space/projects/tasks-recorder`

@@ -1,10 +1,9 @@
 import { build } from 'esbuild'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const uiRoot = dirname(fileURLToPath(import.meta.url))
-const projectRoot = dirname(uiRoot)
 const sourceRoot = join(uiRoot, 'src')
 const outputPath = join(uiRoot, 'dist', 'index.html')
 
@@ -16,19 +15,28 @@ const bundled = await build({
   write: false,
   legalComments: 'inline',
   target: ['es2022'],
+  outdir: 'out',
+  loader: {
+    '.woff': 'dataurl',
+    '.woff2': 'dataurl',
+    '.ttf': 'dataurl',
+  },
 })
-const [template, dashboardCss, dhtmlxCss, dhtmlxJs] = await Promise.all([
+const [template, dashboardCss] = await Promise.all([
   readFile(join(sourceRoot, 'index.html'), 'utf8'),
   readFile(join(sourceRoot, 'dashboard.css'), 'utf8'),
-  readFile(join(projectRoot, 'node_modules/dhtmlx-gantt/codebase/dhtmlxgantt.css'), 'utf8'),
-  readFile(join(projectRoot, 'node_modules/dhtmlx-gantt/codebase/dhtmlxgantt.js'), 'utf8'),
 ])
-const localDhtmlxCss = dhtmlxCss.replace(/@font-face\{[^}]*src:url\(https?:\/\/[^}]*\}/g, '')
+const javascript = bundled.outputFiles.find(({ path }) => extname(path) === '.js')?.text
+const svarCss = bundled.outputFiles.find(({ path }) => extname(path) === '.css')?.text
+if (!javascript || !svarCss) throw new Error('SVAR Dashboard bundle is incomplete')
+const localSvarCss = svarCss.replace(/@font-face\s*\{[^{}]*\}/g, '')
+if (/https?:\/\/[^)'\"]+\.(?:woff2?|ttf)/i.test(localSvarCss)) {
+  throw new Error('SVAR Dashboard CSS contains a remote font')
+}
 const html = template
-  .replace('/*__DHTMLX_CSS__*/', () => localDhtmlxCss)
+  .replace('/*__SVAR_CSS__*/', () => localSvarCss)
   .replace('/*__DASHBOARD_CSS__*/', () => dashboardCss)
-  .replace('/*__DHTMLX_JS__*/', () => dhtmlxJs)
-  .replace('/*__DASHBOARD_JS__*/', () => bundled.outputFiles[0].text)
+  .replace('/*__DASHBOARD_JS__*/', () => javascript)
 
 await mkdir(dirname(outputPath), { recursive: true })
 await writeFile(outputPath, html)

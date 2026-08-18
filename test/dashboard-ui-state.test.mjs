@@ -5,7 +5,6 @@ import * as dashboardState from '../ui/src/dashboard-state.mjs'
 
 import {
   createTaskIndex,
-  createGanttLayout,
   endOf,
   escapeHtml,
   estimatedTimelineLabelWidth,
@@ -16,13 +15,11 @@ import {
   progressPresentation,
   progressOf,
   readBooleanPreference,
-  retainedGridScroll,
   relativeActivity,
   resolvePreferenceStorage,
   statusMutationMessage,
   tabCount,
   timelineBounds,
-  isTaskOpen,
   writeBooleanPreference,
 } from '../ui/src/dashboard-state.mjs'
 
@@ -97,6 +94,12 @@ test('computes runtime end, project progress, and relative activity', () => {
   assert.deepEqual(relativeActivity(index.byId.get('blocked'), now), {
     text: '52m', tone: 'stale', minutes: 52,
   })
+  assert.deepEqual(relativeActivity({
+    status: 'active',
+    last_activity: '2026-08-06T21:44:00.000Z',
+  }, now), {
+    text: '5d 12h', tone: 'dead', minutes: 7_923,
+  })
 })
 
 test('places short and right-edge labels outside without overflowing', () => {
@@ -104,6 +107,7 @@ test('places short and right-edge labels outside without overflowing', () => {
   assert.equal(labelPlacement({ text: 'Short', barLeft: 100, barWidth: 16, scrollLeft: 0, clientWidth: 600 }), 'right')
   assert.equal(labelPlacement({ text: 'Near edge', barLeft: 540, barWidth: 16, scrollLeft: 0, clientWidth: 600 }), 'left')
   assert.equal(labelPlacement({ text: 'Wide', barLeft: 100, barWidth: 180, scrollLeft: 0, clientWidth: 600 }), 'inside')
+  assert.equal(labelPlacement({ text: 'Long running task', barLeft: 0, barWidth: 5_500, scrollLeft: 5_400, clientWidth: 500 }), 'right')
 })
 
 test('escapes task-controlled HTML', () => {
@@ -131,11 +135,11 @@ test('does not invoke the clipboard for an empty session ID', async () => {
   assert.equal(writes, 0)
 })
 
-test('keeps the complete session ID available for display and copy', () => {
+test('keeps the complete session ID available for copy while scanning compactly', () => {
   const sessionId = '019fefb6-f2fb-7380-a949-20cd7d744e14'
 
   assert.deepEqual(dashboardState.sessionIdPresentation?.(sessionId), {
-    display: sessionId,
+    display: '019fefb6…4e14',
     full: sessionId,
     empty: false,
   })
@@ -173,7 +177,7 @@ test('keeps full context values available while shortening only their display', 
 
 test('allocates a wider default Timeline and clamps only the effective Grid width', () => {
   assert.deepEqual(dashboardState.gridPanelWidthBounds?.(1440), { minimum: 240, maximum: 1111 })
-  assert.equal(dashboardState.effectiveGridPanelWidth?.({ containerWidth: 1440 }), 936)
+  assert.equal(dashboardState.effectiveGridPanelWidth?.({ containerWidth: 1440 }), 792)
   assert.equal(dashboardState.effectiveGridPanelWidth?.({ containerWidth: 1440, preferredWidth: 1040 }), 1040)
   assert.equal(dashboardState.effectiveGridPanelWidth?.({ containerWidth: 768, preferredWidth: 1040 }), 439)
   assert.equal(dashboardState.effectiveGridPanelWidth?.({ containerWidth: 375, preferredWidth: 1040 }), 240)
@@ -232,55 +236,6 @@ test('keeps the full context popover inside the viewport and flips it above near
   }), { left: 300, top: 816 })
 })
 
-test('creates expanded and grid-only layouts without PRO resizers', () => {
-  const expanded = createGanttLayout({ showTimeline: true, gridWidth: 640 })
-  assert.equal(expanded.cols[0].width, 640)
-  assert.equal(expanded.cols[0].rows[0].scrollX, 'gridScroll')
-  assert.match(expanded.cols[1].html, /class="timeline-splitter"/)
-  assert.equal(expanded.cols[1].css, 'timeline-splitter-cell')
-  assert.equal(expanded.cols[1].width, 9)
-  assert.equal(expanded.cols[2].rows[0].view, 'timeline')
-  assert.equal(expanded.cols[2].rows[0].scrollX, 'timelineScroll')
-  assert.equal(expanded.cols[0].rows[0].scrollY, 'sharedScroll')
-  assert.equal(expanded.cols[2].rows[0].scrollY, 'sharedScroll')
-  assert.equal(JSON.stringify(expanded).includes('"resizer":true'), false)
-
-  const collapsed = createGanttLayout({ showTimeline: false, gridWidth: 640 })
-  assert.equal(JSON.stringify(collapsed).includes('timeline-splitter'), false)
-  assert.equal(collapsed.cols.some((cell) => JSON.stringify(cell).includes('timeline')), false)
-  assert.equal('width' in collapsed.cols[0], false)
-})
-
-test('reads the DHTMLX runtime tree state before the source open fallback', () => {
-  assert.equal(isTaskOpen({ $open: false, open: true }), false)
-  assert.equal(isTaskOpen({ $open: true, open: false }), true)
-  assert.equal(isTaskOpen({ open: false }), false)
-  assert.equal(isTaskOpen({}), true)
-})
-
-test('retains the expanded Grid scroll when a full-width Grid cannot scroll', () => {
-  assert.equal(retainedGridScroll({
-    timelineVisible: true,
-    gridX: 240,
-    gridScrollable: true,
-    rememberedGridX: 0,
-  }), 240)
-  assert.equal(retainedGridScroll({
-    timelineVisible: false,
-    gridX: 0,
-    gridScrollable: true,
-    gridScrollRange: 15,
-    rememberedGridX: 240,
-  }), 240)
-  assert.equal(retainedGridScroll({
-    timelineVisible: false,
-    gridX: 100,
-    gridScrollable: true,
-    gridScrollRange: 400,
-    rememberedGridX: 240,
-  }), 100)
-})
-
 test('maps status mutation errors to actionable Chinese messages', () => {
   assert.equal(
     statusMutationMessage({ code: 'TASK_VERSION_CONFLICT' }),
@@ -328,4 +283,29 @@ test('recomputes timeline bounds and safely persists the label preference', () =
     get() { throw new Error('sandbox denied') },
   })
   assert.equal(resolvePreferenceStorage(sandboxedWindow), null)
+})
+
+test('persists only supported timeline zoom choices', () => {
+  assert.equal(typeof dashboardState.readChoicePreference, 'function')
+  assert.equal(typeof dashboardState.writeChoicePreference, 'function')
+  const { readChoicePreference, writeChoicePreference } = dashboardState
+  const values = new Map()
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  }
+  const choices = ['day', 'week', 'month']
+
+  assert.equal(readChoicePreference(storage, 'zoom', choices, 'week'), 'week')
+  assert.equal(writeChoicePreference(storage, 'zoom', 'month', choices), true)
+  assert.equal(readChoicePreference(storage, 'zoom', choices, 'week'), 'month')
+  assert.equal(writeChoicePreference(storage, 'zoom', 'hour', choices), false)
+  assert.equal(readChoicePreference(storage, 'zoom', choices, 'week'), 'month')
+
+  const denied = {
+    getItem: () => { throw new Error('denied') },
+    setItem: () => { throw new Error('denied') },
+  }
+  assert.equal(readChoicePreference(denied, 'zoom', choices, 'week'), 'week')
+  assert.equal(writeChoicePreference(denied, 'zoom', 'day', choices), false)
 })

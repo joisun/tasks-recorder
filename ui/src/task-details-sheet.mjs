@@ -200,7 +200,7 @@ function summaryMarkup({ task, draft, tasks, showChildForm }) {
       <label class="details-field details-field-wide"><span>描述</span><textarea name="description" rows="5">${escapeMarkup(draft.description)}</textarea></label>
       <label class="details-field"><span>状态</span><select name="status">${statuses.map(([value, label]) => `<option value="${value}"${draft.status === value ? ' selected' : ''}>${label}</option>`).join('')}</select></label>
       <label class="details-field"><span>Due date</span><input name="due_date" type="date" value="${escapeMarkup(draft.due_date)}"></label>
-      <label class="details-field details-field-wide"><span>Next action</span><input name="next_action" value="${escapeMarkup(draft.next_action)}" maxlength="1000"></label>
+      <label class="details-field details-field-wide"><span>Next action</span><textarea name="next_action" rows="3" maxlength="1000">${escapeMarkup(draft.next_action)}</textarea></label>
       <label class="details-field"><span>Parent</span><select name="parent_id"><option value="">无（Root task）</option>${parents}</select></label>
       <label class="details-field"><span>Sort order</span><input name="sort_order" type="number" step="1" value="${escapeMarkup(draft.sort_order)}"></label>
       <div class="details-form-meta"><span>Task ID</span><code>${escapeMarkup(task.id)}</code><span>Revision</span><code>${escapeMarkup(task.revision)}</code></div>

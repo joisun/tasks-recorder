@@ -1,65 +1,60 @@
 import {
   copyTextToClipboard,
-  contextPathPresentation,
   contextPopoverPosition,
-  createGanttLayout,
   createTaskIndex,
   effectiveGridPanelWidth,
-  endOf,
-  escapeHtml,
-  formatHomePath,
-  gridPanelWidthBounds,
-  isHistoricalRoot,
-  isTaskOpen,
-  labelPlacement,
-  nextGridPanelWidth,
-  progressPresentation,
-  progressOf,
   readBooleanPreference,
+  readChoicePreference,
   readNumberPreference,
-  retainedGridScroll,
-  relativeActivity,
   resolvePreferenceStorage,
-  sessionIdPresentation,
   statusMutationMessage,
   tabCount,
-  timelineBounds,
   writeBooleanPreference,
+  writeChoicePreference,
   writeNumberPreference,
 } from './dashboard-state.mjs'
+import { createDashboardRendererController } from './dashboard-renderer-controller.mjs'
+import { createSvarGanttRenderer } from './svar-gantt-renderer.jsx'
+import { SVAR_TIMELINE_ZOOMS } from './svar-gantt-state.mjs'
 import { createSnapshotCoordinator } from './snapshot-coordinator.mjs'
 import { createEventStream } from './event-stream.mjs'
 import { createDashboardApi } from './dashboard-api.mjs'
 import { createTaskDetailsSheet } from './task-details-sheet.mjs'
 import { createExecutionInbox, inboxButtonLabel } from './execution-inbox.mjs'
 
-const gantt = window.gantt
-const dashboardApi = createDashboardApi()
-
 const TIMELINE_LABEL_KEY = 'dashboard-show-timeline-labels'
 const TIMELINE_PANEL_KEY = 'dashboard-show-timeline'
+const TIMELINE_ZOOM_KEY = 'dashboard-timeline-zoom'
 const GRID_WIDTH_KEY = 'dashboard-grid-width'
-const STATUS_LABELS = { active: '进行中', waiting: '等待中', blocked: '已阻塞', planned: '待安排', done: '已完成', canceled: '已取消' }
+const STATUS_LABELS = {
+  active: '进行中', waiting: '等待中', blocked: '已阻塞', planned: '待安排',
+  done: '已完成', canceled: '已取消',
+}
 const STATUS_ORDER = ['planned', 'active', 'waiting', 'blocked', 'done', 'canceled']
 const TAB_DEFS = [
   ['all', '全部'], ['blocked', '已阻塞'], ['active', '进行中'], ['waiting', '等待中'],
   ['planned', '待安排'], ['history', '历史'],
 ]
-const AGENT_COLORS = ['var(--accent)', 'var(--accent-hover)', 'var(--success)', 'var(--warn)', 'var(--muted)']
+const TIMELINE_ZOOM_DEFS = [
+  ['day', '日', '按日查看，适合两周内执行'],
+  ['week', '周', '按周查看，适合项目周期'],
+  ['month', '月', '按月查看，适合季度回顾'],
+]
+
+const dashboardApi = createDashboardApi()
+const preferenceStorage = resolvePreferenceStorage()
+const ganttElement = document.getElementById('gantt_here')
 
 let raw = []
 let index = createTaskIndex(raw)
 let activeFilter = 'all'
-const preferenceStorage = resolvePreferenceStorage()
 let showTimelineLabels = readBooleanPreference(preferenceStorage, TIMELINE_LABEL_KEY)
 let showTimeline = readBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, true)
+let timelineZoom = readChoicePreference(
+  preferenceStorage, TIMELINE_ZOOM_KEY, SVAR_TIMELINE_ZOOMS, 'week',
+)
 let preferredGridWidth = readNumberPreference(preferenceStorage, GRID_WIDTH_KEY)
 let effectiveGridWidth = null
-let initialized = false
-let markerId = null
-let homeDirectory = ''
-let rememberedGridX = 0
-let rememberedTimelineX = 0
 let openStatusTaskId = null
 let openStatusTrigger = null
 let coordinator = null
@@ -70,27 +65,49 @@ let layoutResizeFrame = 0
 const pendingStatus = new Set()
 const refreshMessages = { connection: '', freshness: '', mutation: '' }
 
-function hashString(value) {
-  let hash = 0
-  for (const character of String(value)) hash = (hash * 31 + character.charCodeAt(0)) >>> 0
-  return hash
+function ganttContainerWidth() {
+  return ganttElement.clientWidth
 }
 
-function taskLabel(task) {
-  return `<button class="task-label task-details-trigger" type="button" data-task-details-id="${escapeHtml(task.id)}" aria-label="打开 ${escapeHtml(task.text)} 的任务详情"><span class="status-dot status-${task.status}" aria-hidden="true"></span><span class="task-name">${escapeHtml(task.text)}</span></button>`
+function resolveEffectiveGridWidth() {
+  return effectiveGridPanelWidth({
+    containerWidth: ganttContainerWidth(),
+    preferredWidth: preferredGridWidth,
+  })
 }
+
+effectiveGridWidth = resolveEffectiveGridWidth()
+
+const renderer = createSvarGanttRenderer({
+  element: ganttElement,
+  onGridResize(width) {
+    if (!Number.isFinite(width) || width <= 0) return
+    effectiveGridWidth = Math.round(width)
+    if (showTimeline) {
+      preferredGridWidth = effectiveGridWidth
+      writeNumberPreference(preferenceStorage, GRID_WIDTH_KEY, preferredGridWidth)
+    }
+  },
+})
+const rendererController = createDashboardRendererController({
+  renderer,
+  initialView: {
+    displayMode: showTimeline ? 'all' : 'grid',
+    gridWidth: effectiveGridWidth,
+    labelsVisible: showTimelineLabels,
+    timelineZoom,
+  },
+})
 
 function installTaskDetailsInteractions() {
-  const element = document.getElementById('task-details-sheet')
-  const backdrop = document.getElementById('task-details-backdrop')
   detailsSheet = createTaskDetailsSheet({
-    element,
-    backdrop,
+    element: document.getElementById('task-details-sheet'),
+    backdrop: document.getElementById('task-details-backdrop'),
     api: dashboardApi,
     getTasks: () => raw,
     onChanged: () => coordinator?.invalidate(),
   })
-  document.getElementById('gantt_here').addEventListener('click', (event) => {
+  ganttElement.addEventListener('click', (event) => {
     const trigger = event.target.closest?.('[data-task-details-id]')
     if (!trigger) return
     event.preventDefault()
@@ -101,75 +118,13 @@ function installTaskDetailsInteractions() {
 }
 
 function installExecutionInboxInteractions() {
-  const element = document.getElementById('execution-inbox')
-  const backdrop = document.getElementById('execution-inbox-backdrop')
   executionInbox = createExecutionInbox({
-    element,
-    backdrop,
+    element: document.getElementById('execution-inbox'),
+    backdrop: document.getElementById('execution-inbox-backdrop'),
     api: dashboardApi,
     getTasks: () => raw,
     onChanged: () => coordinator?.invalidate(),
   })
-}
-
-function statusPill(task) {
-  const id = String(task.id)
-  const status = task.source?.status ?? task.status
-  const pending = pendingStatus.has(id)
-  const label = STATUS_LABELS[status] ?? status
-  return `<button class="status-pill status-${status}" type="button" data-status-task-id="${escapeHtml(id)}" aria-label="修改 ${escapeHtml(task.text)} 状态，当前${escapeHtml(label)}" aria-haspopup="listbox" aria-controls="status-menu" aria-expanded="${openStatusTaskId === id}" aria-busy="${pending}" ${pending ? 'disabled' : ''}><span>${escapeHtml(label)}</span><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
-}
-
-function progressCell(task) {
-  const id = String(task.id)
-  const status = task.source?.status ?? task.status
-  const label = STATUS_LABELS[status] ?? status
-  const presentation = progressPresentation(task.source, label)
-  if (!presentation.ring) return statusPill(task)
-  const pending = pendingStatus.has(id)
-  const percentage = Math.round(presentation.ratio * 100)
-  return `<button class="progress-control" type="button" data-status-task-id="${escapeHtml(id)}" aria-label="修改任务状态。${escapeHtml(presentation.ariaLabel)}" aria-haspopup="listbox" aria-controls="status-menu" aria-expanded="${openStatusTaskId === id}" aria-busy="${pending}" ${pending ? 'disabled' : ''}><svg class="progress-ring" viewBox="0 0 20 20" aria-hidden="true"><circle class="progress-ring-track" cx="10" cy="10" r="7.5"/><circle class="progress-ring-value" cx="10" cy="10" r="7.5" pathLength="100" stroke-dasharray="${percentage} 100"/></svg><span>${escapeHtml(presentation.text)}</span><svg class="progress-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
-}
-
-function noteCell(task) {
-  return task.note
-    ? `<span class="task-note" title="${escapeHtml(task.note)}">${escapeHtml(task.note)}</span>`
-    : '<span class="task-note is-empty">—</span>'
-}
-
-function activeAgentCell(task) {
-  const activeCount = Number.isInteger(task.active_agent_count) ? task.active_agent_count : 0
-  const color = activeCount > 0
-    ? AGENT_COLORS[hashString(task.agent) % AGENT_COLORS.length]
-    : 'var(--meta)'
-  const text = `${activeCount} ${activeCount === 1 ? 'agent' : 'agents'}`
-  return `<span class="execution-summary" title="最近 Agent：${escapeHtml(task.agent)}；当前 ${escapeHtml(text)}"><span class="agent-dot" style="background:${color}"></span>${escapeHtml(text)}</span>`
-}
-
-function executionCountCell(task) {
-  const executionCount = Number.isInteger(task.execution_count) ? task.execution_count : 0
-  const text = `${executionCount} ${executionCount === 1 ? 'execution' : 'executions'}`
-  return `<span class="execution-count" aria-label="${escapeHtml(task.text)}：${escapeHtml(text)}">${escapeHtml(text)}</span>`
-}
-
-function activityCell(task) {
-  const activity = relativeActivity(task.source, new Date())
-  return `<span class="activity-time ${activity.tone === 'default' ? '' : `is-${activity.tone}`}">${activity.text}</span>`
-}
-
-function sessionIdCell(task) {
-  const session = sessionIdPresentation(task.session_id)
-  if (session.empty) return '<span class="session-id-cell is-empty">—</span>'
-  const id = escapeHtml(session.full)
-  return `<span class="session-id-cell" title="${id}"><span class="session-id-value">${escapeHtml(session.display)}</span><button class="session-copy" type="button" data-copy-session-id="${id}" aria-label="复制 Session ID ${id}" title="复制 Session ID"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.25" y="5.25" width="7" height="7" rx="1" fill="none" stroke="currentColor"/><path d="M10.5 5.25V3.8a1 1 0 0 0-1-1H3.8a1 1 0 0 0-1 1v5.7a1 1 0 0 0 1 1h1.45" fill="none" stroke="currentColor"/></svg><span class="session-copy-check" aria-hidden="true">✓</span></button></span>`
-}
-
-function pathCell(field) {
-  return (task) => {
-    const path = contextPathPresentation(task[field], homeDirectory)
-    if (path.empty) return '<span class="context-path is-empty">—</span>'
-    return `<span class="context-path" tabindex="0" title="${escapeHtml(path.full)}" aria-label="完整路径：${escapeHtml(path.full)}" data-full-path="${escapeHtml(path.full)}"><span>${escapeHtml(path.display)}</span></span>`
-  }
 }
 
 function contextPopover() {
@@ -190,11 +145,9 @@ function showContextPopover(anchor) {
   const popover = contextPopover()
   popover.textContent = fullPath
   popover.hidden = false
-  const anchorRect = anchor.getBoundingClientRect()
-  const popoverRect = popover.getBoundingClientRect()
   const position = contextPopoverPosition({
-    anchor: anchorRect,
-    popover: popoverRect,
+    anchor: anchor.getBoundingClientRect(),
+    popover: popover.getBoundingClientRect(),
     viewport: { width: window.innerWidth, height: window.innerHeight },
   })
   popover.style.left = `${position.left}px`
@@ -209,7 +162,6 @@ function hideContextPopover(anchor) {
 }
 
 function installContextInteractions() {
-  const ganttElement = document.getElementById('gantt_here')
   ganttElement.addEventListener('pointerover', (event) => {
     const anchor = event.target.closest?.('.context-path[data-full-path]')
     if (anchor) showContextPopover(anchor)
@@ -226,19 +178,19 @@ function installContextInteractions() {
     const anchor = event.target.closest?.('.context-path[data-full-path]')
     if (anchor) hideContextPopover(anchor)
   })
-  window.addEventListener('resize', () => hideContextPopover(document.querySelector('.context-path[aria-describedby]')))
+  window.addEventListener('resize', () => {
+    hideContextPopover(document.querySelector('.context-path[aria-describedby]'))
+  })
 }
 
 function installSessionCopyInteractions() {
-  const ganttElement = document.getElementById('gantt_here')
   ganttElement.addEventListener('click', async (event) => {
     const button = event.target.closest?.('[data-copy-session-id]')
     if (!button) return
     event.preventDefault()
     event.stopPropagation()
     const sessionId = button.dataset.copySessionId
-    const copied = await copyTextToClipboard(sessionId)
-    if (!copied) {
+    if (!await copyTextToClipboard(sessionId)) {
       setRefreshMessage('mutation', 'Session ID 复制失败，请手动选择文本复制')
       return
     }
@@ -254,47 +206,56 @@ function installSessionCopyInteractions() {
   }, true)
 }
 
-function rootTask(task) {
-  let root = task
-  while (root.parent) root = gantt.getTask(root.parent)
-  return root
-}
-
 function renderTabs() {
   const tabs = document.getElementById('tabs')
-  tabs.innerHTML = TAB_DEFS.map(([key, label]) => (
+  const filters = TAB_DEFS.map(([key, label]) => (
     `<button class="tab ${activeFilter === key ? 'is-active' : ''}" type="button" role="tab" aria-selected="${activeFilter === key}" data-key="${key}">${label}<span class="tab-count">${tabCount(key, raw, index)}</span></button>`
-  )).join('') +
-    `<button class="inbox-toggle${unassignedExecutionCount > 0 ? ' has-items' : ''}" type="button" data-execution-inbox-toggle aria-label="打开未绑定 Execution Inbox，${unassignedExecutionCount} 个待处理"><span>${inboxButtonLabel(unassignedExecutionCount)}</span></button>` +
-    `<button class="timeline-tool timeline-panel-toggle ${showTimeline ? 'is-active' : ''}" type="button" aria-pressed="${showTimeline}" aria-label="${showTimeline ? '折叠 Timeline' : '展开 Timeline'}" title="${showTimeline ? '折叠 Timeline' : '展开 Timeline'}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M11 5v14" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>` +
-    `<button class="timeline-tool timeline-label-toggle ${showTimelineLabels ? 'is-active' : ''}" type="button" aria-pressed="${showTimelineLabels}" aria-label="${showTimelineLabels ? '隐藏任务名称' : '显示任务名称'}" title="${showTimelineLabels ? '隐藏 Timeline 任务名称' : '显示 Timeline 任务名称'}" ${showTimeline ? '' : 'disabled'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M12 6v12M8.5 18h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>` +
-    '<button class="timeline-tool locate-now" type="button" aria-label="定位到当前时间" title="定位到当前时间"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>'
+  )).join('')
+  const zooms = TIMELINE_ZOOM_DEFS.map(([key, label, title]) => (
+    `<button class="timeline-zoom-option${timelineZoom === key ? ' is-active' : ''}" type="button" data-timeline-zoom="${key}" aria-pressed="${timelineZoom === key}" title="${title}" ${showTimeline ? '' : 'disabled'}>${label}</button>`
+  )).join('')
+  tabs.innerHTML = `
+    <div class="status-filter-tabs" role="tablist" aria-label="任务状态">${filters}</div>
+    <div class="toolbar-actions">
+      <button class="inbox-toggle${unassignedExecutionCount > 0 ? ' has-items' : ''}" type="button" data-execution-inbox-toggle aria-label="打开未绑定 Execution Inbox，${unassignedExecutionCount} 个待处理"><span>${inboxButtonLabel(unassignedExecutionCount)}</span></button>
+      <div class="timeline-zoom" role="group" aria-label="Timeline 时间尺度">${zooms}</div>
+      <div class="view-tools" role="group" aria-label="Timeline 视图">
+        <button class="timeline-tool timeline-panel-toggle${showTimeline ? ' is-active' : ''}" type="button" aria-pressed="${showTimeline}" title="${showTimeline ? '隐藏 Timeline' : '显示 Timeline'}">Timeline</button>
+        <button class="timeline-tool timeline-label-toggle${showTimelineLabels ? ' is-active' : ''}" type="button" aria-pressed="${showTimelineLabels}" title="${showTimelineLabels ? '隐藏任务名称' : '显示任务名称'}" ${showTimeline ? '' : 'disabled'}>标签</button>
+        <button class="timeline-tool locate-now" type="button" title="定位到今天">今天</button>
+      </div>
+    </div>`
+
   tabs.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => {
     activeFilter = button.dataset.key
     renderTabs()
-    gantt.refreshData()
+    rendererController.setFilter(activeFilter)
   }))
   tabs.querySelector('.inbox-toggle').addEventListener('click', (event) => {
     detailsSheet?.close()
     executionInbox?.open(event.currentTarget)
   })
   tabs.querySelector('.timeline-panel-toggle').addEventListener('click', () => {
-    const next = !showTimeline
-    writeBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, next)
-    applyLayout(next)
+    applyLayout(!showTimeline)
   })
   tabs.querySelector('.timeline-label-toggle').addEventListener('click', () => {
     showTimelineLabels = !showTimelineLabels
     writeBooleanPreference(preferenceStorage, TIMELINE_LABEL_KEY, showTimelineLabels)
     renderTabs()
-    gantt.render()
+    rendererController.setLabelsVisible(showTimelineLabels)
   })
+  tabs.querySelectorAll('[data-timeline-zoom]').forEach((button) => button.addEventListener('click', () => {
+    const nextZoom = button.dataset.timelineZoom
+    if (nextZoom === timelineZoom) return
+    timelineZoom = nextZoom
+    writeChoicePreference(preferenceStorage, TIMELINE_ZOOM_KEY, timelineZoom, SVAR_TIMELINE_ZOOMS)
+    rendererController.setTimelineZoom(timelineZoom)
+    renderTabs()
+    requestAnimationFrame(() => rendererController.locateNow())
+  }))
   tabs.querySelector('.locate-now').addEventListener('click', () => {
-    if (!showTimeline) {
-      writeBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, true)
-      applyLayout(true)
-    }
-    gantt.showDate(new Date())
+    if (!showTimeline) applyLayout(true)
+    rendererController.locateNow()
   })
 }
 
@@ -335,7 +296,9 @@ function restoreStatusFocus(taskId) {
 
 function closeStatusMenu({ restoreFocus = true } = {}) {
   const taskId = openStatusTaskId
-  const trigger = openStatusTrigger?.isConnected ? openStatusTrigger : (taskId ? statusTrigger(taskId) : null)
+  const trigger = openStatusTrigger?.isConnected
+    ? openStatusTrigger
+    : (taskId ? statusTrigger(taskId) : null)
   const menu = document.getElementById('status-menu')
   if (menu) menu.hidden = true
   if (trigger) trigger.setAttribute('aria-expanded', 'false')
@@ -375,9 +338,11 @@ function openStatusMenu(trigger, { focus = 'selected' } = {}) {
   menu.hidden = false
   positionStatusMenu(menu, trigger)
   const options = [...menu.querySelectorAll('[role="option"]')]
-  const selectedIndex = Math.max(0, options.findIndex((option) => option.getAttribute('aria-selected') === 'true'))
-  const indexToFocus = focus === 'first' ? 0 : focus === 'last' ? options.length - 1 : selectedIndex
-  options[indexToFocus]?.focus({ preventScroll: true })
+  const selectedIndex = Math.max(0, options.findIndex((option) => (
+    option.getAttribute('aria-selected') === 'true'
+  )))
+  const targetIndex = focus === 'first' ? 0 : focus === 'last' ? options.length - 1 : selectedIndex
+  options[targetIndex]?.focus({ preventScroll: true })
 }
 
 async function updateTaskStatus(taskId, status) {
@@ -385,7 +350,7 @@ async function updateTaskStatus(taskId, status) {
   if (!task || pendingStatus.has(taskId) || task.status === status) return
   pendingStatus.add(taskId)
   setRefreshMessage('mutation', '')
-  if (gantt.isTaskExists(taskId)) gantt.refreshTask(taskId)
+  rendererController.refreshTask(taskId, { statusPending: true })
   try {
     const response = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}/status`, {
       method: 'PATCH',
@@ -396,7 +361,9 @@ async function updateTaskStatus(taskId, status) {
     if (!response.ok) {
       const error = result?.error ?? { code: 'SERVICE_RESPONSE_INVALID' }
       setRefreshMessage('mutation', statusMutationMessage(error))
-      if (['TASK_VERSION_CONFLICT', 'TASK_NOT_FOUND'].includes(error.code)) await coordinator?.invalidate()
+      if (['TASK_VERSION_CONFLICT', 'TASK_NOT_FOUND'].includes(error.code)) {
+        await coordinator?.invalidate()
+      }
       return
     }
     await coordinator?.invalidate()
@@ -404,7 +371,7 @@ async function updateTaskStatus(taskId, status) {
     setRefreshMessage('mutation', '状态修改失败，仍显示最后一次成功数据')
   } finally {
     pendingStatus.delete(taskId)
-    if (gantt.isTaskExists(taskId)) gantt.refreshTask(taskId)
+    rendererController.refreshTask(taskId, { statusPending: false })
   }
 }
 
@@ -418,7 +385,6 @@ function moveStatusOption(menu, key) {
 }
 
 function installStatusInteractions() {
-  const ganttElement = document.getElementById('gantt_here')
   ganttElement.addEventListener('click', (event) => {
     const trigger = event.target.closest?.('[data-status-task-id]')
     if (!trigger) return
@@ -431,7 +397,9 @@ function installStatusInteractions() {
     if (!trigger || !['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) return
     event.preventDefault()
     event.stopPropagation()
-    openStatusMenu(trigger, { focus: event.key === 'ArrowUp' ? 'last' : event.key === 'ArrowDown' ? 'first' : 'selected' })
+    openStatusMenu(trigger, {
+      focus: event.key === 'ArrowUp' ? 'last' : event.key === 'ArrowDown' ? 'first' : 'selected',
+    })
   })
   document.addEventListener('click', (event) => {
     const option = event.target.closest?.('#status-menu [role="option"]')
@@ -464,394 +432,84 @@ function installStatusInteractions() {
   window.addEventListener('resize', () => closeStatusMenu({ restoreFocus: false }))
 }
 
-function ganttData({ openIds = new Set(), preserveOpen = false } = {}) {
-  return raw.map((task) => {
-    let root = task
-    while (root.parent_id) root = index.byId.get(root.parent_id)
-    const archived = isHistoricalRoot(root, index)
-    const hasChildren = index.childrenByParent.has(task.id)
-    return {
-      id: task.id, text: task.title, start_date: new Date(task.start), end_date: endOf(task, new Date()),
-      parent: task.parent_id || 0, open: preserveOpen ? openIds.has(task.id) : true,
-      progress: progressOf(task, index), status: archived && !task.parent_id ? 'done' : task.status,
-      archived, agent: task.agent, note: task.next_action || '', last_activity: task.last_activity || null,
-      active_agent_count: task.active_agent_count, execution_count: task.execution_count,
-      session_id: task.session_id, workfolder: task.workfolder, worktree: task.worktree, branch: task.branch,
-      updated_at: task.updated_at,
-      type: hasChildren ? gantt.config.types.project : gantt.config.types.task, source: task,
-    }
-  })
-}
-
-function labelSide(start, end, task) {
-  try {
-    const position = gantt.getTaskPosition(task, start, end)
-    const timeline = document.querySelector('.gantt_task_data')
-    if (!timeline) return 'right'
-    return labelPlacement({ text: task.text, barLeft: position.left, barWidth: position.width, scrollLeft: timeline.scrollLeft, clientWidth: timeline.clientWidth })
-  } catch {
-    return 'right'
-  }
-}
-
-function taskColumnWidthBounds() {
-  return { minimum: 180, maximum: 520 }
-}
-
-function ganttContainerWidth() {
-  return document.getElementById('gantt_here').clientWidth
-}
-
-function resolveEffectiveGridWidth() {
-  return effectiveGridPanelWidth({
-    containerWidth: ganttContainerWidth(),
-    preferredWidth: preferredGridWidth,
-  })
-}
-
-function setTaskColumnWidth(width) {
-  const bounds = taskColumnWidthBounds()
-  const next = Math.round(Math.min(bounds.maximum, Math.max(bounds.minimum, width)))
-  gantt.config.columns[0].width = next
-  gantt.render()
-}
-
-function installTaskColumnResizer() {
-  const header = document.querySelector('.gantt_grid_scale .gantt_grid_head_cell:first-child')
-  if (!header || header.querySelector('.task-column-resizer')) return
-  const resizer = document.createElement('span')
-  resizer.className = 'task-column-resizer'
-  resizer.tabIndex = 0
-  resizer.setAttribute('role', 'separator')
-  resizer.setAttribute('aria-orientation', 'vertical')
-  resizer.setAttribute('aria-label', '调整任务列宽度')
-  header.appendChild(resizer)
-  resizer.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return
-    event.preventDefault()
-    const startX = event.clientX
-    const startWidth = header.getBoundingClientRect().width
-    let latest = startWidth
-    let frame = 0
-    document.documentElement.classList.add('is-resizing-task-column')
-    const apply = () => { frame = 0; setTaskColumnWidth(latest) }
-    const move = (moveEvent) => { latest = startWidth + moveEvent.clientX - startX; if (!frame) frame = requestAnimationFrame(apply) }
-    const up = () => {
-      if (frame) cancelAnimationFrame(frame)
-      setTaskColumnWidth(latest)
-      document.documentElement.classList.remove('is-resizing-task-column')
-      document.removeEventListener('pointermove', move)
-      document.removeEventListener('pointerup', up)
-      document.removeEventListener('pointercancel', up)
-    }
-    document.addEventListener('pointermove', move)
-    document.addEventListener('pointerup', up)
-    document.addEventListener('pointercancel', up)
-  })
-  resizer.addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
-    event.preventDefault()
-    setTaskColumnWidth(header.getBoundingClientRect().width + (event.key === 'ArrowRight' ? 16 : -16))
-  })
-}
-
-function configureGantt() {
-  gantt.plugins({ marker: true })
-  gantt.config.csp = true
-  gantt.config.readonly = true
-  gantt.config.duration_unit = 'hour'
-  gantt.config.row_height = 38
-  gantt.config.bar_height = 14
-  gantt.config.scale_height = 52
-  gantt.config.min_column_width = 56
-  gantt.config.smart_rendering = true
-  gantt.config.show_progress = true
-  gantt.config.show_links = false
-  gantt.config.scales = [
-    { unit: 'day', step: 1, format: (date) => new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' }).format(date) },
-    { unit: 'hour', step: 6, format: (date) => `${String(date.getHours()).padStart(2, '0')}:00` },
-  ]
-  gantt.config.columns = [
-    { name: 'text', label: '任务', tree: true, width: 240, min_width: 180, template: taskLabel },
-    { name: 'status', label: '状态 / 进度', width: 142, align: 'center', template: progressCell },
-    { name: 'session_id', label: 'Session ID', width: 276, min_width: 248, template: sessionIdCell },
-    { name: 'workfolder', label: '工作目录', width: 180, min_width: 140, template: pathCell('workfolder') },
-    { name: 'worktree', label: 'Worktree', width: 180, min_width: 140, template: pathCell('worktree') },
-    { name: 'branch', label: 'Branch', width: 160, min_width: 120, template: pathCell('branch') },
-    { name: 'note', label: '说明', width: 160, min_width: 120, template: noteCell },
-    { name: 'agent', label: 'Active Agents', width: 92, align: 'center', template: activeAgentCell },
-    { name: 'executions', label: 'Executions', width: 92, align: 'center', template: executionCountCell },
-    { name: 'activity', label: '活动', width: 56, align: 'right', template: activityCell },
-  ]
-  effectiveGridWidth = resolveEffectiveGridWidth()
-  gantt.config.layout = createGanttLayout({ showTimeline, gridWidth: effectiveGridWidth })
-  gantt.templates.task_text = (start, end, task) => showTimelineLabels && labelSide(start, end, task) === 'inside' ? escapeHtml(task.text) : ''
-  gantt.templates.rightside_text = (start, end, task) => showTimelineLabels && labelSide(start, end, task) === 'right' ? escapeHtml(task.text) : ''
-  gantt.templates.leftside_text = (start, end, task) => showTimelineLabels && labelSide(start, end, task) === 'left' ? escapeHtml(task.text) : ''
-  gantt.templates.task_class = (start, end, task) => task.type === gantt.config.types.project ? '' : `status-${task.status}`
-  gantt.attachEvent('onBeforeTaskDisplay', (id, task) => {
-    const root = rootTask(task)
-    if (activeFilter === 'history') return root.archived
-    if (root.archived) return false
-    return activeFilter === 'all' || root.status === activeFilter
-  })
-  gantt.attachEvent('onGanttRender', () => {
-    installTaskColumnResizer()
-    syncTimelineSplitterA11y()
-  })
-}
-
-function viewScroll(horizontalId) {
-  const horizontal = gantt.getLayoutView?.(horizontalId)?.getScrollState?.()
-  const vertical = gantt.getLayoutView?.('sharedScroll')?.getScrollState?.()
-  return {
-    x: Number(horizontal?.position) || 0,
-    y: Number(vertical?.position) || 0,
-  }
-}
-
-function captureState() {
-  const openIds = new Set()
-  if (initialized) gantt.eachTask((task) => { if (isTaskOpen(task)) openIds.add(String(task.id)) })
-  const gridScroll = initialized ? viewScroll('gridScroll') : { x: 0, y: 0 }
-  const timelineScroll = initialized && showTimeline ? viewScroll('timelineScroll') : { x: rememberedTimelineX, y: 0 }
-  const gridScrollState = initialized
-    ? gantt.getLayoutView?.('gridScroll')?.getScrollState?.()
-    : null
-  const gridScrollRange = Math.max(
-    0,
-    (Number(gridScrollState?.scrollSize) || 0) - (Number(gridScrollState?.size) || 0),
-  )
-  const gridX = retainedGridScroll({
-    timelineVisible: showTimeline,
-    gridX: gridScroll.x,
-    gridScrollable: Boolean(gridScrollState?.visible),
-    gridScrollRange,
-    rememberedGridX,
-  })
-  return {
-    openIds,
-    preserveOpen: initialized,
-    gridX,
-    timelineX: timelineScroll.x,
-    verticalY: gridScroll.y || timelineScroll.y,
-    taskWidth: Number(gantt.config.columns?.[0]?.width) || null,
-  }
-}
-
-function restoreViewState(state) {
-  gantt.scrollLayoutCell('grid', state.gridX, state.verticalY)
-  if (showTimeline) gantt.scrollLayoutCell('timeline', state.timelineX, state.verticalY)
-}
-
-function scheduleLayoutStateRestore(state, { restoreSplitterFocus = false } = {}) {
-  const resizeDelay = Number(gantt.config.container_resize_timeout) || 20
-  setTimeout(() => {
-    restoreViewState(state)
-    syncTimelineSplitterA11y()
-    if (restoreSplitterFocus) {
-      document.querySelector('.timeline-splitter')?.focus({ preventScroll: true })
-    }
-  }, resizeDelay + 16)
-}
-
-function syncTimelineSplitterA11y() {
-  const splitter = document.querySelector('.timeline-splitter')
-  if (!splitter || effectiveGridWidth === null) return
-  const bounds = gridPanelWidthBounds(ganttContainerWidth())
-  splitter.setAttribute('aria-valuemin', String(bounds.minimum))
-  splitter.setAttribute('aria-valuemax', String(bounds.maximum))
-  splitter.setAttribute('aria-valuenow', String(effectiveGridWidth))
-}
-
-function applyGridPanelWidth(preferredWidth, { restoreFocus = false } = {}) {
-  preferredGridWidth = Math.round(preferredWidth)
+function applyGridPanelWidth(width) {
+  preferredGridWidth = Math.round(width)
   writeNumberPreference(preferenceStorage, GRID_WIDTH_KEY, preferredGridWidth)
-  const nextWidth = resolveEffectiveGridWidth()
-  if (!initialized || !showTimeline || nextWidth === effectiveGridWidth) {
-    syncTimelineSplitterA11y()
-    return
-  }
-  const state = captureState()
-  effectiveGridWidth = nextWidth
-  gantt.config.layout = createGanttLayout({ showTimeline: true, gridWidth: effectiveGridWidth })
-  gantt.resetLayout()
-  scheduleLayoutStateRestore(state, { restoreSplitterFocus: restoreFocus })
-}
-
-function installTimelineSplitterInteractions() {
-  const ganttElement = document.getElementById('gantt_here')
-  ganttElement.addEventListener('pointerdown', (event) => {
-    const splitter = event.target.closest?.('.timeline-splitter')
-    if (!splitter || event.button !== 0 || !showTimeline) return
-    event.preventDefault()
-    const startX = event.clientX
-    const startWidth = effectiveGridWidth
-    let candidate = startWidth
-    let frame = 0
-    const guide = document.createElement('div')
-    guide.className = 'timeline-splitter-guide'
-    guide.style.left = `${candidate}px`
-    ganttElement.appendChild(guide)
-    document.documentElement.classList.add('is-resizing-timeline')
-
-    const move = (moveEvent) => {
-      const bounds = gridPanelWidthBounds(ganttContainerWidth())
-      candidate = Math.round(Math.min(
-        bounds.maximum,
-        Math.max(bounds.minimum, startWidth + moveEvent.clientX - startX),
-      ))
-      if (!frame) {
-        frame = requestAnimationFrame(() => {
-          frame = 0
-          guide.style.left = `${candidate}px`
-        })
-      }
-    }
-    const finish = (apply) => {
-      if (frame) cancelAnimationFrame(frame)
-      guide.remove()
-      document.documentElement.classList.remove('is-resizing-timeline')
-      document.removeEventListener('pointermove', move)
-      document.removeEventListener('pointerup', up)
-      document.removeEventListener('pointercancel', cancel)
-      if (apply && candidate !== startWidth) applyGridPanelWidth(candidate)
-    }
-    const up = () => finish(true)
-    const cancel = () => finish(false)
-    document.addEventListener('pointermove', move)
-    document.addEventListener('pointerup', up)
-    document.addEventListener('pointercancel', cancel)
-  })
-  ganttElement.addEventListener('keydown', (event) => {
-    const splitter = event.target.closest?.('.timeline-splitter')
-    if (!splitter || !showTimeline) return
-    const bounds = gridPanelWidthBounds(ganttContainerWidth())
-    const nextWidth = nextGridPanelWidth({
-      key: event.key,
-      currentWidth: effectiveGridWidth,
-      minimum: bounds.minimum,
-      maximum: bounds.maximum,
-    })
-    if (nextWidth === null) return
-    event.preventDefault()
-    applyGridPanelWidth(nextWidth, { restoreFocus: true })
-  })
+  effectiveGridWidth = resolveEffectiveGridWidth()
+  rendererController.setGridWidth(effectiveGridWidth)
 }
 
 function applyLayout(nextShowTimeline) {
-  if (!initialized || nextShowTimeline === showTimeline) return
-  const state = captureState()
-  if (showTimeline) {
-    rememberedGridX = state.gridX
-    rememberedTimelineX = state.timelineX
-  }
+  if (nextShowTimeline === showTimeline) return
   showTimeline = nextShowTimeline
-  if (showTimeline) effectiveGridWidth = resolveEffectiveGridWidth()
-  gantt.config.layout = createGanttLayout({ showTimeline, gridWidth: effectiveGridWidth })
-  gantt.resetLayout()
+  writeBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, showTimeline)
+  if (showTimeline) applyGridPanelWidth(preferredGridWidth ?? effectiveGridWidth)
+  rendererController.setTimelineVisible(showTimeline)
   renderTabs()
-  scheduleLayoutStateRestore({
-    ...state,
-    gridX: showTimeline ? rememberedGridX : state.gridX,
-    timelineX: showTimeline ? rememberedTimelineX : state.timelineX,
-  })
-}
-
-function applyResponsiveLayout() {
-  if (!initialized || !showTimeline) return
-  const nextWidth = resolveEffectiveGridWidth()
-  if (nextWidth === effectiveGridWidth) return
-  const state = captureState()
-  effectiveGridWidth = nextWidth
-  gantt.config.layout = createGanttLayout({ showTimeline: true, gridWidth: effectiveGridWidth })
-  gantt.resetLayout()
-  scheduleLayoutStateRestore(state)
 }
 
 window.addEventListener('resize', () => {
   if (layoutResizeFrame) cancelAnimationFrame(layoutResizeFrame)
   layoutResizeFrame = requestAnimationFrame(() => {
     layoutResizeFrame = 0
-    applyResponsiveLayout()
+    if (!showTimeline) return
+    const nextWidth = resolveEffectiveGridWidth()
+    if (nextWidth !== effectiveGridWidth) {
+      effectiveGridWidth = nextWidth
+      rendererController.setGridWidth(effectiveGridWidth)
+    }
   })
 })
-
-function refreshMarker() {
-  if (markerId !== null) gantt.deleteMarker(markerId)
-  markerId = gantt.addMarker({ start_date: new Date(), css: 'today-marker', text: 'NOW', title: '当前时间' })
-}
 
 function renderSnapshot(snapshot, { initial = false } = {}) {
   if (!snapshot || !Array.isArray(snapshot.tasks)) throw new TypeError('Dashboard snapshot is invalid')
   closeStatusMenu({ restoreFocus: false })
-  const state = captureState()
   raw = snapshot.tasks
+  index = createTaskIndex(raw)
   unassignedExecutionCount = Number.isInteger(snapshot.unassigned_execution_count)
     ? snapshot.unassigned_execution_count
     : 0
-  homeDirectory = typeof snapshot.home_directory === 'string' ? snapshot.home_directory : ''
-  index = createTaskIndex(raw)
   renderTabs()
-  const { minimum, maximum } = timelineBounds(raw, new Date())
-  if (!initialized) {
-    configureGantt()
-    gantt.init('gantt_here', minimum, maximum)
-    initialized = true
-  } else {
-    gantt.config.start_date = minimum
-    gantt.config.end_date = maximum
-  }
-  gantt.clearAll()
-  gantt.parse({ data: ganttData(state), links: [] })
-  if (state.taskWidth) setTaskColumnWidth(state.taskWidth)
-  if (!initial) restoreViewState(state)
-  refreshMarker()
-  if (initial && showTimeline) gantt.showDate(new Date())
+  rendererController.setSnapshot(snapshot, { initial })
+  if (initial && showTimeline) rendererController.locateNow()
   if (!initial && detailsSheet?.isOpen()) void detailsSheet.refresh()
   if (!initial && executionInbox?.isOpen()) void executionInbox.refresh()
 }
 
-async function loadSnapshot() {
-  return dashboardApi.snapshot()
-}
+installContextInteractions()
+installSessionCopyInteractions()
+installStatusInteractions()
+installTaskDetailsInteractions()
+installExecutionInboxInteractions()
 
-if (!gantt) {
-  document.getElementById('gantt_here').innerHTML = '<p class="empty-state">DHTMLX Gantt 加载失败。</p>'
+coordinator = createSnapshotCoordinator({
+  load: () => dashboardApi.snapshot(),
+  render: renderSnapshot,
+  onStatus: ({ state }) => {
+    if (state === 'fresh') setRefreshMessage('freshness', '')
+    else if (state === 'stale') {
+      setRefreshMessage('freshness', '任务数据刷新失败，正在显示最后一次成功数据')
+    } else if (state === 'unavailable') {
+      setRefreshMessage('freshness', '任务数据暂不可用，等待 taskd 恢复')
+    }
+  },
+})
+
+if (typeof EventSource !== 'function') {
+  setRefreshMessage('connection', '当前浏览器不支持实时连接，仅加载一次任务数据')
+  coordinator.invalidate()
 } else {
-  installContextInteractions()
-  installSessionCopyInteractions()
-  installStatusInteractions()
-  installTimelineSplitterInteractions()
-  installTaskDetailsInteractions()
-  installExecutionInboxInteractions()
-  let connectionState = 'connecting'
-  coordinator = createSnapshotCoordinator({
-    load: loadSnapshot,
-    render: renderSnapshot,
-    onStatus: ({ state }) => {
-      if (state === 'fresh') setRefreshMessage('freshness', '')
-      else if (state === 'stale') setRefreshMessage('freshness', '任务数据刷新失败，正在显示最后一次成功数据')
-      else if (state === 'unavailable') setRefreshMessage('freshness', '任务数据暂不可用，等待 taskd 恢复')
+  const events = createEventStream({
+    url: '/api/v1/events',
+    invalidate: () => coordinator.invalidate(),
+    onConnectionState: (state) => {
+      setRefreshMessage('connection', state === 'connected' ? '' : '实时连接已断开，正在重连…')
     },
   })
-
-  if (typeof EventSource !== 'function') {
-    setRefreshMessage('connection', '当前浏览器不支持实时连接，仅加载一次任务数据')
-    coordinator.invalidate()
-  } else {
-    const events = createEventStream({
-      url: '/api/v1/events',
-      invalidate: () => coordinator.invalidate(),
-      onConnectionState: (state) => {
-        connectionState = state
-        setRefreshMessage('connection', state === 'connected' ? '' : '实时连接已断开，正在重连…')
-      },
-    })
-    events.start()
-    window.addEventListener('beforeunload', () => {
-      coordinator.stop()
-      events.stop()
-    }, { once: true })
-  }
+  events.start()
+  window.addEventListener('beforeunload', () => {
+    coordinator.stop()
+    events.stop()
+    rendererController.destroy()
+  }, { once: true })
 }
