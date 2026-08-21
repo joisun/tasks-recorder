@@ -3,6 +3,7 @@
 > 日期：2026-08-14（Asia/Shanghai）
 > 状态：Phase 1–3 已实现，v0.4.0 已发布并完成本机 service/adapter 升级；真实历史 import apply 未执行
 > 适用项目：`/Users/joi-com/Desktop/space/projects/tasks-recorder`
+> 后续目标架构：[`2026-08-19-project-journalist-lifecycle-design.md`](./2026-08-19-project-journalist-lifecycle-design.md) 已在 `0.6.0` release-candidate branch 实现，将 `project` 提升为独立一级实体，并以 Fact plane、Semantic plane 与 Work Segment Attribution 重构 lifecycle；本文件仅保留为已发布 `0.4.0` / schema v2 的历史设计记录。
 
 ## 目标
 

@@ -5,6 +5,11 @@ import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 import { resolveAppConfig } from '../mcp/src/config.mjs'
+import {
+  applyV2ToV3,
+  inspectV2MigrationPath,
+  migrationCliReport,
+} from '../mcp/src/schema-migration.mjs'
 import { createTaskClient } from '../mcp/src/task-client.mjs'
 import { runControlCommand } from './control.mjs'
 import { parseCodexImport } from './src/codex/importer.mjs'
@@ -19,6 +24,71 @@ function optionValue(argv, index, option) {
   return value
 }
 
+function usageError() {
+  return new Error(
+    'usage: tasks-recorder [install|start|stop|status|uninstall] | '
+    + 'migrate (--dry-run | --apply --backup <path>) [--database <path>] | '
+    + 'import codex --session <id> [--dry-run] [--codex-home <path>]',
+  )
+}
+
+function parseMigration(argv) {
+  let mode
+  let databasePath
+  let backupPath
+  for (let index = 1; index < argv.length; index += 1) {
+    const option = argv[index]
+    if (option === '--dry-run' || option === '--apply') {
+      const nextMode = option.slice(2)
+      if (mode !== undefined) throw new Error('exactly one of --dry-run or --apply is required')
+      mode = nextMode
+      continue
+    }
+    if (option === '--database') {
+      if (databasePath !== undefined) throw new Error('--database may only be provided once')
+      databasePath = optionValue(argv, index, option)
+      index += 1
+      continue
+    }
+    if (option === '--backup') {
+      if (backupPath !== undefined) throw new Error('--backup may only be provided once')
+      backupPath = optionValue(argv, index, option)
+      index += 1
+      continue
+    }
+    throw new Error(`unknown option: ${option}`)
+  }
+  if (mode === undefined) throw new Error('exactly one of --dry-run or --apply is required')
+  if (mode === 'dry-run' && backupPath !== undefined) {
+    throw new Error('--backup is only valid with --apply')
+  }
+  if (mode === 'apply' && backupPath === undefined) {
+    throw new Error('--backup is required with --apply')
+  }
+  return {
+    type: 'migrate',
+    mode,
+    ...(databasePath === undefined ? {} : { database_path: databasePath }),
+    ...(backupPath === undefined ? {} : { backup_path: backupPath }),
+  }
+}
+
+async function defaultServiceProbe(baseUrl) {
+  try {
+    const response = await fetch(`${baseUrl}/health/live`, { signal: AbortSignal.timeout(500) })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+async function defaultMigrationRunner({ mode, databasePath, backupPath }) {
+  const report = mode === 'dry-run'
+    ? inspectV2MigrationPath(databasePath)
+    : await applyV2ToV3({ databasePath, backupPath })
+  return migrationCliReport(report, { dryRun: mode === 'dry-run' })
+}
+
 export function parseCliArguments(argv) {
   if (!Array.isArray(argv)) throw new TypeError('argv must be an array')
   if (argv.length === 0) return { type: 'control', command: 'status' }
@@ -26,11 +96,9 @@ export function parseCliArguments(argv) {
     if (argv.length !== 1) throw new Error(`${argv[0]} does not accept additional arguments`)
     return { type: 'control', command: argv[0] }
   }
+  if (argv[0] === 'migrate') return parseMigration(argv)
   if (argv[0] !== 'import' || argv[1] !== 'codex') {
-    throw new Error(
-      'usage: tasks-recorder [install|start|stop|status|uninstall] | '
-      + 'import codex --session <id> [--dry-run] [--codex-home <path>]',
-    )
+    throw usageError()
   }
 
   let sessionId
@@ -76,9 +144,26 @@ export async function runCli(argv, {
   parseImport = parseCodexImport,
   configResolver = resolveAppConfig,
   clientFactory = createTaskClient,
+  serviceProbe = defaultServiceProbe,
+  migrationRunner = defaultMigrationRunner,
 } = {}) {
   const command = parseCliArguments(argv)
   if (command.type === 'control') return controlRunner(command.command)
+
+  if (command.type === 'migrate') {
+    const config = await configResolver({ projectRoot, env, homeDirectory })
+    const databasePath = command.database_path ?? config.databasePath
+    if (command.mode === 'apply' && await serviceProbe(config.serverBaseUrl)) {
+      const error = new Error('stop tasks-recorder taskd before applying a database migration')
+      error.code = 'TASKD_MUST_BE_STOPPED'
+      throw error
+    }
+    return migrationRunner({
+      mode: command.mode,
+      databasePath,
+      ...(command.backup_path === undefined ? {} : { backupPath: command.backup_path }),
+    })
+  }
 
   const parsed = await parseImport({
     sessionId: command.session_id,

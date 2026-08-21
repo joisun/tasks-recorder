@@ -1,6 +1,6 @@
 # Tasks Recorder
 
-Tasks Recorder 是面向 coding agent 的本地 Task Control Plane。它把 Codex 或 Claude Code 的工作记录到本机 SQLite，并提供可实时更新的 Tree + Timeline Dashboard。
+Tasks Recorder 是面向 coding agent 的本机工作记录员。它先把 Codex 或 Claude Code 实际发生的工作记录到 SQLite，再把可验证的工作片段组织为 Project / Main Task / Subtask，并提供实时更新的 Tree + Timeline Dashboard。
 
 - `taskd` 是唯一 SQLite writer，由 macOS `launchd` 常驻管理。
 - Dashboard 访问地址：<http://127.0.0.1:43127>。
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.
 `curl | bash` 方便但会直接执行远端脚本。更审慎的方式是固定版本、先查看 installer，再执行；installer 会在解包前使用 Release 中的 `SHA256SUMS` 校验 runtime artifact：
 
 ```bash
-version=v0.5.0
+version=v0.6.0
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -80,24 +80,28 @@ Claude hooks + MCP ─┘                         │
 Browser Dashboard ◀──────────── SSE changed ─┘
 ```
 
-Tasks Recorder 把两个容易混淆的对象分开：
+Tasks Recorder 把事实记录与用户语义分开：
 
-- **Task** 表示要交付的目标，ID 跨 session、turn、branch 和 worktree 保持稳定。一个 root Task 可有一层 direct child；同一 conversation 先做 A、再做 B 时，应记录两个独立 Task，而不是把整个 conversation 当成一个 Task。
-- **Execution** 表示某个 session、turn 或 subagent 的一次执行区间。一个 Task 可对应多个 executions，一个 execution 也可以先保持未绑定，等待用户或 Agent 归类。
+- **事实层**：Observation、Source Session、Execution 与 Work Segment 记录宿主实际发生了什么，不把 prompt、reasoning、tool input/output 写入数据库。
+- **语义层**：Project、Main Task 与 Subtask 表示用户认可的工作结构。Task ID 跨 session、turn、branch 和 worktree 保持稳定；Segment Attribution 是事实与 Task 之间唯一可审计、可纠正的桥梁。
 
 实时链路如下：
 
-1. `SessionStart` 注册或恢复 root session；`UserPromptSubmit` 为新的 main turn 创建幂等 execution，并把 `session_id`、`turn_id` 与 working directory 注入 Agent context。
-2. Agent 先调用 `agent_tasks_context`，再通过 `agent_tasks_sync_tree` 同步 root 与完整的一层 children，并用 `focus_task_id` 把当前 main execution 绑定到正在执行的 Task。旧的 `agent_tasks_upsert` / `agent_tasks_complete` contract 继续兼容。
-3. `PostToolUse` 更新 execution heartbeat；遇到 `update_plan` 时只记录结构化 plan observation，等待 Agent 明确同步 Task tree，不按 prompt 或文本相似度猜造 Task。
-4. `SubagentStart` / `SubagentStop` 记录 child execution。只有 `agent_key` 在当前 root tree 中唯一匹配时才自动绑定；否则进入 Dashboard 的未绑定 inbox。subagent 结束不等于 child Task 自动完成。
-5. `SessionEnd` 关闭仍 active 的 execution；`Stop` 仅在存在待同步 plan、未绑定 work execution 或需收口的 Task 时要求 Agent 处理。宿主被直接关闭造成的状态缺口可在 Dashboard 中修正。
+1. Native adapter 把 `SessionStart`、`UserPromptSubmit`、`PostToolUse`、subagent lifecycle、`Stop` 与 `SessionEnd` 映射为 host-neutral Event Envelope，经短超时投递到 `POST /api/v1/events`；taskd 暂不可达时进入 bounded spool，Hook 始终 fail-open。
+2. `UserPromptSubmit` 提供稳定的 `execution_id`。Agent 对 concrete work 先调用 `agent_work_context`；只有真实 focus 变化、里程碑或 Task 结构变化时才调用 `agent_work_focus`、`agent_work_checkpoint`、`agent_tasks_mutate` 或 `agent_tasks_sync_structure`。
+3. `PostToolUse` 只刷新 execution fact activity，不读取 context、不同步整棵 Task tree，也不保存 tool input/output。普通对话可以保持未归属，或在 Dashboard 标记为 `non_work`。
+4. child execution 只有在 spawn 前通过 `agent_work_intent` 声明了宿主可观测的 exact agent key 时才自动 Attribution；否则进入 Inbox，不按时间邻近、agent type 或 prompt 相似度猜测。
+5. `Stop` 只尽力提交 execution end fact，立即返回且永不要求 continuation；`SessionEnd` 收口该 source session 的执行事实。两者都不会自动完成 Task，宿主被直接关闭造成的状态缺口由 recovery 与 Dashboard correction 处理。
 6. `taskd` 是唯一 SQLite owner。写事务 commit 后发布轻量 SSE `changed` event；Dashboard 再读取 authoritative snapshot，因此页面不需要定时 polling，也不会生成一个带静态数据的 `dashboard.html`。
-7. Dashboard 的 Tree/Grid 与 Timeline 读取同一份 snapshot。UI 使用 MIT 许可的 SVAR React Gantt 作为 virtualized Tree + Timeline renderer；Tasks Recorder 自己维护筛选、SSE refresh、视图状态恢复、可访问的 splitter、当前时间 marker 与任务详情交互。默认 Grid 只保留任务、状态/进度、执行上下文、Session ID 与活动五个决策字段；工作目录、Worktree 与 Branch 在执行上下文中合并展示，聚焦或悬停可查看完整值。Session ID 使用紧凑显示但始终复制完整值，root 可折叠，Grid/Timeline 分隔线可拖动或用键盘调整。
-8. Timeline 默认使用周视图展示至少 8 周项目窗口，并提供日、周、月三种粒度。日视图至少覆盖 21 天，月视图至少覆盖 8 个月；切换后自动定位到今天。summary Task 的时间范围取自身及全部 descendants 的最早开始与最晚结束，因此父任务始终包络子任务，不会出现 scope 交叉。
-9. 选中 Task 可打开 details Sheet，编辑 Summary、查看 Executions 与 Activity，并执行 archive、soft delete、restore 等操作。所有编辑使用 revision/compare-and-set，避免覆盖较新的 Agent 或浏览器更新。工具栏的未绑定 inbox 支持筛选、批量分配 Task 或标记 `non_work`。
+7. Dashboard 的一级节点是 Project，下面依次是 Main Task 与 Subtask；Project 是只读 projection，不会伪装成可编辑 Task。Tree/Grid 与 Timeline 读取同一份 canonical v3 snapshot。UI 使用 MIT 许可的 SVAR React Gantt 作为 virtualized renderer，并维护筛选、SSE refresh、视图状态恢复、可访问的 splitter、当前时间 marker 与详情交互。默认 Grid 保留任务、状态/进度、执行上下文、Session ID 与活动五个决策字段；工作目录、Worktree 与 Branch 合并展示，Session ID 紧凑显示但复制完整值。
+8. Timeline 把 Planned 与 Actual 分开表达：叶子 Task 保留 A → B → A 这样的真实 split Segment，Main Task 与 Project 使用覆盖全部 descendants 的 actual envelope，因此父级 scope 不会与子级交叉。默认 `Auto` 会按当前 Project 的 planned/actual extent 在 hour、day、week、quarter 之间自适应并保留水平留白；也可手动切换日、周、月粒度。
+9. “Project Inbox”处理尚未确认属于哪个 Project 的 Source Session；“任务待归属”处理 Project 已知但 Task 未知的 Work Segment。两者分开呈现，分配必须由明确选择或确定性证据驱动，不按 branch、标题相似或时间邻近猜测。选中 Task 可打开 details Sheet，编辑 Summary、查看 Executions 与 Activity，并执行 archive、soft delete、restore 等操作；所有编辑使用 revision/compare-and-set，避免覆盖较新的 Agent 或浏览器更新。
 
 这是一种本机 C/S 架构：plugin adapter 是 client，`taskd` 是 server，Dashboard 是另一个 browser client。adapter 没有 service 时会报告 `SERVICE_UNAVAILABLE`；service 没有 adapter 时仍可以运行并查看已有数据。
+
+### Legacy compatibility window
+
+`agent_tasks_*` legacy MCP/API 仍在整个 `0.6.x` release line 中提供 compatibility wrapper，但返回 `deprecated: true`、replacement 和 lossy warning；单值 execution `task_id` 无法完整表达多个 Work Segment。新 adapter/skill 只使用 `agent_work_*`、`agent_tasks_mutate` 与 `agent_tasks_sync_structure`。legacy wrapper 最早在 `0.7.0` 移除；升级自定义 client 前应先按返回的 replacement 完成迁移。
 
 ## Files and data
 
@@ -110,7 +114,10 @@ Tasks Recorder 把两个容易混淆的对象分开：
 
 ~/.config/tasks-recorder/
 ├── config.json                         # user configuration
-└── tasks.sqlite                        # canonical data
+├── tasks.sqlite                        # canonical data
+├── spool/                              # taskd 暂不可达时的 bounded Event Envelope
+└── logs/
+    └── tasks-recorder.ndjson           # privacy-bounded structured events
 
 ~/Library/Logs/tasks-recorder/
 ├── taskd.stdout.log
@@ -132,7 +139,38 @@ Canonical database 的完整路径是 `~/.config/tasks-recorder/tasks.sqlite`。
 
 `output_dir` 只用于兼容旧版 `Tasks.md` / `History.md` projection；Dashboard 不依赖这些 Markdown files。
 
-数据库使用 schema v2。首次由新版 `taskd` 打开 schema v1 数据库时，会在单事务中保留原有 `tasks` / `task_sessions` 并增加 Task tree、execution、event 和 plan observation 表；失败会 rollback。旧版 runtime 无法打开已经迁移到 v2 的数据库，如需可回退能力，应在首次启动新版 service 前停止 `taskd` 并备份 `tasks.sqlite`，回退时同时恢复该备份。
+当前 runtime 使用 schema v3。空数据库会直接初始化为 v3；已有 schema v1/v2 数据库不会被静默升级，`taskd` 会以 `SCHEMA_MIGRATION_REQUIRED` 拒绝启动。旧 runtime 也不能打开 v3 数据库，因此升级现有安装时必须显式执行下述 migration。
+
+## Migrate a schema v2 database
+
+先停止唯一的 SQLite writer，再运行 read-only preview：
+
+```bash
+tasks-recorder stop
+tasks-recorder migrate --dry-run
+```
+
+dry-run 只读打开 `~/.config/tasks-recorder/tasks.sqlite`，不会创建 backup、修改 `user_version` 或写入业务数据。JSON report 只包含 legacy counts、计划生成的 Project 数、ambiguity code 汇总，不回显 Task title、Session ID 或 repository path。ambiguity 不会被猜测合并；apply 后仍可在 Project Inbox 中显式处理。
+
+确认 report 后，选择一个**尚不存在**且不同于 source database 的 backup path，再显式 apply：
+
+```bash
+tasks-recorder migrate --apply \
+  --backup "$HOME/.config/tasks-recorder/backups/tasks-v2-before-v3.sqlite"
+```
+
+apply 会先 checkpoint WAL，创建权限为 `0600` 的 verified schema-v2 backup，校验 SHA-256 与 SQLite integrity，然后在一个 transaction 中迁移；任何 transform 或 invariant failure 都会 rollback source database。若 taskd 仍可访问、backup 已存在、source 不是 schema v2，或 backup 与 source 指向同一路径，命令会 fail closed。
+
+迁移成功后启动并检查 service：
+
+```bash
+tasks-recorder start
+tasks-recorder status
+```
+
+需要演练非默认副本时，可对两个命令都加 `--database /absolute/path/to/tasks.sqlite`。这不会改变默认配置。
+
+若 migration 后需要 rollback：先 `tasks-recorder stop`，把当前 v3 database 及其 `-wal` / `-shm` sidecars 移到独立恢复目录，再把 verified backup 复制回 canonical path，并用 installer 的 `--version <previous-v2-tag>` 切回迁移前 runtime；不要让 v2 runtime 打开 v3 database，也不要让 v3 runtime 打开恢复后的 v2 backup。
 
 ## Import historical Codex sessions
 
@@ -150,7 +188,7 @@ CLI 会在 `~/.codex/sessions` 中用 exact ID 解析 root，读取各 transcrip
 tasks-recorder import codex --session <session-id>
 ```
 
-Apply 通过 localhost API 由 `taskd` 在一个事务中写入，并使用 immutable host IDs 生成的 external keys 保证重复执行幂等。Importer 不修改 Task title/status，也不会按时间范围把 execution 强制分给 Task；只有 existing session binding 能唯一证明归属时才绑定，其余进入未绑定 inbox。
+Apply 通过 localhost API 由 `taskd` 在一个事务中写入，并使用 immutable host IDs 生成的 external keys 保证重复执行幂等。Importer 不修改 Task title/status，也不会按时间范围把 execution 强制分给 Task；只有 existing session binding 能唯一证明归属时才绑定，其余进入对应的 Project Inbox 或任务待归属。
 
 若使用非默认 Codex home，可显式传入：
 
@@ -194,18 +232,21 @@ claude plugin uninstall tasks-recorder@tasks-recorder
 ```bash
 tasks-recorder status
 tail -n 100 ~/Library/Logs/tasks-recorder/taskd.stderr.log
+tail -n 100 ~/.config/tasks-recorder/logs/tasks-recorder.ndjson
 curl -fsS http://127.0.0.1:43127/health/ready
+curl -fsS http://127.0.0.1:43127/api/v1/status
 ```
 
 常见情况：
 
 - `SERVICE_UNAVAILABLE`：先确认 service 已安装且 `health/ready` 返回成功。
 - Dashboard 无法打开：检查 `server_port` 是否被占用，以及 stderr log。
+- `health/ready` 可访问但状态为 degraded：查看 `/api/v1/status` 中的 schema、spool、logger 与 recovery 摘要；该接口不会返回 Event payload 或凭据。
 - Dashboard 正常但没有自动记录：确认 adapter 已启用、重启宿主，并完成 hook trust/MCP approval。
 - 历史 import 返回 `CODEX_SESSION_NOT_FOUND`：确认使用完整、精确的 root Session ID；非默认 Codex 数据目录需要传 `--codex-home`。
-- 历史 import 后 execution 仍未绑定：这是无法唯一证明 Task 归属时的预期行为，请在 Dashboard 未绑定 inbox 中分配或标记 `non_work`。
+- 历史 import 后仍有未归属记录：这是无法唯一证明归属时的预期行为；先在 Project Inbox 确认 Project，再在“任务待归属”中分配 Task 或标记 `non_work`。
 - 历史 import route 不存在：service runtime 版本早于 importer，请先升级 service；只升级 adapter 不会更新 `taskd`。
-- Codex 显示 `Stop hook (blocked)`：这通常表示 hook 已成功要求 agent 收口状态，不代表 hook 自身崩溃；若随后提示 `agent_tasks_context` unavailable，运行 `codex mcp get tasks-recorder`，正常配置应显示 `args: dist/mcp-server.mjs` 和 `cwd: .`。若仍显示 `${PLUGIN_ROOT}`，请升级或重新安装 Codex adapter。
+- Codex 仍显示 `Stop hook (blocked)`：当前 adapter 的 Stop 不会阻断或请求 continuation，这表示仍在使用旧 adapter。运行 `codex mcp get tasks-recorder`，正常配置应显示 `args: dist/mcp-server.mjs` 和 `cwd: .`；若仍显示 `${PLUGIN_ROOT}`，请升级或重新安装 adapter，并新开 conversation。
 - 更新 plugin 后旧 conversation 没变化：新开 conversation，避免复用已经建立的 MCP process。
 - `~/.local/bin/tasks-recorder: command not found`：把 `~/.local/bin` 加入 shell `PATH`，或直接在浏览器访问 Dashboard。
 
