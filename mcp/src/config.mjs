@@ -4,6 +4,17 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 import { TaskRecorderError } from './errors.mjs'
 
+function positiveInteger(value, field, fallback) {
+  const candidate = value ?? fallback
+  const normalized = typeof candidate === 'string' && candidate.trim() !== ''
+    ? Number(candidate)
+    : candidate
+  if (!Number.isSafeInteger(normalized) || normalized < 1) {
+    throw new TaskRecorderError('CONFIG_INVALID', `${field} must be a positive safe integer.`)
+  }
+  return normalized
+}
+
 export async function resolveAppConfig({
   projectRoot,
   env = process.env,
@@ -45,6 +56,50 @@ export async function resolveAppConfig({
   const databasePath = configuredDatabase
     ? (isAbsolute(configuredDatabase) ? resolve(configuredDatabase) : resolve(dataDirectory, configuredDatabase))
     : join(dataDirectory, 'tasks.sqlite')
+  const configuredSpool = env.AGENT_TASKS_SPOOL_DIR ?? fileConfig.spool_dir ?? 'spool'
+  if (typeof configuredSpool !== 'string' || configuredSpool.trim() === '') {
+    throw new TaskRecorderError('CONFIG_INVALID', 'spool_dir must be a non-empty string.')
+  }
+  const spoolDirectory = isAbsolute(configuredSpool)
+    ? resolve(configuredSpool)
+    : resolve(dataDirectory, configuredSpool)
+  const spoolMaxBytes = positiveInteger(
+    env.AGENT_TASKS_SPOOL_MAX_BYTES ?? fileConfig.spool_max_bytes,
+    'spool_max_bytes',
+    4 * 1024 * 1024,
+  )
+  const spoolMaxFiles = positiveInteger(
+    env.AGENT_TASKS_SPOOL_MAX_FILES ?? fileConfig.spool_max_files,
+    'spool_max_files',
+    512,
+  )
+  const spoolMaxAgeMs = positiveInteger(
+    env.AGENT_TASKS_SPOOL_MAX_AGE_MS ?? fileConfig.spool_max_age_ms,
+    'spool_max_age_ms',
+    7 * 24 * 60 * 60 * 1000,
+  )
+  const configuredLogs = env.AGENT_TASKS_LOGS_DIR ?? fileConfig.logs_dir ?? 'logs'
+  if (typeof configuredLogs !== 'string' || configuredLogs.trim() === '') {
+    throw new TaskRecorderError('CONFIG_INVALID', 'logs_dir must be a non-empty string.')
+  }
+  const logsDirectory = isAbsolute(configuredLogs)
+    ? resolve(configuredLogs)
+    : resolve(dataDirectory, configuredLogs)
+  const logMaxFileBytes = positiveInteger(
+    env.AGENT_TASKS_LOG_MAX_FILE_BYTES ?? fileConfig.log_max_file_bytes,
+    'log_max_file_bytes',
+    1024 * 1024,
+  )
+  const logMaxFiles = positiveInteger(
+    env.AGENT_TASKS_LOG_MAX_FILES ?? fileConfig.log_max_files,
+    'log_max_files',
+    5,
+  )
+  const logMaxAgeMs = positiveInteger(
+    env.AGENT_TASKS_LOG_MAX_AGE_MS ?? fileConfig.log_max_age_ms,
+    'log_max_age_ms',
+    14 * 24 * 60 * 60 * 1000,
+  )
 
   const configuredHost = fileConfig.server_host ?? '127.0.0.1'
   const configuredPort = fileConfig.server_port ?? 43127
@@ -79,6 +134,14 @@ export async function resolveAppConfig({
     configPath,
     databasePath,
     outputDir,
+    spoolDirectory,
+    spoolMaxBytes,
+    spoolMaxFiles,
+    spoolMaxAgeMs,
+    logsDirectory,
+    logMaxFileBytes,
+    logMaxFiles,
+    logMaxAgeMs,
     serverHost: serverUrl.hostname,
     serverPort,
     serverBaseUrl: serverUrl.origin,

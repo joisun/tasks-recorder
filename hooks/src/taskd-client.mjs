@@ -1,11 +1,26 @@
 import { resolveAppConfig } from '../../mcp/src/config.mjs'
-import { createTaskClient } from '../../mcp/src/task-client.mjs'
+import { createJournalEventClient } from './journal-client.mjs'
 
-export async function sendHeartbeat(input, { projectRoot, env = process.env } = {}) {
-  const config = await resolveAppConfig({ projectRoot, env })
-  const client = createTaskClient({
-    baseUrl: config.serverBaseUrl,
-    timeoutMs: 1_000,
-  })
-  return client.heartbeat(input)
+export async function sendJournalEvent(envelope, { projectRoot, env = process.env } = {}) {
+  try {
+    const config = await resolveAppConfig({ projectRoot, env })
+    const client = createJournalEventClient({
+      baseUrl: config.serverBaseUrl,
+      spoolDirectory: config.spoolDirectory,
+      spoolOptions: {
+        maxBytes: config.spoolMaxBytes,
+        maxFiles: config.spoolMaxFiles,
+        maxAgeMs: config.spoolMaxAgeMs,
+      },
+    })
+    return client.deliver(envelope)
+  } catch {
+    return {
+      ok: true,
+      delivered: false,
+      spooled: false,
+      dropped: true,
+      error_code: 'JOURNAL_CLIENT_UNAVAILABLE',
+    }
+  }
 }
