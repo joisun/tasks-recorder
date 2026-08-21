@@ -68,6 +68,19 @@ test('status and session cells preserve menu and complete-copy contracts', () =>
   assert.match(session, /class="session-copy-icon"/)
 })
 
+test('Project status is a read-only live health summary instead of a Task mutation trigger', () => {
+  const html = markup(StatusCell, {
+    ...summary,
+    entity_type: 'project', running_execution_count: 2,
+    blocked_count: 1, live_state: 'running',
+    source: { ...summary.source, progress: { completed: 3, total: 5, remaining: 2, ratio: 0.6 } },
+  })
+  assert.match(html, /project-health live-running/)
+  assert.match(html, />2 running</)
+  assert.match(html, />3\/5</)
+  assert.doesNotMatch(html, /data-status-task-id/)
+})
+
 test('context cells expose shortened text and complete keyboard tooltip values', () => {
   const workfolder = markup(WorkfolderCell)
   const worktree = markup(WorktreeCell)

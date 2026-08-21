@@ -86,6 +86,13 @@ export function createDashboardApi({
     updateExecutionAssignments: (input) => request('/api/v1/executions/tasks', {
       method: 'PATCH', body: input,
     }),
+    assignSourceSessionProject: (sourceSessionId, projectId, expectedProjectId = null) => request(
+      `/api/v1/source-sessions/${encodeURIComponent(sourceSessionId)}/project`,
+      {
+        method: 'PATCH',
+        body: { project_id: projectId, expected_project_id: expectedProjectId },
+      },
+    ),
     updateTask: (id, expectedRevision, patch) => request(`/api/v1/tasks/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: { expected_revision: expectedRevision, patch, actor: 'user' },

@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   currentTimeOverlayModel,
   separatorWidthFromKey,
+  separatorWidthFromPointer,
   timelineLocateShouldDefer,
 } from '../ui/src/current-time-overlay.mjs'
 
@@ -51,4 +52,12 @@ test('turns separator keyboard actions into bounded Grid widths', () => {
   assert.equal(separatorWidthFromKey({ ...base, key: 'End' }), 1111)
   assert.equal(separatorWidthFromKey({ ...base, key: 'Enter' }), null)
   assert.equal(separatorWidthFromKey({ ...base, width: 240, key: 'ArrowLeft' }), 240)
+})
+
+test('turns separator pointer positions into bounded Grid widths', () => {
+  const base = { containerLeft: 100, containerWidth: 1440, minimum: 240, timelineMinimum: 329 }
+  assert.equal(separatorWidthFromPointer({ ...base, clientX: 820 }), 720)
+  assert.equal(separatorWidthFromPointer({ ...base, clientX: 120 }), 240)
+  assert.equal(separatorWidthFromPointer({ ...base, clientX: 1500 }), 1111)
+  assert.equal(separatorWidthFromPointer({ ...base, clientX: Number.NaN }), null)
 })

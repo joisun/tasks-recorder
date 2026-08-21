@@ -22,8 +22,16 @@ function rowTitle(row) {
 
 export function TaskCell({ row }) {
   const summary = row.type === 'summary'
+  const project = row.entity_type === 'project'
   const title = rowTitle(row)
   const expandedText = row.open ? '当前已展开' : '当前已折叠'
+  if (project) {
+    return h('span', {
+      className: 'task-label is-summary is-project',
+      title,
+      'aria-label': `项目：${title}；${expandedText}`,
+    }, title)
+  }
   return h('button', {
     className: `task-label${summary ? ' is-summary' : ''}`,
     type: 'button',
@@ -43,6 +51,22 @@ export function StatusCell({ row }) {
   const statusLabel = STATUS_LABELS[row.status] ?? row.status ?? '未知状态'
   const task = { ...row.source, title: rowTitle(row) }
   const presentation = progressPresentation(task, statusLabel)
+  if (row.entity_type === 'project') {
+    const running = Number.isInteger(row.running_execution_count) ? row.running_execution_count : 0
+    const blocked = Number.isInteger(row.blocked_count) ? row.blocked_count : 0
+    const liveLabel = running > 0 ? `${running} running` : statusLabel
+    const progress = task.progress?.total > 0
+      ? `${task.progress.completed}/${task.progress.total}`
+      : '—'
+    return h('span', {
+      className: `project-health live-${row.live_state ?? 'none'}`,
+      'aria-label': `${task.title}：${liveLabel}；进度 ${progress}${blocked ? `；${blocked} 个阻塞` : ''}`,
+    }, [
+      h('span', { className: 'project-health-dot', 'aria-hidden': 'true', key: 'dot' }),
+      h('span', { className: 'project-health-live', key: 'live' }, liveLabel),
+      h('span', { className: 'project-health-progress', key: 'progress' }, progress),
+    ])
+  }
   return h('button', {
     className: presentation.ring ? 'progress-control' : `status-pill status-${row.status}`,
     type: 'button',
@@ -170,7 +194,7 @@ export function TaskBar({ data, api, labelsVisible = false }) {
     clientWidth: Number.isFinite(state._chartWidth) ? state._chartWidth : 0,
   })
   return h('div', {
-    className: `svar-task-bar${data.type === 'summary' ? ' is-summary' : ''} status-${data.status} label-${placement}`,
+    className: `svar-task-bar${data.type === 'summary' ? ' is-summary' : ''} status-${data.status} entity-${data.entity_type ?? 'task'} visual-${data.visual_mode ?? 'legacy'} label-${placement}`,
     'data-task-bar-id': data.id,
   }, labelsVisible ? h('span', { className: 'svar-task-bar-label' }, rowTitle(data)) : null)
 }

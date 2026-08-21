@@ -51,7 +51,15 @@ export function endOf(task, now = new Date()) {
 
 export function timelineBounds(tasks, now = new Date()) {
   const dates = tasks
-    .flatMap((task) => [new Date(task.start), endOf(task, now)])
+    .flatMap((task) => [
+      new Date(task.start),
+      endOf(task, now),
+      new Date(task.base_start),
+      new Date(task.base_end),
+      ...(Array.isArray(task.segments)
+        ? task.segments.flatMap((segment) => [new Date(segment.start), new Date(segment.end)])
+        : []),
+    ])
     .filter((date) => !Number.isNaN(date.valueOf()))
   const minimum = dates.length ? new Date(Math.min(...dates)) : new Date(now)
   const maximum = dates.length ? new Date(Math.max(...dates)) : new Date(now)

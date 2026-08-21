@@ -33,7 +33,7 @@ export function reconcileInboxSelection(selection, executions) {
 }
 
 export function inboxButtonLabel(count) {
-  return Number(count) > 0 ? `未绑定 ${count}` : '未绑定'
+  return Number(count) > 0 ? `任务 ${count}` : '任务'
 }
 
 export function inboxExecutionPresentation(execution) {
@@ -138,7 +138,7 @@ export function inboxMarkup({
     .sort((left, right) => left.localeCompare(right))
   const allVisibleSelected = filtered.length > 0 && filtered.every(({ id }) => selection.has(id))
   return `<section class="inbox-shell" role="dialog" aria-modal="true" aria-labelledby="execution-inbox-title">
-    <header class="inbox-header"><div><span class="details-eyebrow">Execution triage</span><h2 id="execution-inbox-title">未绑定 Execution</h2><p>${executions.length} 个待处理</p></div><button class="details-close" type="button" data-inbox-close aria-label="关闭未绑定 Execution">×</button></header>
+    <header class="inbox-header"><div><span class="details-eyebrow">Attribution inbox</span><h2 id="execution-inbox-title">任务待归属</h2><p>${executions.length} 个 Work Execution</p></div><button class="details-close" type="button" data-inbox-close aria-label="关闭任务待归属">×</button></header>
     <div class="inbox-message${message ? ' is-visible' : ''}" role="status" aria-live="polite">${escapeMarkup(message)}</div>
     <div class="inbox-filters">
       <label><span>搜索 Agent / Path</span><input type="search" value="${escapeMarkup(filters.query)}" data-inbox-filter="query" placeholder="researcher / worktree"></label>
@@ -147,7 +147,7 @@ export function inboxMarkup({
       <label><span>开始日期</span><input type="date" value="${escapeMarkup(filters.startedAfter)}" data-inbox-filter="startedAfter"></label>
     </div>
     <div class="inbox-selection-bar"><label><input type="checkbox" data-inbox-select-all${allVisibleSelected ? ' checked' : ''}${filtered.length === 0 ? ' disabled' : ''}>选择当前结果</label><span>已选 ${selection.size}</span></div>
-    <div class="inbox-list-wrap" aria-busy="${busy}"><ol class="inbox-list">${executionRows(filtered, selection) || '<li class="details-empty">没有匹配的未绑定 Execution</li>'}</ol></div>
+    <div class="inbox-list-wrap" aria-busy="${busy}"><ol class="inbox-list">${executionRows(filtered, selection) || '<li class="details-empty">没有匹配的待归属工作</li>'}</ol></div>
     <footer class="inbox-actions"><label><span class="sr-only">分配到任务</span><select data-inbox-task><option value="">选择目标 Task…</option>${taskOptions(tasks)}</select></label><button type="button" data-inbox-action="assign"${selection.size === 0 || busy ? ' disabled' : ''}>分配</button><button type="button" data-inbox-action="non-work"${selection.size === 0 || busy ? ' disabled' : ''}>标记 non-work</button></footer>
   </section>`
 }

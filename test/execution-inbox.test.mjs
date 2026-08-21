@@ -52,8 +52,8 @@ test('inbox selection keeps only executions still unassigned after SSE refresh',
     [...reconcileInboxSelection(new Set(['execution-a', 'gone']), executions)],
     ['execution-a'],
   )
-  assert.equal(inboxButtonLabel(3), '未绑定 3')
-  assert.equal(inboxButtonLabel(0), '未绑定')
+  assert.equal(inboxButtonLabel(3), '任务 3')
+  assert.equal(inboxButtonLabel(0), '任务')
 })
 
 test('batch payload includes both optimistic assignment dimensions', () => {

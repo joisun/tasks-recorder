@@ -36,7 +36,7 @@ function fakeRenderer() {
   const captured = {
     displayMode: 'all', gridWidth: 720, openIds: new Set(['root']), gridX: 18,
     timelineX: 96, verticalY: 44, selectedTaskId: 'child', taskColumnWidth: 260,
-    labelsVisible: true,
+    labelsVisible: true, timelineZoom: 'auto',
   }
   return {
     calls,
@@ -60,6 +60,7 @@ test('projects snapshots and root filters through the renderer boundary', () => 
   assert.equal(renderer.calls[0][0], 'render')
   assert.deepEqual(renderer.calls[0][1].tasks.map(({ id }) => id), ['root', 'child', 'blocked'])
   assert.equal(renderer.calls[0][1].columns.length, 5)
+  assert.equal(renderer.calls[0][1].baselines, true)
   assert.equal(renderer.calls[0][1].start.getUTCFullYear(), 2026)
   assert.equal(renderer.calls[0][2].gridWidth, 792)
 
@@ -67,6 +68,14 @@ test('projects snapshots and root filters through the renderer boundary', () => 
   const render = renderer.calls.at(-1)
   assert.equal(render[0], 'render')
   assert.deepEqual(render[1].tasks.map(({ id }) => id), ['blocked'])
+
+  controller.setFilter('waiting')
+  const emptyRender = renderer.calls.at(-1)
+  assert.equal(emptyRender[1].tasks.length, 0)
+  assert.deepEqual(emptyRender[1].emptyState, {
+    title: '没有匹配任务',
+    description: '当前“等待中”筛选下没有任务。',
+  })
 })
 
 test('maps pending rows and toolbar actions without exposing SVAR internals', () => {
@@ -80,14 +89,34 @@ test('maps pending rows and toolbar actions without exposing SVAR internals', ()
   controller.setLabelsVisible(true)
   controller.locateNow()
 
-  assert.deepEqual(renderer.calls.slice(-5).map(([name]) => name), [
-    'refreshTask', 'setDisplayMode', 'setGridWidth', 'setLabelsVisible', 'locateNow',
+  assert.deepEqual(renderer.calls.slice(-6).map(([name]) => name), [
+    'refreshTask', 'captureState', 'render', 'setGridWidth', 'setLabelsVisible', 'locateNow',
   ])
-  assert.equal(renderer.calls.at(-5)[2].statusPending, true)
-  assert.equal(renderer.calls.at(-4)[1], 'grid')
+  assert.equal(renderer.calls.at(-6)[2].statusPending, true)
+  assert.equal(renderer.calls.at(-4)[2].displayMode, 'grid')
+  assert.deepEqual(
+    renderer.calls.at(-4)[1].columns.map(({ id, flexgrow }) => [id, flexgrow ?? null]),
+    [['text', 1], ['status', null], ['execution_context', 2], ['session_id', 1.5], ['activity', null]],
+  )
   assert.equal(renderer.calls.at(-3)[1], 760)
   assert.equal(renderer.calls.at(-2)[1], true)
   assert.equal(renderer.calls.at(-1)[1].toISOString(), NOW.toISOString())
+})
+
+test('switches compact layouts between full-width chart and grid modes', () => {
+  const renderer = fakeRenderer()
+  const controller = createDashboardRendererController({ renderer, now: () => NOW })
+  controller.setSnapshot(snapshot, { initial: true })
+
+  controller.setResponsiveLayout({ compact: true, timelineVisible: true, gridWidth: 240 })
+  let render = renderer.calls.at(-1)
+  assert.equal(render[2].displayMode, 'chart')
+  assert.equal(render[2].rowHeight, 44)
+  assert.equal(render[2].scaleHeight, 28)
+
+  controller.setTimelineVisible(false, { compact: true })
+  render = renderer.calls.at(-1)
+  assert.equal(render[2].displayMode, 'grid')
 })
 
 test('switches timeline granularity through semantic day, week, and month presets', () => {

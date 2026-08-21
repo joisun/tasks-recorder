@@ -102,6 +102,26 @@ test('computes runtime end, project progress, and relative activity', () => {
   })
 })
 
+test('timeline bounds include planned baselines and split actual segments', () => {
+  const bounds = timelineBounds([{
+    start: '2026-08-20T08:00:00.000Z', end: '2026-08-20T09:00:00.000Z', status: 'active',
+    base_start: new Date('2026-08-18T00:00:00.000Z'),
+    base_end: new Date('2026-08-28T23:59:59.999Z'),
+    segments: [{
+      start: new Date('2026-08-19T08:00:00.000Z'),
+      end: new Date('2026-08-19T10:00:00.000Z'),
+    }],
+  }], new Date('2026-08-20T10:00:00.000Z'))
+  assert.deepEqual(
+    [bounds.minimum.getFullYear(), bounds.minimum.getMonth(), bounds.minimum.getDate(), bounds.minimum.getHours()],
+    [2026, 7, 18, 0],
+  )
+  assert.deepEqual(
+    [bounds.maximum.getFullYear(), bounds.maximum.getMonth(), bounds.maximum.getDate(), bounds.maximum.getHours()],
+    [2026, 7, 30, 0],
+  )
+})
+
 test('places short and right-edge labels outside without overflowing', () => {
   assert.equal(estimatedTimelineLabelWidth('Investigate API timeout'), 166)
   assert.equal(labelPlacement({ text: 'Short', barLeft: 100, barWidth: 16, scrollLeft: 0, clientWidth: 600 }), 'right')

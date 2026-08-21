@@ -126,6 +126,31 @@ test('summary tasks span the complete time envelope of every descendant', () => 
   assert.equal(lateChild.end.toISOString(), '2026-08-20T09:00:00.000Z')
 })
 
+test('summary envelopes include descendant planned and actual ranges even when the parent has canonical dates', () => {
+  const hierarchy = [
+    {
+      id: 'project', parent_id: null, entity_type: 'project', title: 'Project', status: 'active',
+      start: '2026-08-01T00:00:00.000Z', end: null,
+      actual: { start: '2026-08-01T00:00:00.000Z', end: '2026-08-10T00:00:00.000Z' },
+      planned: { start: '2026-08-01T00:00:00.000Z', end: '2026-08-14T00:00:00.000Z' },
+    },
+    {
+      id: 'rollout', parent_id: 'project', entity_type: 'main_task', title: 'Rollout', status: 'planned',
+      start: '2026-08-23T00:00:00.000Z', end: null,
+      actual: null,
+      planned: { start: '2026-08-23T00:00:00.000Z', end: '2026-09-05T00:00:00.000Z' },
+    },
+  ]
+
+  const projected = createSvarTaskProjection(hierarchy, { now: NOW })
+  const project = projected.find(({ id }) => id === 'project')
+
+  assert.equal(project.start.toISOString(), '2026-08-01T00:00:00.000Z')
+  assert.equal(project.end.toISOString(), '2026-09-05T00:00:00.000Z')
+  assert.equal(project.base_start.toISOString(), '2026-08-01T00:00:00.000Z')
+  assert.equal(project.base_end.toISOString(), '2026-09-05T00:00:00.000Z')
+})
+
 test('defines the five decision-focused grid columns within the default panel width', () => {
   assert.equal(SVAR_ROW_HEIGHT, 30)
   assert.equal(SVAR_SCALE_HEIGHT, 24)
@@ -139,6 +164,45 @@ test('defines the five decision-focused grid columns within the default panel wi
   assert.equal(SVAR_GRID_COLUMNS.reduce((total, column) => total + column.width, 0), 792)
 })
 
+test('maps canonical actual segments to native split tasks and planned range to baseline', () => {
+  const canonical = [{
+    id: 'subtask', parent_id: null, entity_type: 'subtask', title: 'Dashboard read model',
+    status: 'active', lifecycle: 'in_progress',
+    actual: { start: '2026-08-19T08:00:00.000Z', end: '2026-08-19T13:00:00.000Z' },
+    actual_segments: [
+      { id: 'segment-1', start: '2026-08-19T08:00:00.000Z', end: '2026-08-19T10:00:00.000Z' },
+      { id: 'segment-2', start: '2026-08-19T12:00:00.000Z', end: '2026-08-19T13:00:00.000Z' },
+    ],
+    planned: { start: '2026-08-19T00:00:00.000Z', end: '2026-08-21T23:59:59.999Z' },
+    last_activity: '2026-08-19T13:00:00.000Z', updated_at: '2026-08-19T13:00:00.000Z',
+  }]
+  const [projected] = createSvarTaskProjection(canonical, { now: NOW })
+
+  assert.equal(projected.start.toISOString(), '2026-08-19T08:00:00.000Z')
+  assert.equal(projected.end.toISOString(), '2026-08-19T13:00:00.000Z')
+  assert.equal(projected.base_start.toISOString(), '2026-08-19T00:00:00.000Z')
+  assert.equal(projected.base_end.toISOString(), '2026-08-21T23:59:59.999Z')
+  assert.deepEqual(projected.segments.map(({ start, end }) => [start.toISOString(), end.toISOString()]), [
+    ['2026-08-19T08:00:00.000Z', '2026-08-19T10:00:00.000Z'],
+    ['2026-08-19T12:00:00.000Z', '2026-08-19T13:00:00.000Z'],
+  ])
+  assert.equal(projected.visual_mode, 'actual_with_plan')
+})
+
+test('uses an outline planned bar when no actual segment exists', () => {
+  const [projected] = createSvarTaskProjection([{
+    id: 'planned', parent_id: null, entity_type: 'main_task', title: 'Release', status: 'planned',
+    planned: { start: '2026-08-23T00:00:00.000Z', end: '2026-08-28T23:59:59.999Z' },
+    actual: null, actual_segments: [], last_activity: null,
+    updated_at: '2026-08-20T00:00:00.000Z',
+  }], { now: NOW })
+
+  assert.equal(projected.start.toISOString(), '2026-08-23T00:00:00.000Z')
+  assert.equal(projected.end.toISOString(), '2026-08-28T23:59:59.999Z')
+  assert.equal(projected.base_start, undefined)
+  assert.equal(projected.visual_mode, 'planned_only')
+})
+
 test('creates the date scale and normalizes malformed renderer state safely', () => {
   const bounds = {
     minimum: new Date('2026-08-14T00:00:00.000Z'),
@@ -147,11 +211,11 @@ test('creates the date scale and normalizes malformed renderer state safely', ()
   const result = createSvarScales(bounds)
   assert.ok(result.start <= bounds.minimum)
   assert.ok(result.end >= bounds.maximum)
-  assert.ok(result.end - result.start >= 56 * 24 * 60 * 60_000)
+  assert.equal(result.resolvedZoom, 'day')
   assert.equal(result.lengthUnit, 'day')
-  assert.equal(result.cellWidth, 16)
+  assert.equal(result.cellWidth, 44)
   assert.deepEqual(result.scales.map(({ unit, step }) => [unit, step]), [
-    ['month', 1], ['week', 1],
+    ['month', 1], ['day', 1],
   ])
 
   const day = createSvarScales(bounds, 'day')
@@ -182,8 +246,32 @@ test('creates the date scale and normalizes malformed renderer state safely', ()
     selectedTaskId: null,
     taskColumnWidth: 240,
     labelsVisible: false,
-    timelineZoom: 'week',
+    timelineZoom: 'auto',
   })
+})
+
+test('auto scale follows the visible project extent from hours through quarters', () => {
+  const at = (days) => ({
+    minimum: new Date('2026-01-01T00:00:00.000Z'),
+    maximum: new Date(Date.parse('2026-01-01T00:00:00.000Z') + days * 24 * 60 * 60_000),
+  })
+  const short = createSvarScales(at(1), 'auto')
+  const sprint = createSvarScales(at(14), 'auto')
+  const project = createSvarScales(at(75), 'auto')
+  const portfolio = createSvarScales(at(240), 'auto')
+
+  assert.deepEqual(
+    [short.resolvedZoom, sprint.resolvedZoom, project.resolvedZoom, portfolio.resolvedZoom],
+    ['hour', 'day', 'week', 'month'],
+  )
+  assert.deepEqual(short.scales.map(({ unit, step }) => [unit, step]), [['day', 1], ['hour', 6]])
+  assert.deepEqual(project.scales.map(({ unit, step }) => [unit, step]), [['month', 1], ['week', 1]])
+  assert.deepEqual(portfolio.scales.map(({ unit, step }) => [unit, step]), [['year', 1], ['quarter', 1]])
+  for (const [bounds, scale] of [[at(1), short], [at(14), sprint], [at(75), project], [at(240), portfolio]]) {
+    const padding = scale.end - scale.start - (bounds.maximum - bounds.minimum)
+    assert.ok(padding >= (bounds.maximum - bounds.minimum) * 0.16)
+    assert.ok(padding <= (bounds.maximum - bounds.minimum) * 0.25)
+  }
 })
 
 test('positions current time only when it falls inside the visible timeline viewport', () => {

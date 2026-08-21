@@ -223,6 +223,25 @@ test('details sheet markup exposes editable summary and complete execution ident
   assert.doesNotMatch(html, /before_json|after_json/)
 })
 
+test('details parent choices exclude Project rows, cross-Project tasks, and Subtasks', () => {
+  const task = {
+    id: 'task-a', project_id: 'project-a', entity_type: 'subtask', title: 'Task A',
+    description: null, status: 'active', next_action: null, due_date: null,
+    parent_id: 'main-a', sort_order: 0, revision: 1, archived_at: null, deleted_at: null,
+  }
+  const html = detailsSheetMarkup({
+    task,
+    tasks: [
+      { id: 'project:project-a', project_id: 'project-a', entity_type: 'project', title: 'Project A' },
+      { id: 'main-a', project_id: 'project-a', entity_type: 'main_task', title: 'Main A' },
+      { id: 'child-a', project_id: 'project-a', entity_type: 'subtask', title: 'Child A' },
+      { id: 'main-b', project_id: 'project-b', entity_type: 'main_task', title: 'Main B' },
+    ],
+  })
+  assert.match(html, /value="main-a"/)
+  assert.doesNotMatch(html, /value="project:project-a"|value="child-a"|value="main-b"/)
+})
+
 test('details sheet pins each child to a stable grid row when the message is hidden', async () => {
   const css = await readFile(new URL('../ui/src/dashboard.css', import.meta.url), 'utf8')
 

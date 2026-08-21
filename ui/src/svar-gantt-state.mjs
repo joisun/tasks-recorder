@@ -10,7 +10,7 @@ import {
 export const SVAR_ROW_HEIGHT = 30
 export const SVAR_SCALE_HEIGHT = 24
 
-export const SVAR_TIMELINE_ZOOMS = Object.freeze(['day', 'week', 'month'])
+export const SVAR_TIMELINE_ZOOMS = Object.freeze(['auto', 'day', 'week', 'month'])
 
 export const SVAR_GRID_COLUMNS = Object.freeze([
   { id: 'text', header: '任务', width: 240, resize: true },
@@ -64,6 +64,19 @@ export function createSvarTaskProjection(tasks, {
   const filtered = filterSvarTasks(tasks, filter)
   const retainedIds = new Set(filtered.map(({ id }) => id))
   const scopeMemo = new Map()
+  const canonicalScopeMemo = {
+    actual: new Map(),
+    planned: new Map(),
+  }
+
+  function validRange(range) {
+    if (!range) return null
+    const start = new Date(range.start)
+    const end = new Date(range.end)
+    return Number.isNaN(start.valueOf()) || Number.isNaN(end.valueOf()) || end < start
+      ? null
+      : { start, end }
+  }
 
   function timeScope(task, visiting = new Set()) {
     if (scopeMemo.has(task.id)) return scopeMemo.get(task.id)
@@ -90,6 +103,29 @@ export function createSvarTaskProjection(tasks, {
     return scope
   }
 
+  function envelope(ranges) {
+    const valid = ranges.filter(Boolean)
+    if (valid.length === 0) return null
+    return {
+      start: new Date(Math.min(...valid.map(({ start }) => start.valueOf()))),
+      end: new Date(Math.max(...valid.map(({ end }) => end.valueOf()))),
+    }
+  }
+
+  function canonicalScope(task, field, visiting = new Set()) {
+    const memo = canonicalScopeMemo[field]
+    if (memo.has(task.id)) return memo.get(task.id)
+    if (visiting.has(task.id)) return validRange(task[field])
+    const nextVisiting = new Set(visiting).add(task.id)
+    const scope = envelope([
+      validRange(task[field]),
+      ...(index.childrenByParent.get(task.id) ?? [])
+        .map((child) => canonicalScope(child, field, nextVisiting)),
+    ])
+    memo.set(task.id, scope)
+    return scope
+  }
+
   return filtered.map((task) => {
     const root = rootOf(task, index) ?? task
     const historical = isHistoricalRoot(root, index)
@@ -98,17 +134,52 @@ export function createSvarTaskProjection(tasks, {
     const workfolder = contextPathPresentation(task.workfolder, homeDirectory)
     const worktree = contextPathPresentation(task.worktree, homeDirectory)
     const scope = timeScope(task)
+    const actual = children.length > 0
+      ? canonicalScope(task, 'actual')
+      : validRange(task.actual)
+    const planned = children.length > 0
+      ? canonicalScope(task, 'planned')
+      : validRange(task.planned)
+    const primary = children.length > 0
+      ? envelope([scope, actual, planned])
+      : actual ?? planned ?? scope
+    const actualSegments = actual && !children.length
+      ? (Array.isArray(task.actual_segments) ? task.actual_segments : [])
+        .map(validRange)
+        .filter(Boolean)
+      : []
+    const visualMode = actual && planned
+      ? 'actual_with_plan'
+      : actual ? 'actual_only' : planned ? 'planned_only' : 'legacy'
 
     return {
       id: task.id,
       parent: task.parent_id || 0,
       text: task.title,
-      start: scope?.start ?? new Date(task.start),
-      end: scope?.end ?? endOf(task, now),
+      start: primary?.start ?? new Date(task.start),
+      end: primary?.end ?? endOf(task, now),
+      ...(actual && planned ? { base_start: planned.start, base_end: planned.end } : {}),
+      ...(actualSegments.length > 1 ? { segments: actualSegments } : {}),
       progress: Math.round(progressOf(task, index) * 100),
       type: children.length > 0 ? 'summary' : 'task',
       open: children.length > 0 && (openIds === null ? true : openIds.has(String(task.id))),
       status: historical && task.parent_id === null ? 'done' : task.status,
+      entity_type: task.entity_type ?? 'task',
+      visual_mode: visualMode,
+      actual_segment_count: Number.isInteger(task.actual_segment_count)
+        ? task.actual_segment_count
+        : actualSegments.length,
+      live_state: task.live_state ?? 'none',
+      running_execution_count: Number.isInteger(task.running_execution_count)
+        ? task.running_execution_count
+        : 0,
+      idle_execution_count: Number.isInteger(task.idle_execution_count)
+        ? task.idle_execution_count
+        : 0,
+      stale_execution_count: Number.isInteger(task.stale_execution_count)
+        ? task.stale_execution_count
+        : 0,
+      blocked_count: Number.isInteger(task.blocked_count) ? task.blocked_count : 0,
       archived: historical,
       session_id: task.session_id ?? null,
       workfolder: task.workfolder ?? null,
@@ -129,15 +200,15 @@ export function createSvarTaskProjection(tasks, {
 }
 
 export function normalizeTimelineZoom(value) {
-  return SVAR_TIMELINE_ZOOMS.includes(value) ? value : 'week'
+  return SVAR_TIMELINE_ZOOMS.includes(value) ? value : 'auto'
 }
 
-export function createSvarScales({ minimum, maximum }, requestedZoom = 'week') {
+export function createSvarScales({ minimum, maximum }, requestedZoom = 'auto') {
   const zoom = normalizeTimelineZoom(requestedZoom)
   const month = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'short' })
   const day = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' })
   const year = new Intl.DateTimeFormat('zh-CN', { year: 'numeric' })
-  const presets = {
+  const manualPresets = {
     day: {
       minimumSpan: 21 * 24 * 60 * 60_000,
       lengthUnit: 'day',
@@ -166,14 +237,52 @@ export function createSvarScales({ minimum, maximum }, requestedZoom = 'week') {
       ],
     },
   }
-  const preset = presets[zoom]
   const sourceStart = new Date(minimum)
   const sourceEnd = new Date(maximum)
   const sourceSpan = Math.max(0, sourceEnd.valueOf() - sourceStart.valueOf())
-  const padding = Math.max(0, preset.minimumSpan - sourceSpan) / 2
+  const dayMs = 24 * 60 * 60_000
+  const autoZoom = sourceSpan <= 2 * dayMs
+    ? 'hour'
+    : sourceSpan <= 21 * dayMs ? 'day' : sourceSpan <= 120 * dayMs ? 'week' : 'month'
+  const autoPresets = {
+    hour: {
+      lengthUnit: 'hour', cellWidth: 18,
+      scales: [
+        { unit: 'day', step: 1, format: (date) => day.format(date) },
+        { unit: 'hour', step: 6, format: (date) => `${String(date.getHours()).padStart(2, '0')}:00` },
+      ],
+    },
+    day: {
+      lengthUnit: 'day', cellWidth: 44,
+      scales: [
+        { unit: 'month', step: 1, format: (date) => month.format(date) },
+        { unit: 'day', step: 1, format: (date) => day.format(date) },
+      ],
+    },
+    week: {
+      lengthUnit: 'day', cellWidth: 8,
+      scales: [
+        { unit: 'month', step: 1, format: (date) => month.format(date) },
+        { unit: 'week', step: 1, format: (date) => day.format(date) },
+      ],
+    },
+    month: {
+      lengthUnit: 'day', cellWidth: 2,
+      scales: [
+        { unit: 'year', step: 1, format: (date) => year.format(date) },
+        { unit: 'quarter', step: 1, format: (date) => `Q${Math.floor(date.getMonth() / 3) + 1}` },
+      ],
+    },
+  }
+  const resolvedZoom = zoom === 'auto' ? autoZoom : zoom
+  const preset = zoom === 'auto' ? autoPresets[autoZoom] : manualPresets[zoom]
+  const padding = zoom === 'auto'
+    ? Math.max(sourceSpan, dayMs) * 0.1
+    : Math.max(0, preset.minimumSpan - sourceSpan) / 2
   return {
     start: new Date(sourceStart.valueOf() - padding),
     end: new Date(sourceEnd.valueOf() + padding),
+    resolvedZoom,
     lengthUnit: preset.lengthUnit,
     cellWidth: preset.cellWidth,
     scales: preset.scales,

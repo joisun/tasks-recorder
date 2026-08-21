@@ -21,10 +21,11 @@ import { createEventStream } from './event-stream.mjs'
 import { createDashboardApi } from './dashboard-api.mjs'
 import { createTaskDetailsSheet } from './task-details-sheet.mjs'
 import { createExecutionInbox, inboxButtonLabel } from './execution-inbox.mjs'
+import { createProjectInbox, projectInboxButtonLabel } from './project-inbox.mjs'
 
 const TIMELINE_LABEL_KEY = 'dashboard-show-timeline-labels'
 const TIMELINE_PANEL_KEY = 'dashboard-show-timeline'
-const TIMELINE_ZOOM_KEY = 'dashboard-timeline-zoom'
+const TIMELINE_ZOOM_KEY = 'dashboard-timeline-zoom-v2'
 const GRID_WIDTH_KEY = 'dashboard-grid-width'
 const STATUS_LABELS = {
   active: '进行中', waiting: '等待中', blocked: '已阻塞', planned: '待安排',
@@ -36,6 +37,7 @@ const TAB_DEFS = [
   ['planned', '待安排'], ['history', '历史'],
 ]
 const TIMELINE_ZOOM_DEFS = [
+  ['auto', '自适应', '根据当前 Project 周期自动选择时间尺度'],
   ['day', '日', '按日查看，适合两周内执行'],
   ['week', '周', '按周查看，适合项目周期'],
   ['month', '月', '按月查看，适合季度回顾'],
@@ -51,7 +53,7 @@ let activeFilter = 'all'
 let showTimelineLabels = readBooleanPreference(preferenceStorage, TIMELINE_LABEL_KEY)
 let showTimeline = readBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, true)
 let timelineZoom = readChoicePreference(
-  preferenceStorage, TIMELINE_ZOOM_KEY, SVAR_TIMELINE_ZOOMS, 'week',
+  preferenceStorage, TIMELINE_ZOOM_KEY, SVAR_TIMELINE_ZOOMS, 'auto',
 )
 let preferredGridWidth = readNumberPreference(preferenceStorage, GRID_WIDTH_KEY)
 let effectiveGridWidth = null
@@ -60,8 +62,15 @@ let openStatusTrigger = null
 let coordinator = null
 let detailsSheet = null
 let executionInbox = null
+let projectInbox = null
 let unassignedExecutionCount = 0
+let unresolvedProjectCount = 0
+let projectInboxItems = []
+let projectSummaries = []
 let layoutResizeFrame = 0
+let pinnedContextAnchor = null
+let compactDashboard = window.matchMedia?.('(max-width: 720px)')?.matches
+  ?? window.innerWidth <= 720
 const pendingStatus = new Set()
 const refreshMessages = { connection: '', freshness: '', mutation: '' }
 
@@ -80,10 +89,13 @@ effectiveGridWidth = resolveEffectiveGridWidth()
 
 const renderer = createSvarGanttRenderer({
   element: ganttElement,
+  onEmptyReset() {
+    selectTaskFilter('all', { focus: true })
+  },
   onGridResize(width) {
     if (!Number.isFinite(width) || width <= 0) return
     effectiveGridWidth = Math.round(width)
-    if (showTimeline) {
+    if (showTimeline && !compactDashboard) {
       preferredGridWidth = effectiveGridWidth
       writeNumberPreference(preferenceStorage, GRID_WIDTH_KEY, preferredGridWidth)
     }
@@ -92,10 +104,13 @@ const renderer = createSvarGanttRenderer({
 const rendererController = createDashboardRendererController({
   renderer,
   initialView: {
-    displayMode: showTimeline ? 'all' : 'grid',
+    displayMode: showTimeline ? (compactDashboard ? 'chart' : 'all') : 'grid',
     gridWidth: effectiveGridWidth,
     labelsVisible: showTimelineLabels,
     timelineZoom,
+    compact: compactDashboard,
+    rowHeight: compactDashboard ? 44 : 30,
+    scaleHeight: compactDashboard ? 28 : 24,
   },
 })
 
@@ -104,7 +119,7 @@ function installTaskDetailsInteractions() {
     element: document.getElementById('task-details-sheet'),
     backdrop: document.getElementById('task-details-backdrop'),
     api: dashboardApi,
-    getTasks: () => raw,
+    getTasks: () => raw.filter(({ entity_type: entityType }) => entityType !== 'project'),
     onChanged: () => coordinator?.invalidate(),
   })
   ganttElement.addEventListener('click', (event) => {
@@ -122,7 +137,16 @@ function installExecutionInboxInteractions() {
     element: document.getElementById('execution-inbox'),
     backdrop: document.getElementById('execution-inbox-backdrop'),
     api: dashboardApi,
-    getTasks: () => raw,
+    getTasks: () => raw.filter(({ entity_type: entityType }) => entityType !== 'project'),
+    onChanged: () => coordinator?.invalidate(),
+  })
+}
+
+function installProjectInboxInteractions() {
+  projectInbox = createProjectInbox({
+    element: document.getElementById('project-inbox'),
+    backdrop: document.getElementById('project-inbox-backdrop'),
+    api: dashboardApi,
     onChanged: () => coordinator?.invalidate(),
   })
 }
@@ -161,6 +185,13 @@ function hideContextPopover(anchor) {
   anchor?.removeAttribute('aria-describedby')
 }
 
+function unpinContextPopover() {
+  if (!pinnedContextAnchor) return
+  const anchor = pinnedContextAnchor
+  pinnedContextAnchor = null
+  hideContextPopover(anchor)
+}
+
 function installContextInteractions() {
   ganttElement.addEventListener('pointerover', (event) => {
     const anchor = event.target.closest?.('.context-path[data-full-path]')
@@ -168,7 +199,9 @@ function installContextInteractions() {
   })
   ganttElement.addEventListener('pointerout', (event) => {
     const anchor = event.target.closest?.('.context-path[data-full-path]')
-    if (anchor && !anchor.contains(event.relatedTarget)) hideContextPopover(anchor)
+    if (anchor && anchor !== pinnedContextAnchor && !anchor.contains(event.relatedTarget)) {
+      hideContextPopover(anchor)
+    }
   })
   ganttElement.addEventListener('focusin', (event) => {
     const anchor = event.target.closest?.('.context-path[data-full-path]')
@@ -176,9 +209,30 @@ function installContextInteractions() {
   })
   ganttElement.addEventListener('focusout', (event) => {
     const anchor = event.target.closest?.('.context-path[data-full-path]')
-    if (anchor) hideContextPopover(anchor)
+    if (anchor && anchor !== pinnedContextAnchor) hideContextPopover(anchor)
+  })
+  ganttElement.addEventListener('click', (event) => {
+    const anchor = event.target.closest?.('.context-path[data-full-path]')
+    if (!anchor) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (anchor === pinnedContextAnchor) {
+      unpinContextPopover()
+      return
+    }
+    unpinContextPopover()
+    pinnedContextAnchor = anchor
+    showContextPopover(anchor)
+  }, true)
+  document.addEventListener('pointerdown', (event) => {
+    if (!pinnedContextAnchor || event.target.closest?.('.context-path[data-full-path], #context-popover')) return
+    unpinContextPopover()
+  }, true)
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') unpinContextPopover()
   })
   window.addEventListener('resize', () => {
+    unpinContextPopover()
     hideContextPopover(document.querySelector('.context-path[aria-describedby]'))
   })
 }
@@ -209,35 +263,58 @@ function installSessionCopyInteractions() {
 function renderTabs() {
   const tabs = document.getElementById('tabs')
   const filters = TAB_DEFS.map(([key, label]) => (
-    `<button class="tab ${activeFilter === key ? 'is-active' : ''}" type="button" role="tab" aria-selected="${activeFilter === key}" data-key="${key}">${label}<span class="tab-count">${tabCount(key, raw, index)}</span></button>`
+    `<button class="tab ${activeFilter === key ? 'is-active' : ''}" type="button" role="tab" aria-selected="${activeFilter === key}" tabindex="${activeFilter === key ? '0' : '-1'}" data-key="${key}">${label}<span class="tab-count">${tabCount(key, raw, index)}</span></button>`
   )).join('')
   const zooms = TIMELINE_ZOOM_DEFS.map(([key, label, title]) => (
     `<button class="timeline-zoom-option${timelineZoom === key ? ' is-active' : ''}" type="button" data-timeline-zoom="${key}" aria-pressed="${timelineZoom === key}" title="${title}" ${showTimeline ? '' : 'disabled'}>${label}</button>`
   )).join('')
+  const viewModeControls = compactDashboard
+    ? `<button class="timeline-tool${showTimeline ? '' : ' is-active'}" type="button" data-dashboard-view="grid" aria-pressed="${!showTimeline}" title="显示任务表">任务</button>
+       <button class="timeline-tool${showTimeline ? ' is-active' : ''}" type="button" data-dashboard-view="timeline" aria-pressed="${showTimeline}" title="显示 Timeline">Timeline</button>`
+    : `<button class="timeline-tool timeline-panel-toggle${showTimeline ? ' is-active' : ''}" type="button" data-dashboard-view="toggle" aria-pressed="${showTimeline}" title="${showTimeline ? '隐藏 Timeline' : '显示 Timeline'}">Timeline</button>`
   tabs.innerHTML = `
     <div class="status-filter-tabs" role="tablist" aria-label="任务状态">${filters}</div>
     <div class="toolbar-actions">
-      <button class="inbox-toggle${unassignedExecutionCount > 0 ? ' has-items' : ''}" type="button" data-execution-inbox-toggle aria-label="打开未绑定 Execution Inbox，${unassignedExecutionCount} 个待处理"><span>${inboxButtonLabel(unassignedExecutionCount)}</span></button>
+      <div class="inbox-tools" role="group" aria-label="待认领工作">
+        <button class="inbox-toggle${unresolvedProjectCount > 0 ? ' has-items' : ''}" type="button" data-project-inbox-toggle aria-label="打开 Project Inbox，${unresolvedProjectCount} 个 Source Session 待处理"><span>${projectInboxButtonLabel(unresolvedProjectCount)}</span></button>
+        <button class="inbox-toggle${unassignedExecutionCount > 0 ? ' has-items' : ''}" type="button" data-execution-inbox-toggle aria-label="打开 Attribution Inbox，${unassignedExecutionCount} 个 Execution 待处理"><span>${inboxButtonLabel(unassignedExecutionCount)}</span></button>
+      </div>
       <div class="timeline-zoom" role="group" aria-label="Timeline 时间尺度">${zooms}</div>
+      <div class="timeline-legend" aria-label="Timeline 图例"><span><i class="legend-actual" aria-hidden="true"></i>Actual</span><span><i class="legend-plan" aria-hidden="true"></i>Plan</span></div>
       <div class="view-tools" role="group" aria-label="Timeline 视图">
-        <button class="timeline-tool timeline-panel-toggle${showTimeline ? ' is-active' : ''}" type="button" aria-pressed="${showTimeline}" title="${showTimeline ? '隐藏 Timeline' : '显示 Timeline'}">Timeline</button>
+        ${viewModeControls}
         <button class="timeline-tool timeline-label-toggle${showTimelineLabels ? ' is-active' : ''}" type="button" aria-pressed="${showTimelineLabels}" title="${showTimelineLabels ? '隐藏任务名称' : '显示任务名称'}" ${showTimeline ? '' : 'disabled'}>标签</button>
         <button class="timeline-tool locate-now" type="button" title="定位到今天">今天</button>
       </div>
     </div>`
 
   tabs.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => {
-    activeFilter = button.dataset.key
-    renderTabs()
-    rendererController.setFilter(activeFilter)
+    selectTaskFilter(button.dataset.key, { focus: true })
   }))
-  tabs.querySelector('.inbox-toggle').addEventListener('click', (event) => {
+  tabs.querySelector('.status-filter-tabs').addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const buttons = [...event.currentTarget.querySelectorAll('[role="tab"]')]
+    const current = Math.max(0, buttons.indexOf(document.activeElement))
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? buttons.length - 1
+        : (current + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length
+    buttons[next]?.click()
+  })
+  tabs.querySelector('[data-project-inbox-toggle]').addEventListener('click', (event) => {
     detailsSheet?.close()
+    executionInbox?.close()
+    projectInbox?.open(event.currentTarget)
+  })
+  tabs.querySelector('[data-execution-inbox-toggle]').addEventListener('click', (event) => {
+    detailsSheet?.close()
+    projectInbox?.close()
     executionInbox?.open(event.currentTarget)
   })
-  tabs.querySelector('.timeline-panel-toggle').addEventListener('click', () => {
-    applyLayout(!showTimeline)
-  })
+  tabs.querySelectorAll('[data-dashboard-view]').forEach((button) => button.addEventListener('click', () => {
+    const mode = button.dataset.dashboardView
+    applyLayout(mode === 'toggle' ? !showTimeline : mode === 'timeline')
+  }))
   tabs.querySelector('.timeline-label-toggle').addEventListener('click', () => {
     showTimelineLabels = !showTimelineLabels
     writeBooleanPreference(preferenceStorage, TIMELINE_LABEL_KEY, showTimelineLabels)
@@ -257,6 +334,14 @@ function renderTabs() {
     if (!showTimeline) applyLayout(true)
     rendererController.locateNow()
   })
+}
+
+function selectTaskFilter(nextFilter, { focus = false } = {}) {
+  if (!TAB_DEFS.some(([key]) => key === nextFilter)) return
+  activeFilter = nextFilter
+  renderTabs()
+  rendererController.setFilter(activeFilter)
+  if (focus) document.querySelector(`.tab[data-key="${activeFilter}"]`)?.focus({ preventScroll: true })
 }
 
 function renderRefreshState() {
@@ -444,7 +529,7 @@ function applyLayout(nextShowTimeline) {
   showTimeline = nextShowTimeline
   writeBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, showTimeline)
   if (showTimeline) applyGridPanelWidth(preferredGridWidth ?? effectiveGridWidth)
-  rendererController.setTimelineVisible(showTimeline)
+  rendererController.setTimelineVisible(showTimeline, { compact: compactDashboard })
   renderTabs()
 }
 
@@ -452,6 +537,19 @@ window.addEventListener('resize', () => {
   if (layoutResizeFrame) cancelAnimationFrame(layoutResizeFrame)
   layoutResizeFrame = requestAnimationFrame(() => {
     layoutResizeFrame = 0
+    const nextCompact = window.matchMedia?.('(max-width: 720px)')?.matches
+      ?? window.innerWidth <= 720
+    if (nextCompact !== compactDashboard) {
+      compactDashboard = nextCompact
+      effectiveGridWidth = resolveEffectiveGridWidth()
+      rendererController.setResponsiveLayout({
+        compact: compactDashboard,
+        timelineVisible: showTimeline,
+        gridWidth: effectiveGridWidth,
+      })
+      renderTabs()
+      return
+    }
     if (!showTimeline) return
     const nextWidth = resolveEffectiveGridWidth()
     if (nextWidth !== effectiveGridWidth) {
@@ -469,6 +567,12 @@ function renderSnapshot(snapshot, { initial = false } = {}) {
   unassignedExecutionCount = Number.isInteger(snapshot.unassigned_execution_count)
     ? snapshot.unassigned_execution_count
     : 0
+  unresolvedProjectCount = Number.isInteger(snapshot.project_inbox_count)
+    ? snapshot.project_inbox_count
+    : 0
+  projectInboxItems = Array.isArray(snapshot.project_inbox) ? snapshot.project_inbox : []
+  projectSummaries = Array.isArray(snapshot.projects) ? snapshot.projects : []
+  projectInbox?.setData(projectInboxItems, projectSummaries)
   renderTabs()
   rendererController.setSnapshot(snapshot, { initial })
   if (initial && showTimeline) rendererController.locateNow()
@@ -481,6 +585,7 @@ installSessionCopyInteractions()
 installStatusInteractions()
 installTaskDetailsInteractions()
 installExecutionInboxInteractions()
+installProjectInboxInteractions()
 
 coordinator = createSnapshotCoordinator({
   load: () => dashboardApi.snapshot(),

@@ -120,6 +120,9 @@ export function conflictViewState({ draft, latestTask }) {
 export function executionPresentation(execution) {
   const agent = [execution.agent_type, execution.agent_path].filter(Boolean).join(' · ') || '主线程'
   const context = [execution.worktree || execution.workfolder, execution.branch].filter(Boolean).join(' · ')
+  const attributedSegments = Array.isArray(execution.attributed_segments)
+    ? execution.attributed_segments
+    : []
   return {
     id: execution.id,
     kind: execution.kind ?? 'unknown',
@@ -130,6 +133,8 @@ export function executionPresentation(execution) {
     status: execution.status ?? 'unknown',
     startedAt: execution.started_at ?? null,
     endedAt: execution.ended_at ?? null,
+    segmentCount: attributedSegments.length,
+    segmentTaskCount: new Set(attributedSegments.map(({ task_id: taskId }) => taskId)).size,
   }
 }
 
@@ -191,7 +196,12 @@ function summaryMarkup({ task, draft, tasks, showChildForm }) {
     ['blocked', '已阻塞'], ['done', '已完成'], ['canceled', '已取消'],
   ]
   const parents = tasks
-    .filter((candidate) => candidate.id !== task.id && !candidate.deleted_at)
+    .filter((candidate) => (
+      candidate.id !== task.id
+      && !candidate.deleted_at
+      && candidate.entity_type === 'main_task'
+      && (!task.project_id || candidate.project_id === task.project_id)
+    ))
     .map((candidate) => `<option value="${escapeMarkup(candidate.id)}"${draft.parent_id === candidate.id ? ' selected' : ''}>${escapeMarkup(candidate.title)}</option>`)
     .join('')
   return `<section id="details-panel-summary" class="details-panel" role="tabpanel" aria-labelledby="details-tab-summary">
@@ -215,7 +225,7 @@ function executionsMarkup(executions) {
     <div class="execution-heading"><span class="execution-kind">${escapeMarkup(item.kind)}</span><span class="execution-status is-${escapeMarkup(item.status)}">${escapeMarkup(item.status)}</span></div>
     <strong>${escapeMarkup(item.agent)}</strong>
     <div class="execution-context">${escapeMarkup(item.context)}</div>
-    <dl><div><dt>Session ID</dt><dd><code>${escapeMarkup(item.sessionId || '—')}</code>${item.sessionId ? `<button class="details-copy" type="button" data-copy-value="${escapeMarkup(item.sessionId)}" aria-label="复制 Session ID">复制</button>` : ''}</dd></div><div><dt>Turn ID</dt><dd><code>${escapeMarkup(item.turnId || '—')}</code></dd></div><div><dt>开始</dt><dd>${escapeMarkup(timeLabel(item.startedAt))}</dd></div><div><dt>结束</dt><dd>${escapeMarkup(timeLabel(item.endedAt))}</dd></div></dl>
+    <dl><div><dt>Session ID</dt><dd><code>${escapeMarkup(item.sessionId || '—')}</code>${item.sessionId ? `<button class="details-copy" type="button" data-copy-value="${escapeMarkup(item.sessionId)}" aria-label="复制 Session ID">复制</button>` : ''}</dd></div><div><dt>Turn ID</dt><dd><code>${escapeMarkup(item.turnId || '—')}</code></dd></div><div><dt>Segments</dt><dd>${item.segmentCount ? `${item.segmentCount} 个区间 · ${item.segmentTaskCount} 个 Task` : '—'}</dd></div><div><dt>开始</dt><dd>${escapeMarkup(timeLabel(item.startedAt))}</dd></div><div><dt>结束</dt><dd>${escapeMarkup(timeLabel(item.endedAt))}</dd></div></dl>
   </li>`).join('')
   return `<section id="details-panel-executions" class="details-panel" role="tabpanel" aria-labelledby="details-tab-executions"><ol class="execution-list">${rows || '<li class="details-empty">尚无 Execution 记录</li>'}</ol></section>`
 }
@@ -330,7 +340,14 @@ export function createTaskDetailsSheet({
       if (state.id !== id) return
       const localDraft = state.draft
       state.detail = detail
-      state.task = detail.task
+      const projection = getTasks().find((task) => task.id === id)
+      state.task = {
+        ...detail.task,
+        ...(projection ? {
+          project_id: projection.project_id,
+          entity_type: projection.entity_type,
+        } : {}),
+      }
       state.executions = executions
       state.events = events
       state.draft = preserveDraft && localDraft ? localDraft : taskDraft(detail.task)

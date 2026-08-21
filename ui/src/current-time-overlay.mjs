@@ -26,3 +26,16 @@ export function separatorWidthFromKey({
   const maximum = Math.min(bounds.maximum, Math.max(minimum, containerWidth - timelineMinimum))
   return nextGridPanelWidth({ key, currentWidth: width, minimum, maximum, step })
 }
+
+export function separatorWidthFromPointer({
+  clientX,
+  containerLeft,
+  containerWidth,
+  minimum = 240,
+  timelineMinimum = 329,
+}) {
+  if (![clientX, containerLeft, containerWidth].every(Number.isFinite)) return null
+  const bounds = gridPanelWidthBounds(containerWidth)
+  const maximum = Math.min(bounds.maximum, Math.max(minimum, containerWidth - timelineMinimum))
+  return Math.round(Math.min(maximum, Math.max(minimum, clientX - containerLeft)))
+}

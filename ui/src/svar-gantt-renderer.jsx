@@ -6,6 +6,7 @@ import '@svar-ui/react-gantt/all.css'
 import {
   currentTimeOverlayModel,
   separatorWidthFromKey,
+  separatorWidthFromPointer,
   timelineLocateShouldDefer,
 } from './current-time-overlay.mjs'
 import { rendererErrorPresentation } from './renderer-error-state.mjs'
@@ -78,6 +79,7 @@ export function createSvarGanttRenderer({
   element,
   onReady = () => {},
   onGridResize = () => {},
+  onEmptyReset = () => {},
   onTaskOpenChange = () => {},
   onTaskSelected = () => {},
   onScroll = () => {},
@@ -98,6 +100,7 @@ export function createSvarGanttRenderer({
   let restoreFrame = 0
   let overlayFrame = 0
   let pendingLocateDate = null
+  let separatorPointerId = null
   let renderRevision = 0
   const eventTag = `tasks-recorder-${Math.random().toString(36).slice(2)}`
 
@@ -107,6 +110,14 @@ export function createSvarGanttRenderer({
       overlayFrame = 0
       updateOverlays()
     })
+  }
+
+  function syncShellLayout(gridWidth, displayMode) {
+    const shell = element.querySelector('.svar-gantt-shell')
+    if (!shell) return
+    shell.dataset.displayMode = displayMode
+    shell.style.setProperty('--gantt-shell-width', `${shell.clientWidth}px`)
+    shell.style.setProperty('--grid-panel-width', `${Math.max(0, Math.round(gridWidth))}px`)
   }
 
   function updateOverlays() {
@@ -119,7 +130,8 @@ export function createSvarGanttRenderer({
     const state = api?.getState?.() ?? {}
     const gridWidth = Number.isFinite(state.gridWidth) ? state.gridWidth : view.gridWidth
     const displayMode = state.displayMode ?? view.displayMode
-    separator.style.left = `${Math.max(0, Math.round(gridWidth) - 2)}px`
+    syncShellLayout(gridWidth, displayMode)
+    separator.style.left = `${Math.max(0, Math.round(gridWidth) - 8)}px`
     separator.setAttribute('aria-valuenow', String(Math.round(gridWidth)))
     separator.setAttribute('aria-valuemax', String(Math.max(240, element.clientWidth - 329)))
     separator.hidden = displayMode !== 'all'
@@ -215,6 +227,7 @@ export function createSvarGanttRenderer({
       event.preventDefault()
       event.stopPropagation()
       view = { ...view, gridWidth: width }
+      syncShellLayout(width, view.displayMode)
       api?.exec('resize-grid', { width })
       scheduleOverlayUpdate()
       return
@@ -229,6 +242,45 @@ export function createSvarGanttRenderer({
     event.preventDefault()
     event.stopPropagation()
     api.exec('open-task', { id: task.id, mode: open })
+  }
+
+  function applyPointerGridWidth(event) {
+    const width = separatorWidthFromPointer({
+      clientX: event.clientX,
+      containerLeft: element.getBoundingClientRect().left,
+      containerWidth: element.clientWidth,
+    })
+    if (width === null) return
+    view = { ...view, gridWidth: width }
+    syncShellLayout(width, view.displayMode)
+    api?.exec('resize-grid', { width })
+    scheduleOverlayUpdate()
+  }
+
+  function handleSeparatorPointerDown(event) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    separatorPointerId = event.pointerId
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.currentTarget.classList.add('is-dragging')
+    applyPointerGridWidth(event)
+  }
+
+  function handleSeparatorPointerMove(event) {
+    if (separatorPointerId !== event.pointerId) return
+    event.preventDefault()
+    applyPointerGridWidth(event)
+  }
+
+  function handleSeparatorPointerEnd(event) {
+    if (separatorPointerId !== event.pointerId) return
+    applyPointerGridWidth(event)
+    event.currentTarget.classList.remove('is-dragging')
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    separatorPointerId = null
   }
 
   function handleGridScroll(event) {
@@ -251,13 +303,18 @@ export function createSvarGanttRenderer({
     renderRevision += 1
     root.render(
       <RendererErrorBoundary resetKey={renderRevision} onError={onError}>
-        <div className="svar-gantt-shell">
+        <div
+          className="svar-gantt-shell"
+          data-display-mode={view.displayMode}
+          style={{ '--grid-panel-width': `${Math.round(view.gridWidth)}px` }}
+        >
           <div className="wx-willow-dark-theme svar-theme-root">
             <Gantt
               tasks={model.tasks}
               links={model.links ?? []}
               columns={columns}
               scales={model.scales}
+              baselines={model.baselines}
               start={model.start}
               end={model.end}
               lengthUnit={model.lengthUnit}
@@ -281,10 +338,21 @@ export function createSvarGanttRenderer({
             aria-valuemax={Math.max(240, element.clientWidth - 329)}
             aria-valuenow={Math.round(view.gridWidth)}
             tabIndex={0}
+            onPointerDown={handleSeparatorPointerDown}
+            onPointerMove={handleSeparatorPointerMove}
+            onPointerUp={handleSeparatorPointerEnd}
+            onPointerCancel={handleSeparatorPointerEnd}
           />
           <div className="current-time-marker" data-current-time-marker aria-hidden="true" hidden>
             <span>NOW</span>
           </div>
+          {model.emptyState ? (
+            <div className="gantt-empty-state" role="status">
+              <strong>{model.emptyState.title}</strong>
+              <span>{model.emptyState.description}</span>
+              <button type="button" onClick={onEmptyReset}>查看全部</button>
+            </div>
+          ) : null}
         </div>
       </RendererErrorBoundary>,
     )
@@ -310,6 +378,7 @@ export function createSvarGanttRenderer({
 
     setDisplayMode(mode) {
       view = { ...view, displayMode: mode }
+      syncShellLayout(view.gridWidth, mode)
       api?.exec('set-display-mode', { mode })
       scheduleOverlayUpdate()
     },
@@ -317,6 +386,7 @@ export function createSvarGanttRenderer({
     setGridWidth(width) {
       if (!Number.isFinite(width)) return
       view = { ...view, gridWidth: Math.round(width) }
+      syncShellLayout(view.gridWidth, view.displayMode)
       api?.exec('resize-grid', { width: view.gridWidth })
       scheduleOverlayUpdate()
     },
