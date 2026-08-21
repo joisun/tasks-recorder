@@ -6,10 +6,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { readCodexTranscriptMetadata } from '../adapters/codex/tasks-recorder/hooks/src/codex-transcript.mjs'
-import {
-  fetchSessionContext,
-  sendLifecycle,
-} from '../adapters/codex/tasks-recorder/hooks/src/taskd-client.mjs'
+import { sendJournalEvent } from '../adapters/codex/tasks-recorder/hooks/src/taskd-client.mjs'
 
 async function transcriptFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'tasks-recorder-codex-transcript-'))
@@ -127,7 +124,7 @@ test('returns structured warnings for missing, malformed, truncated, and escaped
   }
 })
 
-test('lifecycle client sends bounded loopback requests and fetches session context', async () => {
+test('Codex hook client sends one bounded Event Envelope request to loopback taskd', async () => {
   const requests = []
   const server = createServer(async (request, response) => {
     const chunks = []
@@ -138,27 +135,38 @@ test('lifecycle client sends bounded loopback requests and fetches session conte
       body: chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null,
     })
     response.writeHead(200, { 'Content-Type': 'application/json' })
-    response.end(JSON.stringify(request.method === 'GET'
-      ? { root_session_id: 'root-session', active_execution_count: 1 }
-      : { changed: true }))
+    response.end('{"ok":true,"persisted":true}')
   })
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen))
   const { port } = server.address()
   const env = { AGENT_TASKS_SERVER_URL: `http://127.0.0.1:${port}` }
+  const envelope = {
+    source: 'codex',
+    event_type: 'execution.started',
+    external_event_id: 'codex:execution:root-session:turn-1:started',
+    observed_at: '2026-08-20T08:00:00.000Z',
+    source_session_key: 'root-session',
+    root_session_key: 'root-session',
+    source_turn_key: 'turn-1',
+    source_agent_key: null,
+    project_id: null,
+    workfolder: '/workspace',
+    git_root: null,
+    git_common_dir: null,
+    git_remote: null,
+    worktree: '/workspace',
+    branch: null,
+    payload: { kind: 'main' },
+  }
   try {
-    assert.deepEqual(await sendLifecycle('turn-start', {
-      root_session_id: 'root-session', session_id: 'root-session', turn_id: 'turn-1',
-    }, env), { changed: true })
-    assert.deepEqual(await fetchSessionContext('root-session', env), {
-      root_session_id: 'root-session', active_execution_count: 1,
-    })
+    const result = await sendJournalEvent(envelope, env)
+    assert.equal(result.delivered, true)
     assert.deepEqual(requests, [
       {
         method: 'POST',
-        url: '/api/v1/lifecycle/turn-start',
-        body: { root_session_id: 'root-session', session_id: 'root-session', turn_id: 'turn-1' },
+        url: '/api/v1/events',
+        body: envelope,
       },
-      { method: 'GET', url: '/api/v1/sessions/root-session/context', body: null },
     ])
   } finally {
     await new Promise((resolveClose, reject) => server.close((error) => (
@@ -167,13 +175,15 @@ test('lifecycle client sends bounded loopback requests and fetches session conte
   }
 })
 
-test('lifecycle client rejects unknown events and non-loopback origins', async () => {
-  await assert.rejects(
-    sendLifecycle('unknown-event', {}, { AGENT_TASKS_SERVER_URL: 'http://127.0.0.1:43127' }),
-    /lifecycle event/,
-  )
-  await assert.rejects(
-    fetchSessionContext('session-1', { AGENT_TASKS_SERVER_URL: 'http://localhost:43127' }),
-    /127\.0\.0\.1/,
-  )
+test('Codex hook client rejects non-loopback origins through its fail-open result', async () => {
+  const result = await sendJournalEvent({}, {
+    AGENT_TASKS_SERVER_URL: 'http://localhost:43127',
+  })
+  assert.deepEqual(result, {
+    ok: true,
+    delivered: false,
+    spooled: false,
+    dropped: true,
+    error_code: 'JOURNAL_CLIENT_UNAVAILABLE',
+  })
 })

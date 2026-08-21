@@ -1,6 +1,6 @@
 {
   "name": "tasks-recorder",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "node ui/build.mjs",
-    "check": "node --check mcp/server.mjs && node --check hooks/stop-task-check.mjs && node --check hooks/user-prompt-task-sync.mjs && node --check hooks/task-heartbeat.mjs && node --check adapters/codex/tasks-recorder/hooks/session-start.mjs && node --check adapters/codex/tasks-recorder/hooks/subagent-start.mjs && node --check adapters/codex/tasks-recorder/hooks/subagent-stop.mjs && node --check adapters/codex/tasks-recorder/hooks/session-end.mjs && node --check adapters/codex/tasks-recorder/hooks/src/codex-transcript.mjs && node --check adapters/codex/tasks-recorder/hooks/src/hook-context.mjs && node --check adapters/codex/tasks-recorder/hooks/src/taskd-client.mjs && node --check server/taskd.mjs && node --check server/control.mjs && node --check server/cli.mjs && node --check server/src/api-server.mjs && node --check server/src/codex/transcript-reader.mjs && node --check server/src/codex/importer.mjs && node --check mcp/src/task-client.mjs && node --check mcp/src/task-execution-store.mjs && node --check mcp/src/task-schema.mjs && node --check mcp/src/task-tree.mjs && node --check ui/src/dashboard-api.mjs && node --check ui/src/focus-state.mjs && node --check ui/src/task-details-sheet.mjs && node --check ui/src/execution-inbox.mjs && node --check ui/src/dashboard.mjs",
+    "check": "node scripts/check-syntax.mjs",
     "taskd": "node server/control.mjs",
     "taskd:run": "node server/taskd.mjs",
     "test": "node --test test/*.test.mjs",

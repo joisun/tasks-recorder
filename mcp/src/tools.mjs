@@ -3,12 +3,39 @@ import { z } from 'zod'
 
 import { TaskRecorderError } from './errors.mjs'
 
-export const SERVER_INSTRUCTIONS = `Operate this local Agent Task Control Plane. A Task is a delivery outcome, not a session, turn, or subagent execution. Record every concrete work objective regardless of duration; exclude ordinary chat and non-work questions. Start with agent_tasks_context, preserve Task identity across sessions and worktrees, and use agent_tasks_sync_tree for one root with at most one direct child level. Distinct goals handled in the same conversation remain distinct Tasks. Bind the current execution only to the Task actually being worked; never infer Task identity from timing or prompt similarity. Use only this server to change state; never edit tasks.sqlite directly. SQLite is canonical and owned by taskd; agent_tasks_render is compatibility-only.`
+export const SERVER_INSTRUCTIONS = `Operate this local Project Journalist control plane. Observation, Source Session, Execution, and Work Segment are facts; Project, Main Task, and Subtask are user-owned semantics. Start concrete work with agent_work_context(execution_id). Use agent_work_focus and agent_work_checkpoint only for real semantic changes; ordinary heartbeat and Stop are handled by host adapters and must never trigger list + full-tree synchronization. Before spawning a child execution for a Task, register the exact host agent key with agent_work_intent. Preserve Task identity and use entity revisions. Use agent_tasks_mutate for one Task and agent_tasks_sync_structure only for a deliberate Main Task/direct-child structure change. Never infer Task identity from timing, branch, prompt similarity, or subagent identity. Never edit tasks.sqlite directly. Legacy agent_tasks_* tools remain compatibility-only where their descriptions say so.`
 
 const taskId = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
 const taskStatus = z.enum(['planned', 'active', 'waiting', 'blocked', 'done', 'canceled'])
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const revision = z.number().int().positive()
+const instant = z.string().min(1)
+const v3Lifecycle = z.enum(['planned', 'in_progress', 'waiting', 'blocked', 'done', 'canceled'])
+const v3TaskPatch = z.object({
+  project_id: taskId.optional(),
+  parent_id: taskId.nullable().optional(),
+  title: z.string().min(1).optional(),
+  description: z.string().min(1).nullable().optional(),
+  lifecycle: v3Lifecycle.optional(),
+  planned_start_at: instant.nullable().optional(),
+  planned_due_at: instant.nullable().optional(),
+  next_action: z.string().min(1).nullable().optional(),
+  sort_order: z.number().int().nonnegative().optional(),
+})
+const v3TaskNode = z.object({
+  id: taskId,
+  project_id: taskId.optional(),
+  parent_id: taskId.nullable().optional(),
+  title: z.string().min(1).optional(),
+  description: z.string().min(1).nullable().optional(),
+  lifecycle: v3Lifecycle.optional(),
+  planned_start_at: instant.nullable().optional(),
+  planned_due_at: instant.nullable().optional(),
+  next_action: z.string().min(1).nullable().optional(),
+  sort_order: z.number().int().nonnegative().optional(),
+  expected_revision: revision.optional(),
+  patch: v3TaskPatch.optional(),
+})
 const taskPatch = z.object({
   parent_id: taskId.nullable().optional(),
   project: z.string().min(1).optional(),
@@ -91,12 +118,94 @@ function handler(operation) {
 
 export function createTasksRecorderServer({ service }) {
   const server = new McpServer(
-    { name: 'tasks-recorder', version: '0.5.0' },
+    { name: 'tasks-recorder', version: '0.6.0' },
     { instructions: SERVER_INSTRUCTIONS },
   )
 
+  server.registerTool('agent_work_context', {
+    description: 'Read compact Project, current Segment/focus, and at most three same-Project Main Task candidates for one execution. This query never creates or binds Tasks.',
+    inputSchema: { execution_id: z.string().min(1) },
+    outputSchema,
+    annotations: readAnnotations,
+  }, handler((input) => service.workContext(input)))
+
+  server.registerTool('agent_work_focus', {
+    description: 'Explicitly focus or unfocus one execution. A changed focus closes the current Segment and starts a new Segment; do not call for heartbeat.',
+    inputSchema: {
+      execution_id: z.string().min(1),
+      task_id: taskId.nullable(),
+      provenance: z.enum(['agent_explicit', 'current_focus']),
+      rationale_code: z.string().min(1),
+      observed_at: instant.optional(),
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.workFocus(input)))
+
+  server.registerTool('agent_work_intent', {
+    description: 'Before spawning a child execution, bind its exact host agent key to one Task. The intent is single-use and expires; never infer child ownership from timing or agent type.',
+    inputSchema: {
+      execution_id: z.string().min(1),
+      external_agent_key: z.string().min(1),
+      task_id: taskId,
+      created_at: instant.optional(),
+      expires_at: instant.optional(),
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.registerIntent(input)))
+
+  server.registerTool('agent_work_checkpoint', {
+    description: 'Write one compact checkpoint to the current Segment and its focused Task next action using Task revision concurrency.',
+    inputSchema: {
+      execution_id: z.string().min(1),
+      task_id: taskId,
+      expected_revision: revision,
+      summary: z.string().min(1).max(4_000),
+      next_action: z.string().min(1),
+      observed_at: instant.optional(),
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.workCheckpoint(input)))
+
+  server.registerTool('agent_work_attribution_correct', {
+    description: 'Correct one Work Segment attribution explicitly; the prior attribution remains auditable.',
+    inputSchema: {
+      segment_id: z.string().min(1),
+      task_id: taskId,
+      provenance: z.enum(['agent_explicit', 'user']),
+      rationale_code: z.string().min(1),
+      observed_at: instant.optional(),
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.correctAttribution(input)))
+
+  server.registerTool('agent_tasks_mutate', {
+    description: 'Create, update/move, or change lifecycle of one canonical Project Task using entity revision concurrency.',
+    inputSchema: {
+      action: z.enum(['create', 'update', 'status']),
+      task: v3TaskNode,
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.mutateTask(input)))
+
+  server.registerTool('agent_tasks_sync_structure', {
+    description: 'Atomically reconcile one Main Task and its direct children after checking the exact current child id/revision set. Omitted verified children become canceled.',
+    inputSchema: {
+      project_id: taskId,
+      main_task: v3TaskNode,
+      expected_children: z.array(z.object({ id: taskId, revision })),
+      children: z.array(v3TaskNode),
+    },
+    outputSchema,
+    annotations: writeAnnotations,
+  }, handler((input) => service.syncStructure(input)))
+
   server.registerTool('agent_tasks_context', {
-    description: 'Find unfinished task candidates for the current Codex session and workfolder, enriched with Git/worktree context.',
+    description: 'Deprecated lossy compatibility query. Use agent_work_context(execution_id); this projection cannot represent multiple Work Segments.',
     inputSchema: {
       session_id: z.string().min(1),
       workfolder: z.string().min(1),
@@ -126,7 +235,7 @@ export function createTasksRecorderServer({ service }) {
   }, handler(({ id }) => service.show(id)))
 
   server.registerTool('agent_tasks_upsert', {
-    description: 'Create or update a concrete Agent work task and link the current session context.',
+    description: 'Deprecated compatibility mutation. Use agent_tasks_mutate plus agent_work_focus.',
     inputSchema: {
       id: taskId,
       title: z.string().min(1),
@@ -148,7 +257,7 @@ export function createTasksRecorderServer({ service }) {
   }, handler((input) => service.upsert(input)))
 
   server.registerTool('agent_tasks_complete', {
-    description: 'Mark a persisted Agent work task done and record its final session activity.',
+    description: 'Deprecated compatibility mutation. Use agent_tasks_mutate with explicit lifecycle done.',
     inputSchema: {
       id: taskId,
       session_id: z.string().min(1),
@@ -160,7 +269,7 @@ export function createTasksRecorderServer({ service }) {
   }, handler((input) => service.complete(input)))
 
   server.registerTool('agent_tasks_sync_tree', {
-    description: 'Atomically synchronize one root task and its direct children, then bind the current turn focus.',
+    description: 'Deprecated lossy compatibility mutation. Use agent_tasks_sync_structure only for structure changes and agent_work_focus separately.',
     inputSchema: {
       session_id: z.string().min(1),
       turn_id: z.string().min(1),

@@ -4,17 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
+import { createJournalStore } from '../mcp/src/journal-store.mjs'
 import { startTaskd } from '../server/src/taskd-runtime.mjs'
 
 test('taskd runtime composes one store, serves health, and closes the database once', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'tasks-recorder-runtime-'))
   const stores = []
   let closeCalls = 0
-  const store = {
-    check: () => ({ integrityCheck: 'ok', foreignKeyViolations: [] }),
-    snapshot: () => ({ tasks: [], sessions: [] }),
-    close: () => { closeCalls += 1 },
-  }
   try {
     const runtime = await startTaskd({
       config: {
@@ -25,7 +21,17 @@ test('taskd runtime composes one store, serves health, and closes the database o
       },
       dashboardPath: join(directory, 'index.html'),
       dashboardHtml: '<!doctype html><title>Taskd runtime</title>',
-      createStore(options) { stores.push(options); return store },
+      createStore(options) {
+        stores.push(options)
+        const store = createJournalStore(options)
+        return {
+          ...store,
+          close() {
+            closeCalls += 1
+            store.close()
+          },
+        }
+      },
       gitResolver: async () => ({}),
       renderer: async () => ({}),
       dashboardAdapter: () => ({ generated_at: '2026-08-12T08:00:00.000Z', tasks: [], warnings: [] }),
@@ -44,11 +50,6 @@ test('taskd runtime composes one store, serves health, and closes the database o
 test('taskd runtime closes an active SSE response before waiting for HTTP shutdown', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'tasks-recorder-runtime-'))
   let storeCloseCalls = 0
-  const store = {
-    check: () => ({ integrityCheck: 'ok', foreignKeyViolations: [] }),
-    snapshot: () => ({ tasks: [], sessions: [] }),
-    close: () => { storeCloseCalls += 1 },
-  }
   let runtime
   let reader
   let closing
@@ -57,7 +58,16 @@ test('taskd runtime closes an active SSE response before waiting for HTTP shutdo
       config: { databasePath: join(directory, 'tasks.sqlite'), outputDir: directory, serverHost: '127.0.0.1', serverPort: 0 },
       dashboardPath: join(directory, 'index.html'),
       dashboardHtml: '<!doctype html>',
-      createStore: () => store,
+      createStore: (options) => {
+        const store = createJournalStore(options)
+        return {
+          ...store,
+          close() {
+            storeCloseCalls += 1
+            store.close()
+          },
+        }
+      },
       gitResolver: async () => ({}), renderer: async () => ({}),
       dashboardAdapter: () => ({ generated_at: '2026-08-12T08:00:00.000Z', tasks: [], warnings: [] }),
     })

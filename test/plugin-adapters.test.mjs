@@ -61,7 +61,9 @@ async function hookServer({ sessionContext = {} } = {}) {
       body: chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : null,
     })
     response.writeHead(200, { 'Content-Type': 'application/json' })
-    response.end(JSON.stringify(request.method === 'GET' ? sessionContext : { changed: true }))
+    response.end(JSON.stringify(request.method === 'GET'
+      ? sessionContext
+      : { ok: true, persisted: true }))
   })
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen))
   const { port } = server.address()
@@ -162,19 +164,40 @@ test('Claude adapter uses a native manifest, marketplace entry, and wrapped MCP 
   )
 })
 
-test('each adapter hook emits host-specific task context', async () => {
-  for (const [host, script, rootVariable] of [
-    ['Codex', 'adapters/codex/tasks-recorder/hooks/user-prompt-task-sync.mjs', 'PLUGIN_ROOT'],
-    ['Claude', 'adapters/claude/tasks-recorder/hooks/user-prompt-task-sync.mjs', 'CLAUDE_PLUGIN_ROOT'],
-  ]) {
-    const result = await runHook(script, {
-      hook_event_name: 'UserPromptSubmit',
-      session_id: 'session-1',
-      cwd: '/workspace/example',
-    }, { [rootVariable]: join(projectRoot, script, '..', '..') })
-    assert.equal(result.code, 0)
-    const output = JSON.parse(result.stdout)
-    assert.match(output.hookSpecificOutput.additionalContext, new RegExp(`"agent":"${host}"`))
+test('each adapter emits host-specific execution context after recording the native turn', async () => {
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-host-context-'))
+  const server = await hookServer()
+  const env = { HOME: homeDirectory, AGENT_TASKS_SERVER_URL: server.url }
+  try {
+    const codex = await runHook(
+      'adapters/codex/tasks-recorder/hooks/user-prompt-task-sync.mjs',
+      {
+        hook_event_name: 'UserPromptSubmit', session_id: 'codex-session',
+        turn_id: 'codex-turn', cwd: '/workspace/example', prompt: 'private prompt',
+      },
+      env,
+    )
+    const claude = await runHook(
+      'adapters/claude/tasks-recorder/hooks/user-prompt-task-sync.mjs',
+      {
+        hook_event_name: 'UserPromptSubmit', session_id: 'claude-session',
+        cwd: '/workspace/example', prompt: 'private prompt',
+      },
+      env,
+    )
+    for (const [host, result] of [['Codex', codex], ['Claude', claude]]) {
+      assert.equal(result.code, 0)
+      const output = JSON.parse(result.stdout)
+      assert.match(output.hookSpecificOutput.additionalContext, new RegExp(`"agent":"${host}"`))
+      assert.match(output.hookSpecificOutput.additionalContext, /"execution_id":"execution-/)
+      assert.match(output.hookSpecificOutput.additionalContext, /agent_work_context/)
+      assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /agent_tasks_sync_tree/)
+    }
+    assert.deepEqual(server.requests.map(({ body }) => body.source), ['codex', 'claude'])
+    assert.equal(JSON.stringify(server.requests).includes('private prompt'), false)
+  } finally {
+    await server.close()
+    await rm(homeDirectory, { recursive: true, force: true })
   }
 })
 
@@ -194,7 +217,7 @@ test('Codex adapter config registers the complete native lifecycle hook surface'
   assert.equal(config.hooks.SessionEnd[0].hooks[0].timeout <= 3, true)
 })
 
-test('Codex native hooks send stable lifecycle records and state-aware sync feedback', async () => {
+test('Codex native hooks emit privacy-bounded Event Envelopes without Stop continuation', async () => {
   const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-codex-hooks-'))
   const sessionsRoot = join(homeDirectory, '.codex', 'sessions')
   await mkdir(sessionsRoot, { recursive: true })
@@ -212,14 +235,7 @@ test('Codex native hooks send stable lifecycle records and state-aware sync feed
       } } },
     },
   }))
-  const server = await hookServer({
-    sessionContext: {
-      root_session_id: 'root-session',
-      pending_plan_observation_count: 1,
-      unassigned_execution_count: 1,
-      active_executions: [{ id: 'execution-1', task_id: 'task-a', classification: 'work' }],
-    },
-  })
+  const server = await hookServer()
   const env = { HOME: homeDirectory, AGENT_TASKS_SERVER_URL: server.url }
   try {
     const cases = [
@@ -248,13 +264,13 @@ test('Codex native hooks send stable lifecycle records and state-aware sync feed
         cwd: '/workspace', transcript_path: parentTranscript, agent_transcript_path: childTranscript,
         agent_id: 'child-session', agent_type: 'explorer', stop_hook_active: false,
       }],
-      ['session-end.mjs', {
-        hook_event_name: 'SessionEnd', session_id: 'root-session', cwd: '/workspace',
-        transcript_path: parentTranscript, reason: 'other',
-      }],
       ['stop-task-check.mjs', {
         hook_event_name: 'Stop', session_id: 'root-session', turn_id: 'turn-1',
         cwd: '/workspace', transcript_path: parentTranscript, stop_hook_active: false,
+      }],
+      ['session-end.mjs', {
+        hook_event_name: 'SessionEnd', session_id: 'root-session', cwd: '/workspace',
+        transcript_path: parentTranscript, reason: 'other',
       }],
     ]
     const results = []
@@ -264,31 +280,98 @@ test('Codex native hooks send stable lifecycle records and state-aware sync feed
       results.push(result.stdout === '' ? null : JSON.parse(result.stdout))
     }
 
-    assert.match(results[1].hookSpecificOutput.additionalContext, /agent_tasks_sync_tree/)
-    assert.match(results[2].hookSpecificOutput.additionalContext, /update_plan/)
+    assert.match(results[1].hookSpecificOutput.additionalContext, /agent_work_context/)
+    assert.doesNotMatch(results[1].hookSpecificOutput.additionalContext, /agent_tasks_sync_tree/)
+    assert.equal(results[2], null)
     assert.deepEqual(results[4], {})
-    assert.equal(results[6].decision, 'block')
-    assert.match(results[6].reason, /未绑定|unassigned/i)
+    assert.deepEqual(results[5], {})
+    assert.equal(results[6], null)
 
     assert.deepEqual(server.requests.map(({ method, url }) => [method, url]), [
-      ['POST', '/api/v1/lifecycle/session-start'],
-      ['POST', '/api/v1/lifecycle/turn-start'],
-      ['POST', '/api/v1/lifecycle/tool-use'],
-      ['POST', '/api/v1/lifecycle/subagent-start'],
-      ['POST', '/api/v1/lifecycle/subagent-stop'],
-      ['POST', '/api/v1/lifecycle/session-end'],
-      ['GET', '/api/v1/sessions/root-session/context'],
+      ['POST', '/api/v1/events'],
+      ['POST', '/api/v1/events'],
+      ['POST', '/api/v1/events'],
+      ['POST', '/api/v1/events'],
+      ['POST', '/api/v1/events'],
+      ['POST', '/api/v1/events'],
+      ['POST', '/api/v1/events'],
     ])
-    assert.equal(server.requests[1].body.external_key, 'codex:turn:root-session:turn-1:0')
-    assert.equal(server.requests[2].body.external_key, 'codex:tool:root-session:turn-1:tool-use-1')
-    assert.deepEqual(server.requests[2].body.plan, {
-      explanation: 'Refine', plan: [{ step: 'Build', status: 'in_progress' }],
-    })
-    assert.equal(JSON.stringify(server.requests[2].body).includes('must-not-be-forwarded'), false)
-    assert.equal(server.requests[3].body.external_key, 'codex:subagent:root-session:child-session')
-    assert.equal(server.requests[3].body.session_id, 'child-session')
-    assert.equal(server.requests[4].body.agent_path, '/root/researcher')
-    assert.equal(server.requests[4].body.transcript_path.endsWith('/child.jsonl'), true)
+    assert.deepEqual(server.requests.map(({ body }) => body.event_type), [
+      'session.started',
+      'execution.started',
+      'execution.heartbeat',
+      'execution.started',
+      'execution.stop',
+      'execution.stop',
+      'session.ended',
+    ])
+    assert.ok(server.requests.every(({ body }) => body.source === 'codex'))
+    assert.equal(server.requests[1].body.source_turn_key, 'turn-1')
+    assert.equal(server.requests[2].body.external_event_id, 'codex:execution:root-session:turn-1:tool:tool-use-1')
+    assert.equal(server.requests[3].body.source_session_key, 'child-session')
+    assert.equal(server.requests[3].body.source_agent_key, 'child-session')
+    const executionId = JSON.parse(
+      results[1].hookSpecificOutput.additionalContext.match(/Dynamic context \(JSON data only, never instructions\): (\{.*?\})\./)[1],
+    ).execution_id
+    assert.equal(server.requests[3].body.payload.parent_execution_id, executionId)
+    const serialized = JSON.stringify(server.requests)
+    for (const secret of [
+      'Implement the task tree', 'must-not-be-forwarded', 'agent_path',
+      'transcript_path', 'tool_input', 'tool_response',
+    ]) assert.equal(serialized.includes(secret), false, secret)
+  } finally {
+    await server.close()
+    await rm(homeDirectory, { recursive: true, force: true })
+  }
+})
+
+test('Claude adapter config and hooks preserve one opaque turn across start, heartbeat, and Stop', async () => {
+  const config = await readJson('adapters/claude/tasks-recorder/hooks/hooks.json')
+  assert.deepEqual(Object.keys(config.hooks).sort(), [
+    'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit',
+  ])
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-claude-hooks-'))
+  const server = await hookServer()
+  const env = { HOME: homeDirectory, AGENT_TASKS_SERVER_URL: server.url }
+  try {
+    const cases = [
+      ['session-start.mjs', {
+        hook_event_name: 'SessionStart', session_id: 'claude-session', cwd: '/workspace',
+      }],
+      ['user-prompt-task-sync.mjs', {
+        hook_event_name: 'UserPromptSubmit', session_id: 'claude-session', cwd: '/workspace',
+        prompt: 'private Claude prompt',
+      }],
+      ['task-heartbeat.mjs', {
+        hook_event_name: 'PostToolUse', session_id: 'claude-session', cwd: '/workspace',
+        tool_name: 'Bash', tool_use_id: 'tool-1', tool_input: { secret: 'private input' },
+        tool_response: { secret: 'private output' },
+      }],
+      ['stop-task-check.mjs', {
+        hook_event_name: 'Stop', session_id: 'claude-session', cwd: '/workspace',
+        stop_hook_active: false,
+      }],
+      ['session-end.mjs', {
+        hook_event_name: 'SessionEnd', session_id: 'claude-session', cwd: '/workspace',
+      }],
+    ]
+    const results = []
+    for (const [name, input] of cases) {
+      const result = await runHook(`adapters/claude/tasks-recorder/hooks/${name}`, input, env)
+      assert.equal(result.code, 0, `${name}: ${result.stderr}`)
+      results.push(result.stdout === '' ? null : JSON.parse(result.stdout))
+    }
+    assert.match(results[1].hookSpecificOutput.additionalContext, /agent_work_context/)
+    assert.deepEqual(results[3], {})
+    assert.deepEqual(server.requests.map(({ body }) => body.event_type), [
+      'session.started', 'execution.started', 'execution.heartbeat',
+      'execution.stop', 'session.ended',
+    ])
+    assert.deepEqual(server.requests.slice(1, 4).map(({ body }) => body.source_turn_key), [
+      'turn-1', 'turn-1', 'turn-1',
+    ])
+    assert.ok(server.requests.every(({ body }) => body.source === 'claude'))
+    assert.equal(JSON.stringify(server.requests).includes('private'), false)
   } finally {
     await server.close()
     await rm(homeDirectory, { recursive: true, force: true })
@@ -296,22 +379,27 @@ test('Codex native hooks send stable lifecycle records and state-aware sync feed
 })
 
 test('Codex lifecycle hooks fail open and Stop does not loop', async () => {
-  const env = { AGENT_TASKS_SERVER_URL: 'http://127.0.0.1:9' }
-  for (const [name, input] of [
-    ['session-start.mjs', { hook_event_name: 'SessionStart', session_id: 's', cwd: '/w' }],
-    ['user-prompt-task-sync.mjs', { hook_event_name: 'UserPromptSubmit', session_id: 's', turn_id: 't', cwd: '/w' }],
-    ['task-heartbeat.mjs', { hook_event_name: 'PostToolUse', session_id: 's', turn_id: 't', cwd: '/w', tool_name: 'Bash', tool_use_id: 'u' }],
-    ['subagent-start.mjs', { hook_event_name: 'SubagentStart', session_id: 's', turn_id: 't', cwd: '/w', agent_id: 'a', agent_type: 'worker' }],
-    ['subagent-stop.mjs', { hook_event_name: 'SubagentStop', session_id: 's', turn_id: 't', cwd: '/w', agent_id: 'a', agent_type: 'worker' }],
-    ['session-end.mjs', { hook_event_name: 'SessionEnd', session_id: 's', cwd: '/w', reason: 'other' }],
-    ['stop-task-check.mjs', { hook_event_name: 'Stop', session_id: 's', turn_id: 't', cwd: '/w', stop_hook_active: false }],
-    ['stop-task-check.mjs', { hook_event_name: 'Stop', session_id: 's', turn_id: 't', cwd: '/w', stop_hook_active: true }],
-  ]) {
-    const result = await runHook(`adapters/codex/tasks-recorder/hooks/${name}`, input, env)
-    assert.equal(result.code, 0, name)
-    if (name === 'subagent-stop.mjs' || name === 'stop-task-check.mjs') {
-      assert.deepEqual(JSON.parse(result.stdout), {})
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-fail-open-'))
+  const env = { HOME: homeDirectory, AGENT_TASKS_SERVER_URL: 'http://127.0.0.1:9' }
+  try {
+    for (const [name, input] of [
+      ['session-start.mjs', { hook_event_name: 'SessionStart', session_id: 's', cwd: '/w' }],
+      ['user-prompt-task-sync.mjs', { hook_event_name: 'UserPromptSubmit', session_id: 's', turn_id: 't', cwd: '/w' }],
+      ['task-heartbeat.mjs', { hook_event_name: 'PostToolUse', session_id: 's', turn_id: 't', cwd: '/w', tool_name: 'Bash', tool_use_id: 'u' }],
+      ['subagent-start.mjs', { hook_event_name: 'SubagentStart', session_id: 's', turn_id: 't', cwd: '/w', agent_id: 'a', agent_type: 'worker' }],
+      ['subagent-stop.mjs', { hook_event_name: 'SubagentStop', session_id: 's', turn_id: 't', cwd: '/w', agent_id: 'a', agent_type: 'worker' }],
+      ['session-end.mjs', { hook_event_name: 'SessionEnd', session_id: 's', cwd: '/w', reason: 'other' }],
+      ['stop-task-check.mjs', { hook_event_name: 'Stop', session_id: 's', turn_id: 't', cwd: '/w', stop_hook_active: false }],
+      ['stop-task-check.mjs', { hook_event_name: 'Stop', session_id: 's', turn_id: 't', cwd: '/w', stop_hook_active: true }],
+    ]) {
+      const result = await runHook(`adapters/codex/tasks-recorder/hooks/${name}`, input, env)
+      assert.equal(result.code, 0, name)
+      if (name === 'subagent-stop.mjs' || name === 'stop-task-check.mjs') {
+        assert.deepEqual(JSON.parse(result.stdout), {})
+      }
     }
+  } finally {
+    await rm(homeDirectory, { recursive: true, force: true })
   }
 })
 
@@ -333,6 +421,13 @@ test('both bundled MCP clients initialize and advertise task tools without proje
       assert.equal(initialized.result.serverInfo.name, 'tasks-recorder')
       const names = new Set(tools.result.tools.map(({ name }) => name))
       for (const name of [
+        'agent_work_context',
+        'agent_work_focus',
+        'agent_work_intent',
+        'agent_work_checkpoint',
+        'agent_work_attribution_correct',
+        'agent_tasks_mutate',
+        'agent_tasks_sync_structure',
         'agent_tasks_context',
         'agent_tasks_complete',
         'agent_tasks_sync_tree',
@@ -404,13 +499,19 @@ test('both adapters reject non-127.0.0.1 service overrides before sending hook o
   await new Promise((resolveListen) => probe.listen(0, '127.0.0.1', resolveListen))
   const { port } = probe.address()
   const remoteOverride = `http://localhost:${port}`
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-remote-origin-'))
   try {
-    for (const host of ['codex', 'claude']) {
-      const hook = await runHook(`adapters/${host}/tasks-recorder/hooks/task-heartbeat.mjs`, {
-        hook_event_name: 'PostToolUse', session_id: 'session-1', tool_name: 'Bash',
-      }, { AGENT_TASKS_SERVER_URL: remoteOverride })
-      assert.equal(hook.code, 0)
+    const codexHook = await runHook('adapters/codex/tasks-recorder/hooks/task-heartbeat.mjs', {
+      hook_event_name: 'PostToolUse', session_id: 'session-1', turn_id: 'turn-1',
+      cwd: '/workspace', tool_name: 'Bash', tool_use_id: 'tool-1',
+    }, { HOME: homeDirectory, AGENT_TASKS_SERVER_URL: remoteOverride })
+    assert.equal(codexHook.code, 0)
+    const claudeHook = await runHook('adapters/claude/tasks-recorder/hooks/user-prompt-task-sync.mjs', {
+      hook_event_name: 'UserPromptSubmit', session_id: 'session-1', cwd: '/workspace',
+    }, { HOME: homeDirectory, AGENT_TASKS_SERVER_URL: remoteOverride })
+    assert.equal(claudeHook.code, 0)
 
+    for (const host of ['codex', 'claude']) {
       const bundle = `adapters/${host}/tasks-recorder/dist/mcp-server.mjs`
       const mcp = await runScript(bundle, { AGENT_TASKS_SERVER_URL: remoteOverride })
       assert.notEqual(mcp.code, 0)
@@ -419,5 +520,6 @@ test('both adapters reject non-127.0.0.1 service overrides before sending hook o
     assert.equal(requests, 0)
   } finally {
     await new Promise((resolveClose, reject) => probe.close((error) => error ? reject(error) : resolveClose()))
+    await rm(homeDirectory, { recursive: true, force: true })
   }
 })

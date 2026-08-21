@@ -119,6 +119,15 @@ test('task client maps tree, execution, and lifecycle contracts without credenti
     })
     await client.updateExecutionAssignments({ changes: [] })
     await client.importExecutions({ source: 'codex', dry_run: true, records: [] })
+    await client.workContext({ execution_id: 'execution-1' })
+    await client.workFocus({ execution_id: 'execution-1', task_id: 'task-a' })
+    await client.registerIntent({
+      execution_id: 'execution-1', external_agent_key: 'child-1', task_id: 'task-a',
+    })
+    await client.workCheckpoint({ execution_id: 'execution-1', task_id: 'task-a' })
+    await client.correctAttribution({ segment_id: 'segment-1', task_id: 'task-a' })
+    await client.mutateTask({ action: 'create', task: { id: 'task-b' } })
+    await client.syncStructure({ project_id: 'project-a', main_task: {}, children: [] })
 
     assert.deepEqual(recorder.requests.map(({ method, url }) => [method, url]), [
       ['POST', '/api/v1/tasks/sync-tree'],
@@ -139,6 +148,13 @@ test('task client maps tree, execution, and lifecycle contracts without credenti
       ['PATCH', '/api/v1/executions/execution-1/classification'],
       ['PATCH', '/api/v1/executions/tasks'],
       ['POST', '/api/v1/import/executions'],
+      ['POST', '/api/v1/work/context'],
+      ['POST', '/api/v1/work/focus'],
+      ['POST', '/api/v1/work/intents'],
+      ['POST', '/api/v1/work/checkpoint'],
+      ['PATCH', '/api/v1/segments/segment-1/attribution'],
+      ['POST', '/api/v1/tasks/mutate'],
+      ['POST', '/api/v1/tasks/sync-structure'],
     ])
     assert.ok(recorder.requests.every(({ authorization }) => authorization === undefined))
   } finally {

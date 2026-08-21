@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
+
+import { createJournalEventClient } from './journal-client.mjs'
 
 function requireLocalOrigin(value) {
   const url = new URL(value)
@@ -30,45 +32,39 @@ async function resolveServerBaseUrl(env = process.env) {
   return requireLocalOrigin(`http://${host}:${port}`)
 }
 
-const LIFECYCLE_EVENTS = new Set([
-  'session-start',
-  'turn-start',
-  'tool-use',
-  'subagent-start',
-  'subagent-stop',
-  'session-end',
-])
-
-async function request(path, { method = 'GET', body } = {}, env = process.env) {
-  const response = await fetch(`${await resolveServerBaseUrl(env)}${path}`, {
-    method,
-    headers: {
-      Accept: 'application/json',
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+async function journalOptions(env) {
+  const dataDirectory = join(homedir(), '.config', 'tasks-recorder')
+  let config = {}
+  try {
+    config = JSON.parse(await readFile(join(dataDirectory, 'config.json'), 'utf8'))
+  } catch {
+    // Environment overrides and defaults keep lifecycle delivery fail-open before install.
+  }
+  const configuredSpool = config.spool_dir ?? 'spool'
+  return {
+    baseUrl: await resolveServerBaseUrl(env),
+    spoolDirectory: isAbsolute(configuredSpool)
+      ? configuredSpool
+      : join(dataDirectory, configuredSpool),
+    spoolOptions: {
+      maxBytes: config.spool_max_bytes ?? 4 * 1024 * 1024,
+      maxFiles: config.spool_max_files ?? 512,
+      maxAgeMs: config.spool_max_age_ms ?? 7 * 24 * 60 * 60 * 1000,
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(1_500),
-  })
-  const result = await response.json().catch(() => null)
-  if (!response.ok) {
-    throw new Error(`tasks-recorder request failed with HTTP ${response.status}`)
   }
-  if (result === null) throw new Error('tasks-recorder returned invalid JSON')
-  return result
 }
 
-export async function sendLifecycle(event, input, env = process.env) {
-  if (!LIFECYCLE_EVENTS.has(event)) throw new TypeError('tasks-recorder lifecycle event is invalid')
-  return request(`/api/v1/lifecycle/${event}`, { method: 'POST', body: input }, env)
-}
-
-export async function fetchSessionContext(sessionId, env = process.env) {
-  if (typeof sessionId !== 'string' || sessionId.trim() === '') {
-    throw new TypeError('sessionId must be a non-empty string')
+export async function sendJournalEvent(envelope, env = process.env) {
+  try {
+    const client = createJournalEventClient(await journalOptions(env))
+    return client.deliver(envelope)
+  } catch {
+    return {
+      ok: true,
+      delivered: false,
+      spooled: false,
+      dropped: true,
+      error_code: 'JOURNAL_CLIENT_UNAVAILABLE',
+    }
   }
-  return request(`/api/v1/sessions/${encodeURIComponent(sessionId.trim())}/context`, {}, env)
-}
-
-export async function sendHeartbeat(input, env = process.env) {
-  return request('/api/v1/heartbeat', { method: 'POST', body: input }, env)
 }

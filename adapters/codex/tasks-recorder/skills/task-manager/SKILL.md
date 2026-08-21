@@ -5,16 +5,37 @@ description: Use when an Agent is doing concrete work of any duration, resuming 
 
 # Task Manager
 
-Use `tasks-recorder` as the local Agent Task Control Plane. A Task is a delivery goal; a session, turn, or subagent is an execution of that Task, never a substitute Task identity.
+Tasks Recorder is a local Project Journalist. It records what happened without turning every session, turn, or subagent into a Task.
 
-For concrete work:
+## Model
 
-1. Call `agent_tasks_context`. Reuse the matching root/child IDs across sessions, branches, worktrees, turns, and subagents.
-2. Call `agent_tasks_sync_tree` with the root and its complete one-level set of direct children. Preserve returned IDs on every later sync, pass the latest root `expected_revision`, and bind `focus_task_id` to the Task currently executed by this turn. Never create one Task per turn or subagent.
-3. After `update_plan`, sync the same identities. Omission does not cancel a child; set `status: canceled` explicitly when work is abandoned.
-4. Before `spawn_agent`, give its child Task an `agent_key` equal to the stable `spawn_agent.task_name`. Native hooks record and uniquely bind the subagent execution inside this root tree; ambiguous matches remain in the unassigned inbox. A stopped execution does not complete its child Task.
-5. Complete children explicitly. Effective children exclude `canceled` and soft-deleted nodes. Only after every effective child is `done`, explicitly complete the root after integration and verification. Reopening a child reopens a completed root.
+- Observation, Source Session, Execution, and Work Segment are observed facts.
+- Project, Main Task, and Subtask are user-owned semantics.
+- Segment Attribution is the only bridge between facts and Tasks.
+- A Project is the UI root. A Task has at most one child level.
+- SQLite is canonical and exclusively owned by `taskd`.
 
-Use `planned`, `active`, `waiting` (external wait), `blocked` (cannot proceed), `done`, and `canceled` literally. On a revision conflict, call `agent_tasks_context` or `agent_tasks_show`, then reconcile; never overwrite newer state. Use `agent_task_executions_list` to find unassigned executions, `agent_task_execution_assign` to bind work, and `agent_task_execution_classify` with `non_work` for ordinary chat. These compare-and-set mutations must use the expected values returned by the latest read.
+Task lifecycle is `planned`, `in_progress`, `waiting`, `blocked`, `done`, or `canceled`. Execution live state is derived separately. An execution stopping never completes its Task.
 
-SQLite is canonical and exclusively owned by `taskd`. Never edit `tasks.sqlite` or generated projections directly. If the MCP server reports `SERVICE_UNAVAILABLE`, suggest installing or checking the Tasks Recorder service and do not create a substitute record.
+## Workflow
+
+1. For concrete work, use the exact `execution_id` supplied by the lifecycle Hook and call `agent_work_context`.
+2. Reuse an existing Task only when its semantic identity matches. Session, branch, worktree, timing, title similarity, and agent identity are evidence, not Task identity.
+3. If Project resolution is unresolved, leave the execution in Project Inbox. Do not infer a Project from branch name or remote alone.
+4. Call `agent_work_focus` only when the execution's semantic focus changes. A real A → B → A sequence must remain three Work Segments.
+5. Call `agent_work_checkpoint` only at a meaningful milestone. Keep the summary compact, set a concrete `next_action`, and use the latest Task revision.
+6. Use `agent_tasks_mutate` for one Task. Use `agent_tasks_sync_structure` only for a deliberate Main Task/direct-child structure change, with the exact current child id/revision set.
+7. Before spawning a child execution for a Task, call `agent_work_intent` with the exact host agent key when that host exposes an observable stable key.
+8. Use `agent_work_attribution_correct` for an explicit correction. Prior attribution remains auditable.
+
+Ordinary chat may remain unassigned or be classified `non_work` in the Dashboard. Hooks already record heartbeat and Stop mechanically; never respond to them with `agent_tasks_list`, full-tree synchronization, or automatic Task completion.
+
+## Concurrency and recovery
+
+Preserve stable Task IDs. On revision conflict, read current context/state and reconcile; never overwrite newer state. A changed session or worktree does not create a new Task identity.
+
+Legacy `agent_tasks_*` compatibility tools that advertise deprecation are lossy projections and cannot represent multiple Work Segments. Prefer the semantic tools above.
+
+## Storage boundary
+
+Never edit `tasks.sqlite` or generated projections directly. If MCP reports `SERVICE_UNAVAILABLE`, report that Tasks Recorder persistence is unavailable and suggest `tasks-recorder status`; do not create substitute files or bypass `taskd`.

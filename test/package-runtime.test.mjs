@@ -52,6 +52,27 @@ async function postJson(url, path, body) {
   return result
 }
 
+async function readReadyEvent(url) {
+  const response = await fetch(`${url}/api/v1/events`, {
+    signal: AbortSignal.timeout(1_000),
+  })
+  assert.equal(response.status, 200)
+  assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/)
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let source = ''
+  try {
+    for (let index = 0; index < 8 && !source.includes('event: ready'); index += 1) {
+      const { done, value } = await reader.read()
+      if (done) break
+      source += decoder.decode(value, { stream: true })
+    }
+    return source
+  } finally {
+    await reader.cancel()
+  }
+}
+
 function mcpExchange(script, homeDirectory) {
   return new Promise((resolveResult, reject) => {
     const child = spawn(process.execPath, [script], {
@@ -179,6 +200,31 @@ test('packaged runtime, importer, and adapter bundles execute outside the source
     }))
     const workfolder = join(directory, 'workspace')
     await mkdir(workfolder)
+    const databasePath = join(homeDirectory, '.config', 'tasks-recorder', 'tasks.sqlite')
+    const backupPath = join(homeDirectory, '.config', 'tasks-recorder', 'tasks.v2.backup.sqlite')
+    const packagedTaskStore = await import(pathToFileURL(
+      join(runtimeRoot, 'mcp', 'src', 'task-store.mjs'),
+    ))
+    const legacyStore = packagedTaskStore.createTaskStore({ databasePath })
+    legacyStore.upsert({
+      id: 'migrated-package-task', title: 'Migrated package task', project: 'Package migration',
+      status: 'active', session_id: 'migration-session', workfolder, agent: 'Codex',
+    })
+    legacyStore.close()
+    const migrationDryRun = await execFileAsync(process.execPath, [
+      join(runtimeRoot, 'server', 'cli.mjs'), 'migrate', '--dry-run', '--database', databasePath,
+    ], { cwd: runtimeRoot, env: { ...process.env, HOME: homeDirectory } })
+    const migrationPreview = JSON.parse(migrationDryRun.stdout)
+    assert.equal(migrationPreview.dry_run, true)
+    assert.equal(migrationPreview.legacy.task_count, 1)
+    const migrationApply = await execFileAsync(process.execPath, [
+      join(runtimeRoot, 'server', 'cli.mjs'), 'migrate', '--apply',
+      '--database', databasePath, '--backup', backupPath,
+    ], { cwd: runtimeRoot, env: { ...process.env, HOME: homeDirectory } })
+    const migrationResult = JSON.parse(migrationApply.stdout)
+    assert.equal(migrationResult.dry_run, false)
+    assert.equal(migrationResult.migrated.task_count, 1)
+    assert.match(migrationResult.backup.sha256, /^[a-f0-9]{64}$/)
     taskd = spawn(process.execPath, [join(runtimeRoot, 'server', 'taskd.mjs')], {
       cwd: runtimeRoot,
       env: { ...process.env, HOME: homeDirectory },
@@ -186,6 +232,10 @@ test('packaged runtime, importer, and adapter bundles execute outside the source
     })
     taskd.stderr.on('data', (chunk) => { taskdStderr += chunk })
     await waitForReady(baseUrl, taskd, () => taskdStderr)
+    const dashboard = await fetch(baseUrl)
+    assert.equal(dashboard.status, 200)
+    assert.match(await dashboard.text(), /<title>Agent Control<\/title>/)
+    assert.match(await readReadyEvent(baseUrl), /event: ready/)
 
     await postJson(baseUrl, '/api/v1/lifecycle/session-start', {
       root_session_id: 'package-session', session_id: 'package-session', workfolder,
@@ -234,11 +284,14 @@ test('packaged runtime, importer, and adapter bundles execute outside the source
       `${baseUrl}/api/v1/executions?root_session_id=package-session`,
     ).then((response) => response.json())
     assert.ok(snapshot.revision >= 7)
+    assert.ok(snapshot.tasks.some(({ id }) => id === 'migrated-package-task'))
     assert.equal(snapshot.tasks.find(({ id }) => id === 'package-root').progress.total, 2)
-    assert.deepEqual(
-      executions.executions.filter(({ kind }) => kind === 'main').map(({ task_id: taskId }) => taskId),
-      ['package-root', 'package-a', 'package-b', 'package-a'],
-    )
+    const [mainExecution] = executions.executions.filter(({ kind }) => kind === 'main')
+    assert.equal(mainExecution.task_id, 'package-a')
+    assert.deepEqual(mainExecution.compatibility.attributed_task_ids, [
+      'package-a', 'package-b', 'package-root',
+    ])
+    assert.equal(mainExecution.compatibility.lossy, true)
     assert.equal(executions.executions.find(({ kind }) => kind === 'subagent').task_id, 'package-a')
     assert.ok(executions.executions.every(({ status }) => status === 'completed'))
 

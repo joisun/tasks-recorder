@@ -94,6 +94,13 @@ function createClient(baseUrl) {
     },
     assignExecution: ({ id, ...body }) => request(`/api/v1/executions/${encodeURIComponent(id)}/task`, { method: 'PATCH', body }),
     classifyExecution: ({ id, ...body }) => request(`/api/v1/executions/${encodeURIComponent(id)}/classification`, { method: 'PATCH', body }),
+    workContext: (input) => request('/api/v1/work/context', { method: 'POST', body: input }),
+    workFocus: (input) => request('/api/v1/work/focus', { method: 'POST', body: input }),
+    registerIntent: (input) => request('/api/v1/work/intents', { method: 'POST', body: input }),
+    workCheckpoint: (input) => request('/api/v1/work/checkpoint', { method: 'POST', body: input }),
+    correctAttribution: ({ segment_id: segmentId, ...body }) => request(`/api/v1/segments/${encodeURIComponent(segmentId)}/attribution`, { method: 'PATCH', body }),
+    mutateTask: (input) => request('/api/v1/tasks/mutate', { method: 'POST', body: input }),
+    syncStructure: (input) => request('/api/v1/tasks/sync-structure', { method: 'POST', body: input }),
     render: () => request('/api/v1/render', { method: 'POST' }),
     check: () => request('/api/v1/check'),
   }
@@ -103,6 +110,10 @@ const taskId = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
 const taskStatus = z.enum(['planned', 'active', 'waiting', 'blocked', 'done', 'canceled'])
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const revision = z.number().int().positive()
+const instant = z.string().min(1)
+const v3Lifecycle = z.enum(['planned', 'in_progress', 'waiting', 'blocked', 'done', 'canceled'])
+const v3TaskPatch = z.object({ project_id: taskId.optional(), parent_id: taskId.nullable().optional(), title: z.string().min(1).optional(), description: z.string().min(1).nullable().optional(), lifecycle: v3Lifecycle.optional(), planned_start_at: instant.nullable().optional(), planned_due_at: instant.nullable().optional(), next_action: z.string().min(1).nullable().optional(), sort_order: z.number().int().nonnegative().optional() })
+const v3TaskNode = z.object({ id: taskId, project_id: taskId.optional(), parent_id: taskId.nullable().optional(), title: z.string().min(1).optional(), description: z.string().min(1).nullable().optional(), lifecycle: v3Lifecycle.optional(), planned_start_at: instant.nullable().optional(), planned_due_at: instant.nullable().optional(), next_action: z.string().min(1).nullable().optional(), sort_order: z.number().int().nonnegative().optional(), expected_revision: revision.optional(), patch: v3TaskPatch.optional() })
 const taskPatch = z.object({ parent_id: taskId.nullable().optional(), project: z.string().min(1).optional(), title: z.string().min(1).optional(), description: z.string().min(1).nullable().optional(), status: taskStatus.optional(), start_date: date.optional(), due_date: date.nullable().optional(), next_action: z.string().min(1).nullable().optional(), agent_key: z.string().min(1).nullable().optional(), sort_order: z.number().int().nonnegative().optional() })
 const treeRoot = z.object({ id: taskId.optional(), project: z.string().min(1).optional(), title: z.string().min(1), description: z.string().min(1).nullable().optional(), status: taskStatus, start_date: date.optional(), due_date: date.nullable().optional(), next_action: z.string().min(1).nullable().optional() })
 const treeChild = z.object({ id: taskId.optional(), title: z.string().min(1), description: z.string().min(1).nullable().optional(), status: taskStatus, sort_order: z.number().int().nonnegative(), agent_key: z.string().min(1).nullable().optional(), due_date: date.nullable().optional(), next_action: z.string().min(1).nullable().optional() })
@@ -126,9 +137,17 @@ function handle(operation) {
 
 const client = createClient(await resolveBaseUrl())
 const server = new McpServer(
-  { name: 'tasks-recorder', version: '0.5.0' },
-  { instructions: 'Use this local task control plane for concrete Agent work. Call agent_tasks_context first and never edit SQLite directly.' },
+  { name: 'tasks-recorder', version: '0.6.0' },
+  { instructions: 'Use this local Project Journalist for concrete work. Start with agent_work_context(execution_id); use semantic commands only for real focus, checkpoint, or Task changes. Before spawning a child for a Task, call agent_work_intent with its exact host agent key. Heartbeat and Stop are mechanical events and never require full-tree synchronization. Legacy agent_tasks_* tools are deprecated compatibility projections. Never edit SQLite directly.' },
 )
+
+server.registerTool('agent_work_context', { description: 'Read compact same-Project semantic context for one execution without creating or binding Tasks.', inputSchema: { execution_id: z.string().min(1) }, outputSchema, annotations: readAnnotations }, handle(client.workContext))
+server.registerTool('agent_work_focus', { description: 'Explicitly focus or unfocus one execution, creating a Segment boundary only when focus changes.', inputSchema: { execution_id: z.string().min(1), task_id: taskId.nullable(), provenance: z.enum(['agent_explicit', 'current_focus']), rationale_code: z.string().min(1), observed_at: instant.optional() }, outputSchema, annotations: writeAnnotations }, handle(client.workFocus))
+server.registerTool('agent_work_intent', { description: 'Before spawning a child execution, bind its exact host agent key to one Task with a single-use expiring intent.', inputSchema: { execution_id: z.string().min(1), external_agent_key: z.string().min(1), task_id: taskId, created_at: instant.optional(), expires_at: instant.optional() }, outputSchema, annotations: writeAnnotations }, handle(client.registerIntent))
+server.registerTool('agent_work_checkpoint', { description: 'Write one meaningful Segment summary and Task next action with revision concurrency.', inputSchema: { execution_id: z.string().min(1), task_id: taskId, expected_revision: revision, summary: z.string().min(1).max(4000), next_action: z.string().min(1), observed_at: instant.optional() }, outputSchema, annotations: writeAnnotations }, handle(client.workCheckpoint))
+server.registerTool('agent_work_attribution_correct', { description: 'Explicitly correct one Segment attribution while preserving audit history.', inputSchema: { segment_id: z.string().min(1), task_id: taskId, provenance: z.enum(['agent_explicit', 'user']), rationale_code: z.string().min(1), observed_at: instant.optional() }, outputSchema, annotations: writeAnnotations }, handle(client.correctAttribution))
+server.registerTool('agent_tasks_mutate', { description: 'Create, update/move, or change lifecycle of one canonical Project Task.', inputSchema: { action: z.enum(['create', 'update', 'status']), task: v3TaskNode }, outputSchema, annotations: writeAnnotations }, handle(client.mutateTask))
+server.registerTool('agent_tasks_sync_structure', { description: 'Atomically reconcile one Main Task and its exact revisioned direct-child set.', inputSchema: { project_id: taskId, main_task: v3TaskNode, expected_children: z.array(z.object({ id: taskId, revision })), children: z.array(v3TaskNode) }, outputSchema, annotations: writeAnnotations }, handle(client.syncStructure))
 
 server.registerTool('agent_tasks_context', { description: 'Find unfinished task candidates for this session and workfolder.', inputSchema: { session_id: z.string().min(1), workfolder: z.string().min(1), agent: z.string().min(1).optional() }, outputSchema, annotations: readAnnotations }, handle(client.context))
 server.registerTool('agent_tasks_list', { description: 'List persisted tasks using optional filters.', inputSchema: { project: z.string().min(1).optional(), status: taskStatus.optional(), workfolder: z.string().min(1).optional(), branch: z.string().min(1).optional() }, outputSchema, annotations: readAnnotations }, handle(client.list))

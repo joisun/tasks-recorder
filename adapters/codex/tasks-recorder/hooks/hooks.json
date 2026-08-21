@@ -19,7 +19,7 @@
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/hooks/user-prompt-task-sync.mjs\"",
             "timeout": 2,
-            "statusMessage": "Syncing task context"
+            "statusMessage": "Recording execution context"
           }
         ]
       }
@@ -79,8 +79,7 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/hooks/stop-task-check.mjs\"",
-            "timeout": 5,
-            "statusMessage": "Synchronizing task status"
+            "timeout": 2
           }
         ]
       }

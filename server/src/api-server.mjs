@@ -26,6 +26,11 @@ function statusFor(error) {
     || error.code === 'EXECUTION_ASSIGNMENT_CONFLICT'
     || error.code === 'EXECUTION_CLASSIFICATION_CONFLICT'
     || error.code === 'EXECUTION_BATCH_CONFLICT'
+    || error.code === 'OBSERVATION_IDENTITY_CONFLICT'
+    || error.code === 'TASK_STRUCTURE_CONFLICT'
+    || error.code === 'EXECUTION_INTENT_CONFLICT'
+    || error.code === 'PROJECT_VERSION_CONFLICT'
+    || error.code === 'SOURCE_SESSION_PROJECT_CONFLICT'
   ) return 409
   if (error instanceof TaskRecorderError) return 400
   return 500
@@ -53,6 +58,8 @@ function requireJson(request) {
 
 export function createApiServer({
   service,
+  journalService = null,
+  journalDiagnostics = null,
   store,
   hub,
   host = '127.0.0.1',
@@ -96,7 +103,9 @@ export function createApiServer({
       }
       if (request.method === 'GET' && pathname === '/health/ready') {
         const check = store.check()
-        const ready = check.integrityCheck === 'ok' && check.foreignKeyViolations.length === 0
+        const ready = check.integrityCheck === 'ok'
+          && check.foreignKeyViolations.length === 0
+          && (check.invariantViolations?.length ?? 0) === 0
         sendJson(response, ready ? 200 : 503, { ok: ready, ready, service: 'tasks-recorder', check })
         return
       }
@@ -106,6 +115,61 @@ export function createApiServer({
       }
       if (request.method === 'GET' && pathname === '/api/v1/events') {
         hub.subscribe(request, response)
+        return
+      }
+      if (request.method === 'GET' && pathname === '/api/v1/status' && journalDiagnostics) {
+        const status = await journalDiagnostics.status()
+        sendJson(response, status.ready ? 200 : 503, status)
+        return
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/events' && journalService) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.ingestEvent(await readJson(request)))
+        return
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/work/context' && journalService) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.workContext(await readJson(request)))
+        return
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/work/focus' && journalService) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.focus(await readJson(request)))
+        return
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/work/intents' && journalService) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.registerIntent(await readJson(request)))
+        return
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/work/checkpoint' && journalService) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.checkpoint(await readJson(request)))
+        return
+      }
+      const sourceSessionProject = pathname.match(
+        /^\/api\/v1\/source-sessions\/([^/]+)\/project$/,
+      )
+      if (request.method === 'PATCH' && sourceSessionProject && journalService) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.assignSourceSessionProject({
+          ...await readJson(request),
+          source_session_id: decodeURIComponent(sourceSessionProject[1]),
+        }))
+        return
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/tasks/mutate' && journalService) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.mutateTask(await readJson(request)))
+        return
+      }
+      if (
+        request.method === 'POST'
+        && pathname === '/api/v1/tasks/sync-structure'
+        && journalService
+      ) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.syncStructure(await readJson(request)))
         return
       }
 
@@ -164,9 +228,7 @@ export function createApiServer({
       }
       if (request.method === 'POST' && pathname === '/api/v1/heartbeat') {
         requireJson(request)
-        const result = store.heartbeat(await readJson(request))
-        const change = result.updated ? hub.publish() : undefined
-        sendJson(response, 200, { ...result, ...(change ? { change } : {}) })
+        sendJson(response, 200, await service.heartbeat(await readJson(request)))
         return
       }
       if (request.method === 'POST' && pathname === '/api/v1/render') {
@@ -207,6 +269,15 @@ export function createApiServer({
         return
       }
       const executionTask = pathname.match(/^\/api\/v1\/executions\/([^/]+)\/task$/)
+      const segmentAttribution = pathname.match(/^\/api\/v1\/segments\/([^/]+)\/attribution$/)
+      if (request.method === 'PATCH' && segmentAttribution && journalService) {
+        requireJson(request)
+        sendJson(response, 200, await journalService.correctAttribution({
+          ...await readJson(request),
+          segment_id: decodeURIComponent(segmentAttribution[1]),
+        }))
+        return
+      }
       if (request.method === 'PATCH' && pathname === '/api/v1/executions/tasks') {
         requireJson(request)
         sendJson(response, 200, await service.updateExecutionAssignments(await readJson(request)))

@@ -5,6 +5,37 @@ import { promisify } from 'node:util'
 
 const execFilePromise = promisify(execFileCallback)
 
+export function normalizeGitRemote(value) {
+  if (typeof value !== 'string' || value.trim() === '') return null
+  const source = value.trim()
+  const canonical = source.match(/^([a-zA-Z0-9.-]+(?::[0-9]+)?)\/(.+)$/)
+  if (canonical) {
+    const host = canonical[1].toLowerCase()
+    const path = canonical[2].replace(/\/+$/, '').replace(/\.git$/i, '')
+    return path ? `${host}/${path}` : null
+  }
+  const scp = source.match(/^(?:[^@/]+@)?([^:/]+):(.+)$/)
+  if (scp && !source.includes('://')) {
+    const host = scp[1].toLowerCase()
+    const path = scp[2].replace(/\/+$/, '').replace(/\.git$/i, '')
+    return path ? `${host}/${path}` : null
+  }
+  try {
+    const remote = new URL(source)
+    if (!['http:', 'https:', 'ssh:'].includes(remote.protocol)) return null
+    remote.username = ''
+    remote.password = ''
+    remote.search = ''
+    remote.hash = ''
+    const path = remote.pathname.replace(/\/+$/, '').replace(/\.git$/i, '')
+    if (!path || path === '/') return null
+    const port = remote.port ? `:${remote.port}` : ''
+    return `${remote.hostname.toLowerCase()}${port}${path}`
+  } catch {
+    return null
+  }
+}
+
 async function defaultExecFile(command, args) {
   return execFilePromise(command, args, { encoding: 'utf8' })
 }
@@ -23,7 +54,13 @@ export async function discoverGitContext(
   workfolder,
   { execFile = defaultExecFile, realpath = fsRealpath } = {},
 ) {
-  const empty = { gitRoot: null, worktree: null, branch: null }
+  const empty = {
+    gitRoot: null,
+    gitCommonDir: null,
+    gitRemote: null,
+    worktree: null,
+    branch: null,
+  }
   if (typeof workfolder !== 'string' || workfolder.trim() === '') return empty
 
   try {
@@ -52,7 +89,15 @@ export async function discoverGitContext(
       branch = null
     }
 
-    return { gitRoot, worktree, branch }
+    let gitRemote = null
+    try {
+      const remoteOutput = await gitOutput(workfolder, ['remote', 'get-url', 'origin'], execFile)
+      gitRemote = normalizeGitRemote(remoteOutput)
+    } catch {
+      gitRemote = null
+    }
+
+    return { gitRoot, gitCommonDir: commonDirectory, gitRemote, worktree, branch }
   } catch {
     return empty
   }

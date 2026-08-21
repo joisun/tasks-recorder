@@ -129,6 +129,18 @@ export function createTaskClient({
     importExecutions: (input) => request('/api/v1/import/executions', {
       method: 'POST', body: input,
     }),
+    workContext: (input) => request('/api/v1/work/context', { method: 'POST', body: input }),
+    workFocus: (input) => request('/api/v1/work/focus', { method: 'POST', body: input }),
+    registerIntent: (input) => request('/api/v1/work/intents', { method: 'POST', body: input }),
+    workCheckpoint: (input) => request('/api/v1/work/checkpoint', { method: 'POST', body: input }),
+    correctAttribution: ({ segment_id: segmentId, ...body }) => request(
+      `/api/v1/segments/${encodeURIComponent(segmentId)}/attribution`,
+      { method: 'PATCH', body },
+    ),
+    mutateTask: (input) => request('/api/v1/tasks/mutate', { method: 'POST', body: input }),
+    syncStructure: (input) => request('/api/v1/tasks/sync-structure', {
+      method: 'POST', body: input,
+    }),
     render: () => request('/api/v1/render', { method: 'POST' }),
     check: () => request('/api/v1/check'),
   }

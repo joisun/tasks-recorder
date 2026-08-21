@@ -267,6 +267,17 @@ export function createTaskService({
     }
   }
 
+  async function heartbeat(input) {
+    const result = store.heartbeat(input)
+    if (!result.updated) return result
+    const change = onChange({
+      type: 'tasks.changed',
+      operation: 'heartbeat',
+      task_id: result.task_id,
+    })
+    return { ...result, ...(change === undefined ? {} : { change }) }
+  }
+
   return {
     context,
     list: (filters) => store.list(filters),
@@ -291,6 +302,7 @@ export function createTaskService({
     classifyExecution: (input) => mutateExecution('classifyExecution', input),
     updateExecutionAssignments: mutateExecutionBatch,
     importExecutions,
+    heartbeat,
     updateStatus,
     render,
     dashboardSnapshot,
