@@ -102,11 +102,11 @@ test('computes runtime end, project progress, and relative activity', () => {
   })
 })
 
-test('timeline bounds include planned baselines and split actual segments', () => {
+test('timeline bounds include planned baselines and split actual segments in local calendar time', () => {
   const bounds = timelineBounds([{
     start: '2026-08-20T08:00:00.000Z', end: '2026-08-20T09:00:00.000Z', status: 'active',
-    base_start: new Date('2026-08-18T00:00:00.000Z'),
-    base_end: new Date('2026-08-28T23:59:59.999Z'),
+    base_start: new Date(2026, 7, 18, 0, 0, 0, 0),
+    base_end: new Date(2026, 7, 28, 23, 59, 59, 999),
     segments: [{
       start: new Date('2026-08-19T08:00:00.000Z'),
       end: new Date('2026-08-19T10:00:00.000Z'),
@@ -118,7 +118,7 @@ test('timeline bounds include planned baselines and split actual segments', () =
   )
   assert.deepEqual(
     [bounds.maximum.getFullYear(), bounds.maximum.getMonth(), bounds.maximum.getDate(), bounds.maximum.getHours()],
-    [2026, 7, 30, 0],
+    [2026, 7, 29, 0],
   )
 })
 

@@ -73,3 +73,4 @@ phase 1–5、测试计划、17 条测试用例与最终报告已完成；P0 全
 - 2026-08-21 release audit 发现 remote `v0.5.0` 已发布，schema v3 release contract 由重复的 `0.5.0` 修正为 `0.6.0`；legacy compatibility window 同步为 `0.6.x`，最早 `0.7.0` 移除。
 - 2026-08-21 v0.6.0 release-candidate gate 完成；installer/metadata/package focused 11/11、full suite 280/280、85-file syntax check、build/adapters/release archive 与 `git diff --check` 全绿，等待外部变更授权。
 - 2026-08-21 用户授权完整发布升级；进入 fresh gate → commit/merge/push/release → verified backup/migration → 本机 service/adapters 更新与验证流程。
+- 2026-08-21 main CI run `32473578515` 暴露 timezone-dependent Timeline test；根因是 UTC instant 与 local-calendar 断言混用，已改为 timezone-neutral fixture，等待 fresh UTC full gate 与 CI rerun。
