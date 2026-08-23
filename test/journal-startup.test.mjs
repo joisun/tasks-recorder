@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -92,6 +92,40 @@ test('detector failure never invents inactive evidence and does not block spool 
     assert.deepEqual(prepared.recovery.stale_execution_ids, [stale.execution_id])
     assert.equal(prepared.replay.replayed, 1)
     assert.equal(store.snapshot().executions.find(({ id }) => id === stale.execution_id).ended_at, null)
+  } finally {
+    store.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('startup quarantines a permanent identity conflict without blocking later replay', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tasks-recorder-journal-startup-'))
+  const store = createJournalStore({ databasePath: join(directory, 'tasks.sqlite') })
+  const service = createJournalService({ store })
+  const spoolDirectory = join(directory, 'spool')
+  const spool = createEventSpool({ directory: spoolDirectory })
+  try {
+    await service.ingestEvent(event())
+    await spool.queue(event({ observed_at: '2026-08-20T06:01:00.000Z' }))
+    await spool.queue(event({
+      external_event_id: 'later:start',
+      observed_at: '2026-08-20T06:02:00.000Z',
+      source_session_key: 'later-session',
+      source_turn_key: 'later-turn',
+    }))
+
+    const prepared = await prepareJournalStartup({
+      service,
+      spool,
+      observedAt: '2026-08-20T06:03:00.000Z',
+    })
+
+    assert.equal(prepared.replay.replayed, 1)
+    assert.equal(prepared.replay.isolated, 1)
+    assert.equal(prepared.replay.pending, 0)
+    assert.equal(prepared.replay.last_error, null)
+    assert.equal(store.snapshot().observations.length, 2)
+    assert.equal((await readdir(spoolDirectory)).some((name) => name.endsWith('.invalid')), true)
   } finally {
     store.close()
     await rm(directory, { recursive: true, force: true })

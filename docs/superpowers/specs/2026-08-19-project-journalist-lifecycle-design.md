@@ -1,7 +1,7 @@
 # Tasks Recorder 记者模型与双平面生命周期设计
 
 > 日期：2026-08-19（Asia/Shanghai）
-> 状态：Phase 1–5 与 release-candidate 验证已完成；v0.6.0 发布、真实数据库迁移与本机更新已获授权并进入 rollout
+> 状态：Phase 1–5、v0.6.0 发布、真实数据库迁移与本机更新已完成；真实 spool 验证发现的永久 replay conflict 正通过 v0.6.1 hotfix 收口
 > 取代：[`2026-08-14-task-tree-lifecycle-design.md`](./2026-08-14-task-tree-lifecycle-design.md) 中的后续演进模型
 > 可编辑流程图：[`2026-08-19-project-journalist-lifecycle.drawio`](./2026-08-19-project-journalist-lifecycle.drawio)
 
@@ -363,6 +363,7 @@ Stop Hook
 - 只写经过 allowlist 与脱敏的 Event Envelope，不写 prompt 或 tool payload。
 - 按文件大小与时间轮转，设总容量上限；超限先丢可 coalesce heartbeat，保留 lifecycle boundary。
 - replay 成功后采用可恢复的归档/删除策略，并记录 dropped/replayed 计数。
+- replay 必须区分临时失败与确定不可重试的 Event contract/identity rejection：前者恢复 claim 并等待下次重试，后者以 `0600` `.invalid` 文件隔离、增加 isolated 计数并继续后续事件，避免 poison event 永久阻塞 boundary queue。
 - taskd 仍是唯一 SQLite writer，spool 不是第二数据库。
 
 ## Task lifecycle 与 live state

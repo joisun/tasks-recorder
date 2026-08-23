@@ -2,10 +2,10 @@
 job: tasks-recorder-journalist-model
 status: in_progress
 current_phase: release-rollout
-current_task: publish-migrate-and-install-v0.6.0
+current_task: release-v0.6.1-spool-replay-hotfix
 blocked_reason: null
 created: 2026-08-19
-last_updated: 2026-08-21
+last_updated: 2026-08-23
 ---
 
 # tasks-recorder-journalist-model 阶段总览 / 状态面板
@@ -14,11 +14,11 @@ last_updated: 2026-08-21
 
 ## 现在在哪
 
-phase 1–5、测试计划、17 条测试用例与最终报告已完成；P0 全绿。真实 schema v2 数据库已完成 read-only dry-run：303 Tasks、366 Executions、26 个 planned Projects，20 个 Project 因 6 组 location collision 标记 ambiguous。用户已授权完整 v0.6.0 发布与本机升级，当前进入 release rollout。
+phase 1–5 与 v0.6.0 rollout 已完成：main CI、GitHub Release、正式 checksums、真实 schema v2→v3 migration、verified backup 和本机 service/adapters 更新均已验证。安装态真实 spool 暴露一个永久 `OBSERVATION_IDENTITY_CONFLICT` 被误判为临时发送失败的缺陷；v0.6.1 hotfix 已进入 TDD 与 release gate。
 
 ## 下一步
 
-执行 fresh release gates 并提交 feature branch；合并/push main、验证 GitHub Release 后停止 service，以 `~/.config/tasks-recorder/backups/tasks-v2-before-v3-20260821.sqlite` 创建 verified schema-v2 backup，再 apply migration、安装 v0.6.0 service/adapters 并完成最终验证。
+完成不可重试 replay rejection 隔离与后续事件继续 replay 的 full gate，发布 v0.6.1 后更新本机 service/adapters；以真实 spool 验证 active backlog 清零，同时保留 82 条缺少 inactive evidence 的 stale execution 供 Inbox/recovery 显式处理。
 
 ## 阶段列表
 
@@ -37,11 +37,11 @@ phase 1–5、测试计划、17 条测试用例与最终报告已完成；P0 全
 | [可编辑流程图](../../superpowers/specs/2026-08-19-project-journalist-lifecycle.drawio) | 领域、触发与 Timeline 图 | validator 已通过 |
 | [01-plan.md](./01-plan.md) | 实施计划与全局约束 | 已确认 |
 | [02-tasks.md](./02-tasks.md) | Task 级执行清单 | 全部完成 |
-| [phases/](./phases/) | Phase 追加式执行日志 | phase 1–5 完成，等待外部授权 |
+| [phases/](./phases/) | Phase 追加式执行日志 | phase 1–5 完成，v0.6.1 hotfix rollout 进行中 |
 | [tasks/](./tasks/) | 不可变 Task 详情 | phase 1–4 已物化 |
 | [04-test-plan.md](./04-test-plan.md) | 测试策略 | 已完成 |
 | [05-test-cases.md](./05-test-cases.md) | 测试用例矩阵 | 17/17 通过 |
-| [06-test-report.md](./06-test-report.md) | 测试结果 | release candidate gate 通过；外部动作未执行 |
+| [06-test-report.md](./06-test-report.md) | 测试结果 | v0.6.0 rollout 已完成；v0.6.1 hotfix 待最终 release gate |
 
 ## 变更记录
 
@@ -74,3 +74,5 @@ phase 1–5、测试计划、17 条测试用例与最终报告已完成；P0 全
 - 2026-08-21 v0.6.0 release-candidate gate 完成；installer/metadata/package focused 11/11、full suite 280/280、85-file syntax check、build/adapters/release archive 与 `git diff --check` 全绿，等待外部变更授权。
 - 2026-08-21 用户授权完整发布升级；进入 fresh gate → commit/merge/push/release → verified backup/migration → 本机 service/adapters 更新与验证流程。
 - 2026-08-21 main CI run `32473578515` 暴露 timezone-dependent Timeline test；根因是 UTC instant 与 local-calendar 断言混用，已改为 timezone-neutral fixture，等待 fresh UTC full gate 与 CI rerun。
+- 2026-08-22 main CI run `32540691611` 与 Release run `32542405074` 全绿，`v0.6.0` 正式发布；真实数据库以 verified schema-v2 backup 完成 v2→v3 migration，本机 service、Codex adapter 与 Claude adapter 已更新到 0.6.0。
+- 2026-08-23 安装态诊断确认数据库 schema/integrity/FK/invariants 健康；唯一 active spool 失败为永久 `OBSERVATION_IDENTITY_CONFLICT`，暴露 replay 对永久/临时错误未分类。hotfix 以 failing tests 复现后实现永久 rejection 隔离与后续 replay，准备 v0.6.1。

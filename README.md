@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.
 `curl | bash` 方便但会直接执行远端脚本。更审慎的方式是固定版本、先查看 installer，再执行；installer 会在解包前使用 Release 中的 `SHA256SUMS` 校验 runtime artifact：
 
 ```bash
-version=v0.6.0
+version=v0.6.1
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -87,7 +87,7 @@ Tasks Recorder 把事实记录与用户语义分开：
 
 实时链路如下：
 
-1. Native adapter 把 `SessionStart`、`UserPromptSubmit`、`PostToolUse`、subagent lifecycle、`Stop` 与 `SessionEnd` 映射为 host-neutral Event Envelope，经短超时投递到 `POST /api/v1/events`；taskd 暂不可达时进入 bounded spool，Hook 始终 fail-open。
+1. Native adapter 把 `SessionStart`、`UserPromptSubmit`、`PostToolUse`、subagent lifecycle、`Stop` 与 `SessionEnd` 映射为 host-neutral Event Envelope，经短超时投递到 `POST /api/v1/events`；taskd 暂不可达时进入 bounded spool，Hook 始终 fail-open。taskd 启动 replay 时，临时 transport/storage 错误保留事件等待下次重试；确定不可重试的 Event contract/identity 冲突进入本机 `.invalid` 隔离文件，后续事件继续 replay，避免一个 poison event 永久阻塞队列。
 2. `UserPromptSubmit` 提供稳定的 `execution_id`。Agent 对 concrete work 先调用 `agent_work_context`；只有真实 focus 变化、里程碑或 Task 结构变化时才调用 `agent_work_focus`、`agent_work_checkpoint`、`agent_tasks_mutate` 或 `agent_tasks_sync_structure`。
 3. `PostToolUse` 只刷新 execution fact activity，不读取 context、不同步整棵 Task tree，也不保存 tool input/output。普通对话可以保持未归属，或在 Dashboard 标记为 `non_work`。
 4. child execution 只有在 spawn 前通过 `agent_work_intent` 声明了宿主可观测的 exact agent key 时才自动 Attribution；否则进入 Inbox，不按时间邻近、agent type 或 prompt 相似度猜测。
@@ -115,7 +115,7 @@ Tasks Recorder 把事实记录与用户语义分开：
 ~/.config/tasks-recorder/
 ├── config.json                         # user configuration
 ├── tasks.sqlite                        # canonical data
-├── spool/                              # taskd 暂不可达时的 bounded Event Envelope
+├── spool/                              # bounded Event Envelope；*.invalid 为不可重试事件隔离证据
 └── logs/
     └── tasks-recorder.ndjson           # privacy-bounded structured events
 
@@ -242,6 +242,7 @@ curl -fsS http://127.0.0.1:43127/api/v1/status
 - `SERVICE_UNAVAILABLE`：先确认 service 已安装且 `health/ready` 返回成功。
 - Dashboard 无法打开：检查 `server_port` 是否被占用，以及 stderr log。
 - `health/ready` 可访问但状态为 degraded：查看 `/api/v1/status` 中的 schema、spool、logger 与 recovery 摘要；该接口不会返回 Event payload 或凭据。
+- `spool.last_replay_error` 为 `SPOOL_REPLAY_SEND_FAILED`：升级到最新 patch release 并重启 service；临时错误会保留重试，确定不可重试的 identity/contract conflict 会以 `0600` `.invalid` 文件隔离并继续 replay，不需要手动删除 active spool。
 - Dashboard 正常但没有自动记录：确认 adapter 已启用、重启宿主，并完成 hook trust/MCP approval。
 - 历史 import 返回 `CODEX_SESSION_NOT_FOUND`：确认使用完整、精确的 root Session ID；非默认 Codex 数据目录需要传 `--codex-home`。
 - 历史 import 后仍有未归属记录：这是无法唯一证明归属时的预期行为；先在 Project Inbox 确认 Project，再在“任务待归属”中分配 Task 或标记 `non_work`。

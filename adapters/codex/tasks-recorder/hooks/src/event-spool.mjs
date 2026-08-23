@@ -350,8 +350,11 @@ export function createEventSpool({
     await chmod(invalidPath, 0o600)
   }
 
-  async function replay(send) {
+  async function replay(send, { isPermanentError = () => false } = {}) {
     if (typeof send !== 'function') throw new TypeError('send must be a function')
+    if (typeof isPermanentError !== 'function') {
+      throw new TypeError('isPermanentError must be a function')
+    }
     await ensureDirectory(directory)
     const recoveredClaims = await recoverStaleClaims()
     const files = await spoolFiles(directory)
@@ -375,7 +378,19 @@ export function createEventSpool({
       }
       try {
         await send(envelope)
-      } catch {
+      } catch (error) {
+        let permanent = false
+        try {
+          permanent = isPermanentError(error, envelope) === true
+        } catch {
+          // A broken classifier must retain the event instead of risking data loss.
+        }
+        if (permanent) {
+          await isolate(claimed)
+          isolated += 1
+          metrics.isolated += 1
+          continue
+        }
         await restoreClaim(claimed)
         metrics.last_replay_at = new Date(clockMillis(clock)).toISOString()
         metrics.last_replay_error = 'SPOOL_REPLAY_SEND_FAILED'
@@ -407,4 +422,3 @@ export function createEventSpool({
 
   return { queue, replay, status }
 }
-

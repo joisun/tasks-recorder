@@ -233,6 +233,40 @@ test('replay deletes only acknowledged events and retains the first transport fa
   }
 })
 
+test('replay isolates a permanent send rejection and continues with later events', async () => {
+  let uuid = 0
+  const current = await fixture({ uuid: () => `event-${uuid += 1}` })
+  try {
+    await current.spool.queue(event({ external_event_id: 'conflicting-event' }))
+    await current.spool.queue(event({
+      external_event_id: 'later-event',
+      source_session_key: 'session-2',
+      source_turn_key: 'turn-2',
+    }))
+    const sent = []
+    const result = await current.spool.replay(async (envelope) => {
+      sent.push(envelope.external_event_id)
+      if (envelope.external_event_id === 'conflicting-event') {
+        const error = new Error('observation identity changed on replay')
+        error.code = 'OBSERVATION_IDENTITY_CONFLICT'
+        throw error
+      }
+    }, {
+      isPermanentError: (error) => error.code === 'OBSERVATION_IDENTITY_CONFLICT',
+    })
+
+    assert.deepEqual(sent, ['conflicting-event', 'later-event'])
+    assert.equal(result.replayed, 1)
+    assert.equal(result.isolated, 1)
+    assert.equal(result.pending, 0)
+    assert.equal(result.last_error, null)
+    assert.equal((await current.spool.status()).last_replay_error, null)
+    assert.equal((await readdir(current.spoolDirectory)).some((name) => name.endsWith('.invalid')), true)
+  } finally {
+    await current.cleanup()
+  }
+})
+
 test('replay acknowledgement cannot delete a newer coalesced heartbeat', async () => {
   const current = await fixture()
   try {

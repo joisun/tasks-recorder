@@ -1,3 +1,5 @@
+import { TaskRecorderError } from '../../mcp/src/errors.mjs'
+
 export async function prepareJournalStartup({
   service,
   spool,
@@ -30,7 +32,10 @@ export async function prepareJournalStartup({
     stale_after_ms: staleAfterMs,
     inactive_sessions: inactiveSessions,
   })
-  const replay = await spool.replay((envelope) => service.ingestEvent(envelope))
+  const replay = await spool.replay(
+    (envelope) => service.ingestEvent(envelope),
+    { isPermanentError: (error) => error instanceof TaskRecorderError },
+  )
   return {
     recovery,
     replay,
