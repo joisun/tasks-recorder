@@ -1,7 +1,7 @@
 # Tasks Recorder 记者模型与双平面生命周期设计
 
 > 日期：2026-08-19（Asia/Shanghai）
-> 状态：Phase 1–5、v0.6.0 发布、真实数据库迁移与本机更新已完成；真实 spool 验证发现的永久 replay conflict 正通过 v0.6.1 hotfix 收口
+> 状态：Phase 1–5、v0.6.0 schema-v3 rollout 与 v0.6.1 permanent replay conflict hotfix 已完成
 > 取代：[`2026-08-14-task-tree-lifecycle-design.md`](./2026-08-14-task-tree-lifecycle-design.md) 中的后续演进模型
 > 可编辑流程图：[`2026-08-19-project-journalist-lifecycle.drawio`](./2026-08-19-project-journalist-lifecycle.drawio)
 

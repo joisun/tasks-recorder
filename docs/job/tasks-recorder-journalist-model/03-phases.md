@@ -1,8 +1,8 @@
 ---
 job: tasks-recorder-journalist-model
-status: in_progress
-current_phase: release-rollout
-current_task: release-v0.6.1-spool-replay-hotfix
+status: done
+current_phase: completed
+current_task: null
 blocked_reason: null
 created: 2026-08-19
 last_updated: 2026-08-23
@@ -14,11 +14,11 @@ last_updated: 2026-08-23
 
 ## 现在在哪
 
-phase 1–5 与 v0.6.0 rollout 已完成：main CI、GitHub Release、正式 checksums、真实 schema v2→v3 migration、verified backup 和本机 service/adapters 更新均已验证。安装态真实 spool 暴露一个永久 `OBSERVATION_IDENTITY_CONFLICT` 被误判为临时发送失败的缺陷；v0.6.1 hotfix 已进入 TDD 与 release gate。
+phase 1–5、v0.6.0 schema-v3 rollout 与 v0.6.1 spool replay hotfix 全部完成。main CI、两次 GitHub Release、正式 checksums、真实 schema v2→v3 migration、verified backup、本机 service/adapters 更新和安装态 Playwright smoke 均已验证；真实 active spool 已从 1 清零，永久 conflict 以 `0600` `.invalid` 证据隔离。
 
 ## 下一步
 
-完成不可重试 replay rejection 隔离与后续事件继续 replay 的 full gate，发布 v0.6.1 后更新本机 service/adapters；以真实 spool 验证 active backlog 清零，同时保留 82 条缺少 inactive evidence 的 stale execution 供 Inbox/recovery 显式处理。
+产品实施已收口。后续属于运营数据治理：在 Project Inbox 核对 20 个 ambiguous Project，并仅在取得 inactive-session evidence 或用户显式决策后处理 82 条 stale execution；不能为消除 `degraded` 指标而自动伪造结束事实。
 
 ## 阶段列表
 
@@ -37,11 +37,11 @@ phase 1–5 与 v0.6.0 rollout 已完成：main CI、GitHub Release、正式 che
 | [可编辑流程图](../../superpowers/specs/2026-08-19-project-journalist-lifecycle.drawio) | 领域、触发与 Timeline 图 | validator 已通过 |
 | [01-plan.md](./01-plan.md) | 实施计划与全局约束 | 已确认 |
 | [02-tasks.md](./02-tasks.md) | Task 级执行清单 | 全部完成 |
-| [phases/](./phases/) | Phase 追加式执行日志 | phase 1–5 完成，v0.6.1 hotfix rollout 进行中 |
+| [phases/](./phases/) | Phase 追加式执行日志 | phase 1–5 与 v0.6.1 hotfix rollout 完成 |
 | [tasks/](./tasks/) | 不可变 Task 详情 | phase 1–4 已物化 |
 | [04-test-plan.md](./04-test-plan.md) | 测试策略 | 已完成 |
 | [05-test-cases.md](./05-test-cases.md) | 测试用例矩阵 | 17/17 通过 |
-| [06-test-report.md](./06-test-report.md) | 测试结果 | v0.6.0 rollout 已完成；v0.6.1 hotfix 待最终 release gate |
+| [06-test-report.md](./06-test-report.md) | 测试结果 | v0.6.1 CI/Release/checksums/本机 smoke 全部通过 |
 
 ## 变更记录
 
@@ -76,3 +76,4 @@ phase 1–5 与 v0.6.0 rollout 已完成：main CI、GitHub Release、正式 che
 - 2026-08-21 main CI run `32473578515` 暴露 timezone-dependent Timeline test；根因是 UTC instant 与 local-calendar 断言混用，已改为 timezone-neutral fixture，等待 fresh UTC full gate 与 CI rerun。
 - 2026-08-22 main CI run `32540691611` 与 Release run `32542405074` 全绿，`v0.6.0` 正式发布；真实数据库以 verified schema-v2 backup 完成 v2→v3 migration，本机 service、Codex adapter 与 Claude adapter 已更新到 0.6.0。
 - 2026-08-23 安装态诊断确认数据库 schema/integrity/FK/invariants 健康；唯一 active spool 失败为永久 `OBSERVATION_IDENTITY_CONFLICT`，暴露 replay 对永久/临时错误未分类。hotfix 以 failing tests 复现后实现永久 rejection 隔离与后续 replay，准备 v0.6.1。
+- 2026-08-23 v0.6.1 main CI `32615479571` 与 Release workflow `32615524175` 全绿，正式 assets checksums 全部通过；本机 runtime、Codex adapter 与 Claude adapter 已更新至 0.6.1。service 重启后 active spool 0、last replay error null、isolated 1，Playwright Dashboard smoke console 0 error/0 warning，任务收口。

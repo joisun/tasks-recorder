@@ -23,7 +23,7 @@
 - `npm run package:release`：生成 macOS runtime、Codex adapter、Claude adapter 三份 archive。
 - v0.6.0 正式 release contract 已验证；真实 spool 暴露的永久 replay conflict hotfix 将 package、lockfile、两套 native adapter metadata、MCP server metadata、README 与 archive root 统一升级到 `0.6.1` / `tasks-recorder-0.6.1/`。
 - packaged runtime smoke：在 source tree 外完成 v2→v3 dry-run/apply、verified backup、taskd ready、Dashboard、SSE ready、Codex/Claude MCP handshake、execution lifecycle 和 import dry-run。
-- v0.6.0 三份正式 archive 与 `install.sh` 均通过 Release `SHA256SUMS`；v0.6.1 三份 candidate archive 已重新生成并通过 package tests，正式 checksum 仍由 tag workflow 生成。
+- v0.6.0 与 v0.6.1 的三份正式 archive 及 `install.sh` 均通过各自 Release `SHA256SUMS`。v0.6.1 tag 精确指向 `7624105`，Release 为 published、非 draft、非 prerelease。
 
 ## 真实数据库迁移与安装态验证
 
@@ -37,7 +37,11 @@
 
 backup `tasks-v2-before-v3-20260821.sqlite` 为 `0600`、schema 2、integrity `ok`，SHA-256 为 `9b28c876ac9e8c4e9250c3aca0e339583dc1bd82538b4008e336edf52cfe4a10`。迁移后 canonical DB 为 schema 3，integrity `ok`、foreign key violations 0、invariant violations 0；collision 不会触发猜测合并或丢弃，由 Project Inbox 显式核对。
 
-v0.6.0 service、Codex adapter 与 Claude adapter 已安装并验证为 0.6.0。安装态发现 1 个旧 boundary spool 为永久 `OBSERVATION_IDENTITY_CONFLICT`；v0.6.0 会把它误判为 retryable `SPOOL_REPLAY_SEND_FAILED`。v0.6.1 regression 覆盖了两层契约：spool 对明确 permanent rejection 隔离并继续后续事件，startup 仅把 `TaskRecorderError` 分类为 permanent，transport/storage/classifier failure 仍保留重试。
+v0.6.0 安装态发现 1 个旧 boundary spool 为永久 `OBSERVATION_IDENTITY_CONFLICT`；v0.6.0 会把它误判为 retryable `SPOOL_REPLAY_SEND_FAILED`。v0.6.1 regression 覆盖了两层契约：spool 对明确 permanent rejection 隔离并继续后续事件，startup 仅把 `TaskRecorderError` 分类为 permanent，transport/storage/classifier failure 仍保留重试。
+
+正式 v0.6.1 installer 完成 runtime 更新，本机 Codex/Claude adapters 也均为 0.6.1。service 重启后的真实状态为 schema v3 ready、active spool 0、last replay error null、isolated 1；原 391-byte boundary event 以 `0600` `.invalid` 文件保留。`degraded: true` 仅由 82 条缺少 inactive evidence 的 stale open Execution 触发，不代表 DB 或 service 不可用。
+
+安装态 Playwright headless smoke 在 `1280×720` 加载 `Agent Control`，确认 Project-first Grid/Timeline、双 Inbox、Auto scale 与 splitter 可访问；`GET /api/v1/snapshot` 返回 200，console 0 error / 0 warning。
 
 ## 失败 / 阻塞用例详情
 
@@ -56,10 +60,10 @@ fresh hotfix worktree 首轮 full suite 为 281/282，唯一失败是该 worktre
 - **Open Area**：schema、migration、fact/semantic stores、adapters、package runtime、Dashboard hierarchy/timeline、docs/metadata、真实 backup/apply、v0.6.0 Release checksums 与本机安装均有直接证据。
 - **Hidden Area**：具体 collision 与 stale execution identity 仍属于本机用户数据；报告只保留 aggregate counts，不输出 Project/path/session 明细。
 - **Blind Spot**：unit/isolated replay 成功不代表真实旧 spool 不会包含 poison event；本机安装态验证发现这一点，并已转化为 v0.6.1 permanent/transient error-classification regression。
-- **Unknown Area**：v0.6.1 远端 CI/Release 和真实 spool 隔离结果在 tag/install 前不可假定；必须由 workflow、checksum 与安装态 status 逐项证明。
+- **Unknown Area**：v0.6.1 远端 CI/Release、checksums 与真实 spool 隔离均已由直接证据关闭；剩余 unknown 仅是未来宿主异常退出能否提供更强 inactive-session evidence，需要在对应宿主能力出现后重新验证，不能在当前版本猜测。
 
 ## 结论
 
-v0.6.0 rollout 与真实 schema v3 migration 已完成；数据库和已安装 service 均 ready。v0.6.1 hotfix 已达到 **local release candidate**：focused 30/30、UTC full suite 282/282、85-file syntax、UI/adapters/release builds 与 diff check 全绿。
+v0.6.0 schema-v3 rollout 与 v0.6.1 hotfix 已全部完成：focused 30/30、UTC full suite 282/282、85-file syntax、UI/adapters/release builds、main CI、GitHub Release/checksums、本机 service/adapters 更新与真实 spool 隔离均通过。数据库和 service ready，P0 全绿。
 
-尚未纳入本结论的唯一外部证据是 v0.6.1 main CI、GitHub Release/checksums 与本机真实 spool 隔离；这些将在 tag/install 后追加验证结果，不提前推断成功。
+20 个 ambiguous Project 与 82 条 stale Execution 是显式保留的运营待办，不是隐藏失败；它们必须由确定性证据或用户决策处理。
