@@ -145,6 +145,9 @@ test('gateway serves HTML and securely proxies methods, origins, bodies, and SSE
     const html = await htmlResponse.text()
     assert.match(html, /source/)
     assert.match(html, /__tasks_recorder_dev\/reload/)
+    const favicon = await fetch(`${address.url}/favicon.ico`)
+    assert.equal(favicon.status, 204)
+    assert.equal(await favicon.text(), '')
 
     const mutation = await fetch(`${address.url}/api/v1/tasks/example`, {
       method: 'PATCH',

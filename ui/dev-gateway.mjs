@@ -205,6 +205,11 @@ export function createDashboardDevGateway({ host, port, upstream, getHtml } = {}
       }
       return
     }
+    if (request.method === 'GET' && url.pathname === '/favicon.ico') {
+      response.writeHead(204, { 'Cache-Control': 'no-store' })
+      response.end()
+      return
+    }
     if (request.method === 'GET' && url.pathname === DEV_RELOAD_PATH) {
       attachReloadClient(request, response)
       return
