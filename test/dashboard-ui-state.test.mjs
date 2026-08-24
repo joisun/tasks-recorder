@@ -5,6 +5,7 @@ import * as dashboardState from '../ui/src/dashboard-state.mjs'
 
 import {
   createTaskIndex,
+  canArchiveTask,
   endOf,
   escapeHtml,
   estimatedTimelineLabelWidth,
@@ -31,19 +32,19 @@ const tasks = [
   { id: 'blocked', parent_id: null, status: 'blocked', start: '2026-08-12T08:00:00.000Z', end: null, last_activity: '2026-08-12T08:55:00.000Z' },
 ]
 
-test('merges completed roots and fully completed groups into history', () => {
+test('completion never implies history without an explicit archive', () => {
   const index = createTaskIndex(tasks)
-  assert.equal(isArchivedGroup(index.byId.get('group'), index), true)
+  assert.equal(isArchivedGroup(index.byId.get('group'), index), false)
   assert.equal(isArchivedGroup(index.byId.get('single-done'), index), false)
-  assert.equal(isHistoricalRoot(index.byId.get('group'), index), true)
-  assert.equal(isHistoricalRoot(index.byId.get('single-done'), index), true)
+  assert.equal(isHistoricalRoot(index.byId.get('group'), index), false)
+  assert.equal(isHistoricalRoot(index.byId.get('single-done'), index), false)
   assert.equal(isHistoricalRoot(index.byId.get('blocked'), index), false)
-  assert.equal(tabCount('history', tasks, index), 2)
-  assert.equal(tabCount('all', tasks, index), 1)
+  assert.equal(tabCount('history', tasks, index), 0)
+  assert.equal(tabCount('all', tasks, index), 3)
   assert.equal(tabCount('blocked', tasks, index), 1)
 })
 
-test('history follows explicit root lifecycle instead of inferred child completion', () => {
+test('history follows archived_at and keeps completed or canceled work current', () => {
   const lifecycleTasks = [
     { id: 'active-root', parent_id: null, status: 'active', archived_at: null },
     { id: 'done-child', parent_id: 'active-root', status: 'done', archived_at: null },
@@ -53,13 +54,13 @@ test('history follows explicit root lifecycle instead of inferred child completi
   const lifecycleIndex = createTaskIndex(lifecycleTasks)
 
   assert.equal(isHistoricalRoot(lifecycleIndex.byId.get('active-root'), lifecycleIndex), false)
-  assert.equal(isHistoricalRoot(lifecycleIndex.byId.get('canceled-root'), lifecycleIndex), true)
+  assert.equal(isHistoricalRoot(lifecycleIndex.byId.get('canceled-root'), lifecycleIndex), false)
   assert.equal(isHistoricalRoot(lifecycleIndex.byId.get('archived-root'), lifecycleIndex), true)
-  assert.equal(tabCount('history', lifecycleTasks, lifecycleIndex), 2)
-  assert.equal(tabCount('all', lifecycleTasks, lifecycleIndex), 1)
+  assert.equal(tabCount('history', lifecycleTasks, lifecycleIndex), 1)
+  assert.equal(tabCount('all', lifecycleTasks, lifecycleIndex), 2)
 })
 
-test('presents root progress accessibly and avoids an empty ring for leaf tasks', () => {
+test('presents groups as count bars and leaves as lifecycle states', () => {
   const root = {
     id: 'root',
     parent_id: null,
@@ -73,16 +74,32 @@ test('presents root progress accessibly and avoids an empty ring for leaf tasks'
 
   assert.equal(progressOf(root, createTaskIndex([root])), 0.75)
   assert.deepEqual(progressPresentation(root, '进行中'), {
-    ring: true,
+    indicator: 'bar',
+    kind: 'progress',
+    state: 'active',
     ratio: 0.75,
-    text: '未完成 1 / 4',
-    ariaLabel: '升级任务模型：未完成 1 / 4，已完成 75%',
+    text: '3/4',
+    ariaLabel: '升级任务模型：已完成 3/4，75%',
   })
   assert.deepEqual(progressPresentation(leaf, '待安排'), {
-    ring: false,
-    ratio: null,
+    indicator: 'ring',
+    kind: 'status',
+    state: 'planned',
+    ratio: 0,
     text: '待安排',
     ariaLabel: '独立任务：待安排',
+  })
+  assert.deepEqual(progressPresentation({
+    ...root,
+    rollup_state: 'done',
+    progress: { remaining: 0, total: 4, completed: 4, ratio: 1 },
+  }, '已完成'), {
+    indicator: 'bar',
+    kind: 'progress',
+    state: 'done',
+    ratio: 1,
+    text: '4/4',
+    ariaLabel: '升级任务模型：已完成 4/4，100%',
   })
 })
 
@@ -91,15 +108,23 @@ test('computes runtime end, project progress, and relative activity', () => {
   const index = createTaskIndex(tasks)
   assert.equal(endOf(index.byId.get('blocked'), now).toISOString(), '2026-08-12T09:47:00.000Z')
   assert.equal(progressOf(index.byId.get('group'), index), 1)
-  assert.deepEqual(relativeActivity(index.byId.get('blocked'), now), {
-    text: '52m', tone: 'stale', minutes: 52,
+  assert.deepEqual(relativeActivity(index.byId.get('blocked'), now, { timeZone: 'UTC' }), {
+    text: '52m ago', title: '2026-08-12 08:55', tone: 'default', minutes: 52,
   })
   assert.deepEqual(relativeActivity({
     status: 'active',
     last_activity: '2026-08-06T21:44:00.000Z',
-  }, now), {
-    text: '5d 12h', tone: 'dead', minutes: 7_923,
+  }, now, { timeZone: 'UTC' }), {
+    text: '5d ago', title: '2026-08-06 21:44', tone: 'stale', minutes: 7_923,
   })
+})
+
+test('archive eligibility accepts terminal leaves and rollup-complete groups only', () => {
+  assert.equal(canArchiveTask({ status: 'done', archived_at: null }), true)
+  assert.equal(canArchiveTask({ status: 'canceled', archived_at: null }), true)
+  assert.equal(canArchiveTask({ status: 'active', rollup_state: 'done', archived_at: null }), true)
+  assert.equal(canArchiveTask({ status: 'active', rollup_state: 'active', archived_at: null }), false)
+  assert.equal(canArchiveTask({ status: 'done', archived_at: '2026-08-12T09:00:00.000Z' }), false)
 })
 
 test('timeline bounds include planned baselines and split actual segments in local calendar time', () => {

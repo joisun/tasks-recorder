@@ -58,16 +58,20 @@ export function createDashboardRendererController({
     const scale = createSvarScales(bounds, view.timelineZoom)
     const gridOnly = view.displayMode === 'grid' && !view.compact
     const gridOnlyColumns = {
-      text: { width: 320, flexgrow: 1 },
-      execution_context: { width: 320, flexgrow: 2 },
-      session_id: { width: 260, flexgrow: 1.5 },
-      activity: { width: 80 },
+      text: { width: 320 },
+      activity: { width: 120 },
+      workspace: { width: 300 },
+      branch: { width: 180 },
+      session_id: { width: 220, flexgrow: 1, resize: false },
     }
     const columns = SVAR_GRID_COLUMNS.map((column, index) => {
-      const resized = index === 0 && Number.isFinite(view.taskColumnWidth)
-        ? { ...column, width: view.taskColumnWidth }
-        : { ...column }
-      return gridOnly ? { ...resized, ...(gridOnlyColumns[column.id] ?? {}) } : resized
+      const modeColumn = gridOnly ? { ...column, ...(gridOnlyColumns[column.id] ?? {}) } : { ...column }
+      const capturedWidth = view.columnWidths?.[column.id]
+      if (Number.isFinite(capturedWidth)) return { ...modeColumn, width: capturedWidth }
+      if (index === 0 && Number.isFinite(view.taskColumnWidth)) {
+        return { ...modeColumn, width: view.taskColumnWidth }
+      }
+      return modeColumn
     })
     return {
       ...scale,

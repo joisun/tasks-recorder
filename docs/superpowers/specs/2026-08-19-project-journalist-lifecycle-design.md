@@ -385,7 +385,7 @@ Stop Hook
 
 ### Planned 与 Actual 分离
 
-- Planned：来自 `planned_start_at` / `planned_due_at`，使用 outline / marker。
+- Planned：来自 `planned_start_at` / `planned_due_at`，planned-only Task 使用细密 dash-dot outline，Actual 已存在时使用 baseline / marker。
 - Actual：来自 accepted Attribution 对应的 Work Segments，使用实体或密度条。
 - Main Task summary：`envelope(own accepted segments + descendant subtask segments)`。
 - Project summary：`envelope(all descendant task segments)`。
@@ -418,8 +418,20 @@ Project
 - Main Task row 展示 progress、next action、lifecycle 与 descendant envelope。
 - Subtask row 展示具体状态与 attributed segments。
 - Execution / session 在详情 Sheet 中展示，不塞进 Task hierarchy。
-- 表格保留 workspace、worktree、branch、session ID；session ID 可复制，长文本使用 tooltip / Sheet 展开。
+- 表格顺序为任务、最近活跃、状态/进度、Workspace、Branch、Session ID。Workspace 是 source session 的 cwd，即 `codex resume` 应回到的上下文目录；presentation 优先使用 `workfolder`，只为旧数据 fallback 到 `worktree`。Workspace、Branch、Session ID 各自可复制，长文本只使用 custom tooltip / Sheet 展开，不叠加原生 `title`。
+- Tree 在每一层按 subtree `last_activity DESC` 排序；短时间使用 `xm` / `xh` / `xd ago`，七天及以上显示具体时间。
+- 状态列按层级表达：Project 与有 children 的 Main Task 使用横向 progress bar，只显示 `completed/total`；叶子 Main Task 使用 circle、Subtask 使用更轻的 status dot 表达 lifecycle。
+- 业务列使用 SVAR native column resize；被拖列独立改变宽度，最右侧不可拖动的“最近活跃”只在纯 Grid 模式吸收剩余空间，Grid/Timeline splitter 不参与列宽计算。
 - Project Inbox 与 Task Attribution Inbox 分开，避免“项目未知”和“工作目标未知”混为一类。
+
+### Rollup、完成与归档
+
+- 所有非 canceled、非 deleted children 都为 `done` 时，group 的 Dashboard `rollup_state` 为 `done`；这是 read-model projection，不是后台 lifecycle mutation。
+- `done` / `canceled` 不会立即等于历史。当前 Tree 只排除 `archived_at != null` 的 branch，“历史”读取归档记录并保留必要的 Project / Main Task ancestor context。
+- 用户可以手动提前归档；未手动处理的一级任务组与独立任务连续完成满 5 天后自动归档。taskd 在 startup 执行一次检查，运行期间每小时 sweep 一次并以一个 batch 发布 SSE。
+- Subtask 不单独自动归档，`canceled` Task 不进入自动归档策略。独立任务使用自身 `completed_at`；derived-complete group 使用最后一个非 canceled、非 deleted child 的 `completed_at`。Task reopen 会清空 `completed_at`，连续完成周期从下一次完成重新计算。
+- terminal leaf 可以直接归档；derived-complete Main Task 可以归档，taskd 在一个 revisioned transaction 中把 persisted lifecycle 规范化为 `done` 并写入 `archived_at`，只产生一个 Task Event 与一次 SSE invalidation。
+- 最近活跃与 sibling sorting 使用 Task update、accepted Segment activity 与 execution context 中可验证的最新时间，不按标题或数组原始顺序猜测。
 
 ## 数据库目标结构
 

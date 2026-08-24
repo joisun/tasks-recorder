@@ -26,7 +26,7 @@ const snapshot = {
       id: 'old-history', parent_id: null, title: 'Old completed work', status: 'done',
       start: '2025-01-03T09:00:00.000Z', end: '2025-01-03T10:00:00.000Z',
       last_activity: '2025-01-03T10:00:00.000Z', progress: null,
-      updated_at: '2025-01-03T10:00:00.000Z',
+      updated_at: '2025-01-03T10:00:00.000Z', archived_at: '2025-01-03T10:05:00.000Z',
     },
   ],
 }
@@ -36,6 +36,9 @@ function fakeRenderer() {
   const captured = {
     displayMode: 'all', gridWidth: 720, openIds: new Set(['root']), gridX: 18,
     timelineX: 96, verticalY: 44, selectedTaskId: 'child', taskColumnWidth: 260,
+    columnWidths: {
+      text: 260, activity: 120, status: 132, workspace: 284, branch: 160, session_id: 176,
+    },
     labelsVisible: true, timelineZoom: 'auto',
   }
   return {
@@ -59,7 +62,7 @@ test('projects snapshots and root filters through the renderer boundary', () => 
   controller.setSnapshot(snapshot, { initial: true })
   assert.equal(renderer.calls[0][0], 'render')
   assert.deepEqual(renderer.calls[0][1].tasks.map(({ id }) => id), ['root', 'child', 'blocked'])
-  assert.equal(renderer.calls[0][1].columns.length, 5)
+  assert.equal(renderer.calls[0][1].columns.length, 6)
   assert.equal(renderer.calls[0][1].baselines, true)
   assert.equal(renderer.calls[0][1].start.getUTCFullYear(), 2026)
   assert.equal(renderer.calls[0][2].gridWidth, 792)
@@ -96,7 +99,17 @@ test('maps pending rows and toolbar actions without exposing SVAR internals', ()
   assert.equal(renderer.calls.at(-4)[2].displayMode, 'grid')
   assert.deepEqual(
     renderer.calls.at(-4)[1].columns.map(({ id, flexgrow }) => [id, flexgrow ?? null]),
-    [['text', 1], ['status', null], ['execution_context', 2], ['session_id', 1.5], ['activity', null]],
+    [
+      ['text', null], ['activity', null], ['status', null], ['workspace', null],
+      ['branch', null], ['session_id', 1],
+    ],
+  )
+  assert.deepEqual(
+    renderer.calls.at(-4)[1].columns.map(({ id, width }) => [id, width]),
+    [
+      ['text', 260], ['activity', 120], ['status', 132], ['workspace', 284],
+      ['branch', 160], ['session_id', 176],
+    ],
   )
   assert.equal(renderer.calls.at(-3)[1], 760)
   assert.equal(renderer.calls.at(-2)[1], true)

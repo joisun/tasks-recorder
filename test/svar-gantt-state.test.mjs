@@ -39,7 +39,7 @@ const tasks = [
   {
     id: 'history-root', parent_id: null, title: 'Old dashboard work', status: 'done',
     start: '2026-08-10T08:00:00.000Z', end: '2026-08-10T09:00:00.000Z',
-    last_activity: '2026-08-10T09:00:00.000Z', archived_at: null,
+    last_activity: '2026-08-10T09:00:00.000Z', archived_at: '2026-08-10T10:00:00.000Z',
     active_agent_count: 0, execution_count: 1, updated_at: '2026-08-10T09:00:00.000Z',
   },
   {
@@ -71,6 +71,7 @@ test('projects matching root subtrees in stable tree order without inventing row
 test('retains every Dashboard field and converts dates and progress for SVAR', () => {
   const [root] = createSvarTaskProjection(tasks, {
     filter: 'active', openIds: new Set(['root']), now: NOW, homeDirectory: '/Users/me',
+    timeZone: 'UTC',
   })
 
   assert.equal(root.type, 'summary')
@@ -80,16 +81,17 @@ test('retains every Dashboard field and converts dates and progress for SVAR', (
   assert.equal(root.progress, 50)
   assert.equal(root.status, 'active')
   assert.equal(root.session_id, '019fa297-4567-7bf0-a69a-84fd23b3aaab')
-  assert.equal(root.workfolder, '/Users/me/project')
-  assert.equal(root.workfolder_display, '~/project')
-  assert.equal(root.worktree, '/Users/me/project/.worktree/feature-svar')
+  assert.equal(root.workspace, '/Users/me/project')
+  assert.equal(root.workspace_display, '~/project')
   assert.equal(root.branch, 'feature/svar')
   assert.equal(root.note, 'Finish renderer integration')
   assert.equal(root.active_agent_count, 2)
   assert.equal(root.execution_count, 5)
   assert.equal(root.last_activity, '2026-08-16T09:45:00.000Z')
   assert.equal(root.updated_at, '2026-08-16T09:45:00.000Z')
-  assert.deepEqual(root.activity, { text: '15m', tone: 'default', minutes: 15 })
+  assert.deepEqual(root.activity, {
+    text: '15m ago', title: '2026-08-16 09:45', tone: 'default', minutes: 15,
+  })
 })
 
 test('summary tasks span the complete time envelope of every descendant', () => {
@@ -151,17 +153,48 @@ test('summary envelopes include descendant planned and actual ranges even when t
   assert.equal(project.base_end.toISOString(), '2026-09-05T00:00:00.000Z')
 })
 
-test('defines the five decision-focused grid columns within the default panel width', () => {
+test('defines six decision-focused grid columns with activity second', () => {
   assert.equal(SVAR_ROW_HEIGHT, 30)
   assert.equal(SVAR_SCALE_HEIGHT, 24)
   assert.deepEqual(SVAR_GRID_COLUMNS.map(({ id, header }) => [id, header]), [
     ['text', '任务'],
+    ['activity', '最近活跃'],
     ['status', '状态 / 进度'],
-    ['execution_context', '执行上下文'],
+    ['workspace', 'Workspace'],
+    ['branch', 'Branch'],
     ['session_id', 'Session ID'],
-    ['activity', '活动'],
   ])
-  assert.equal(SVAR_GRID_COLUMNS.reduce((total, column) => total + column.width, 0), 792)
+  assert.equal(SVAR_GRID_COLUMNS.find(({ id }) => id === 'activity').width, 100)
+  assert.equal(SVAR_GRID_COLUMNS.reduce((total, { width }) => total + width, 0), 684)
+  assert.deepEqual(SVAR_GRID_COLUMNS.map(({ id, resize }) => [id, resize]), [
+    ['text', true],
+    ['activity', true],
+    ['status', true],
+    ['workspace', true],
+    ['branch', true],
+    ['session_id', false],
+  ])
+})
+
+test('history keeps ancestors as context while current hides archived task branches', () => {
+  const hierarchy = [
+    { id: 'project', parent_id: null, entity_type: 'project', title: 'Project', status: 'active' },
+    { id: 'main', parent_id: 'project', entity_type: 'main_task', title: 'Main', status: 'active' },
+    { id: 'current', parent_id: 'main', entity_type: 'subtask', title: 'Current', status: 'active' },
+    {
+      id: 'archived', parent_id: 'main', entity_type: 'subtask', title: 'Archived', status: 'done',
+      archived_at: '2026-08-16T09:00:00.000Z',
+    },
+  ]
+
+  assert.deepEqual(filterSvarTasks(hierarchy, 'all').map(({ id }) => id), [
+    'project', 'main', 'current',
+  ])
+  assert.deepEqual(filterSvarTasks(hierarchy, 'history').map(({ id, history_context }) => (
+    [id, Boolean(history_context)]
+  )), [
+    ['project', true], ['main', true], ['archived', false],
+  ])
 })
 
 test('maps canonical actual segments to native split tasks and planned range to baseline', () => {

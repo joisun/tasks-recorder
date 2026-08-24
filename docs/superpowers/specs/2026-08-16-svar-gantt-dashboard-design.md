@@ -8,7 +8,7 @@
 
 ## 实施结论
 
-SVAR 方案已通过 pinned-package contract、完整功能矩阵、1,000-task virtualization smoke、isolated taskd runtime、release packaging 与 PC 1440 × 900 visual-driven review。随后又按“desktop Agent 项目控制面”而不是“数据库字段表”的产品目标完成二次打磨：默认周视图、可切换日/周/月粒度、summary 时间包络、五列决策 Grid、30px 行高、分组 toolbar 与精确的今天定位。浏览器审计为 Critical 0 / High 0 / Medium 0，因此 fallback gate 未触发，不创建原生 renderer worktree。最新视觉证据记录在实施计划末尾和 `.vdr-log/20260816-product-redesign-pc/`。
+SVAR 方案已通过 pinned-package contract、完整功能矩阵、1,000-task virtualization smoke、isolated taskd runtime、release packaging 与 PC 1440 × 900 visual-driven review。随后又按“desktop Agent 项目控制面”而不是“数据库字段表”的产品目标完成二次打磨：默认周视图、可切换日/周/月粒度、summary 时间包络、六列决策 Grid、30px 行高、分组 toolbar 与精确的今天定位。浏览器审计为 Critical 0 / High 0 / Medium 0，因此 fallback gate 未触发，不创建原生 renderer worktree。最新视觉证据记录在实施计划末尾和 `.vdr-log/20260816-product-redesign-pc/`。
 
 ## First Principles
 
@@ -159,7 +159,7 @@ React components 只渲染可见 cell/bar：
 - Task cell：tree disclosure + Details trigger + status dot + ellipsis。
 - Status/Progress cell：accessible pill 或 ring + remaining/total。
 - Session cell：紧凑 ID、完整值 tooltip 与完整 copy payload。
-- Execution Context cell：合并 workspace/worktree/branch，并通过 keyboard/pointer popover 暴露完整值。
+- Workspace / Branch cell：Workspace 表示 source session cwd，Branch 独立成列；两者通过 keyboard/pointer popover 暴露并可复制完整值。
 - Activity cell：分钟、小时、天级的人类可读新鲜度信号。
 - Task bar：status color、progress、可选 label。
 
@@ -200,7 +200,7 @@ React components 只渲染可见 cell/bar：
 - root disclosure 支持 pointer、Enter、Space、ArrowLeft、ArrowRight。
 - root/child open state 在 filter、SSE refresh、Timeline toggle 与 reload 后保留。
 - Task column 与 Grid panel 都支持 pointer resize；Grid panel separator 支持 ArrowLeft/Right/Home/End。
-- Execution Context 单元格垂直居中，合并展示工作目录/Worktree/Branch，并通过 tooltip/popover 暴露三个完整值。
+- Workspace 与 Branch 单元格垂直居中、独立展示，通过单一 custom tooltip 暴露完整值并支持各自复制；不渲染原生 `title`。
 
 ### Task context 与 mutation
 

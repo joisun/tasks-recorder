@@ -8,14 +8,17 @@ const EVENT_FIELDS = new Map([
     'project_resolution',
   ])],
   ['event.rejected', new Set(['source', 'event_type', 'error_code'])],
-  ['lifecycle.transition', new Set(['operation', 'execution_id', 'execution_count'])],
+  ['lifecycle.transition', new Set([
+    'operation', 'execution_id', 'execution_count', 'task_count',
+  ])],
+  ['maintenance.failed', new Set(['operation', 'error_code'])],
   ['spool.queued', new Set(['count', 'error_code'])],
   ['spool.replayed', new Set(['count', 'pending', 'error_code'])],
   ['spool.dropped', new Set(['count', 'error_code'])],
   ['recovery.completed', new Set(['recovered_count', 'stale_count', 'error_code'])],
   ['migration.completed', new Set(['created_count', 'updated_count', 'error_code'])],
 ])
-const WARNING_EVENTS = new Set(['event.rejected', 'spool.dropped'])
+const WARNING_EVENTS = new Set(['event.rejected', 'spool.dropped', 'maintenance.failed'])
 
 function loggerError(code, message, fields = []) {
   const error = new Error(message)

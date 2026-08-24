@@ -123,6 +123,11 @@ export function createV3TaskStore({ db, clock = () => new Date(), transact } = {
     WHERE parent_id = ? AND deleted_at IS NULL
     ORDER BY sort_order, created_at, id
   `)
+  const selectCurrentRoots = db.prepare(`
+    SELECT * FROM tasks
+    WHERE parent_id IS NULL AND archived_at IS NULL AND deleted_at IS NULL
+    ORDER BY project_id, created_at, id
+  `)
   const selectEvents = db.prepare(`
     SELECT * FROM task_events WHERE task_id = ? ORDER BY created_at, id
   `)
@@ -143,6 +148,12 @@ export function createV3TaskStore({ db, clock = () => new Date(), transact } = {
   const updateTaskVisibility = db.prepare(`
     UPDATE tasks SET
       archived_at = ?, deleted_at = ?, revision = revision + 1, updated_at = ?
+    WHERE id = ?
+  `)
+  const archiveCompletedGroup = db.prepare(`
+    UPDATE tasks SET
+      lifecycle = 'done', completed_at = ?, archived_at = ?,
+      revision = revision + 1, updated_at = ?
     WHERE id = ?
   `)
   const insertEvent = db.prepare(`
@@ -348,8 +359,15 @@ export function createV3TaskStore({ db, clock = () => new Date(), transact } = {
           current,
         })
       }
-      if (operation === 'archive' && !['done', 'canceled'].includes(current.lifecycle)) {
-        fail('TASK_ARCHIVE_STATUS_INVALID', 'only done or canceled tasks can be archived', {
+      const children = operation === 'archive' ? selectChildren.all(id) : []
+      const includedChildren = children.filter(({ lifecycle: state }) => state !== 'canceled')
+      const rollupComplete = current.parent_id === null
+        && includedChildren.length > 0
+        && includedChildren.every(({ lifecycle: state }) => state === 'done')
+      if (operation === 'archive'
+        && !['done', 'canceled'].includes(current.lifecycle)
+        && !rollupComplete) {
+        fail('TASK_ARCHIVE_STATUS_INVALID', 'only terminal or rollup-complete tasks can be archived', {
           id,
           lifecycle: current.lifecycle,
         })
@@ -364,7 +382,11 @@ export function createV3TaskStore({ db, clock = () => new Date(), transact } = {
       if (archivedAt === current.archived_at && deletedAt === current.deleted_at) {
         return { task: current, changed: false }
       }
-      updateTaskVisibility.run(archivedAt, deletedAt, timestamp, id)
+      if (operation === 'archive' && rollupComplete && current.lifecycle !== 'done') {
+        archiveCompletedGroup.run(current.completed_at ?? timestamp, archivedAt, timestamp, id)
+      } else {
+        updateTaskVisibility.run(archivedAt, deletedAt, timestamp, id)
+      }
       const task = selectTask.get(id)
       writeEvent({
         task,
@@ -380,6 +402,55 @@ export function createV3TaskStore({ db, clock = () => new Date(), transact } = {
 
   function archive(input) {
     return mutateVisibility(input, 'archive')
+  }
+
+  function archiveCompletedRoots(input) {
+    const completedBefore = instant(input?.completed_before, 'completed_before')
+    if (completedBefore === null) {
+      fail('TASK_INPUT_INVALID', 'completed_before is required', { field: 'completed_before' })
+    }
+    const eventActor = actor(input?.actor ?? 'hook')
+    return transaction(() => {
+      const timestamp = nowIso(clock)
+      const archived = []
+      for (const current of selectCurrentRoots.all()) {
+        const children = selectChildren.all(current.id)
+        let completedAt = null
+        if (children.length === 0) {
+          if (current.lifecycle === 'done') completedAt = current.completed_at
+        } else {
+          const included = children.filter(({ lifecycle: state }) => state !== 'canceled')
+          if (
+            included.length > 0
+            && included.every((child) => child.lifecycle === 'done' && child.completed_at !== null)
+          ) {
+            completedAt = current.lifecycle === 'done' && current.completed_at !== null
+              ? current.completed_at
+              : included.reduce((latest, child) => (
+                  child.completed_at > latest ? child.completed_at : latest
+                ), included[0].completed_at)
+          }
+        }
+        if (completedAt === null || completedAt > completedBefore) continue
+
+        if (current.lifecycle === 'done') {
+          updateTaskVisibility.run(timestamp, current.deleted_at, timestamp, current.id)
+        } else {
+          archiveCompletedGroup.run(completedAt, timestamp, timestamp, current.id)
+        }
+        const task = selectTask.get(current.id)
+        writeEvent({
+          task,
+          eventType: 'archived',
+          before: current,
+          eventActor,
+          sourceSessionId: null,
+          timestamp,
+        })
+        archived.push(task)
+      }
+      return { tasks: archived, changed: archived.length > 0 }
+    })
   }
 
   function deleteTask(input) {
@@ -423,5 +494,15 @@ export function createV3TaskStore({ db, clock = () => new Date(), transact } = {
     `).all(...parameters)
   }
 
-  return { create, update, updateLifecycle, archive, delete: deleteTask, restore, show, list }
+  return {
+    create,
+    update,
+    updateLifecycle,
+    archive,
+    archiveCompletedRoots,
+    delete: deleteTask,
+    restore,
+    show,
+    list,
+  }
 }

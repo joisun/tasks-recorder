@@ -409,6 +409,19 @@ export function createJournalService({
     return publishSemantic(`task.${action}`, result, { task_id: result.task.id })
   }
 
+  async function archiveCompletedRoots(input) {
+    const result = store.tasks.archiveCompletedRoots({ ...input, actor: 'hook' })
+    if (result.changed) {
+      await safeLog('lifecycle.transition', {
+        operation: 'task.auto_archive',
+        task_count: result.tasks.length,
+      })
+    }
+    return publishSemantic('task.auto_archive', result, {
+      task_ids: result.tasks.map(({ id }) => id),
+    })
+  }
+
   async function syncStructure(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw new TaskRecorderError('TASK_INPUT_INVALID', 'input must be an object')
@@ -573,6 +586,7 @@ export function createJournalService({
     assignSourceSessionProject,
     checkpoint,
     mutateTask,
+    archiveCompletedRoots,
     syncStructure,
   }
 }

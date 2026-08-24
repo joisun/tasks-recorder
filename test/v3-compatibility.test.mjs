@@ -13,7 +13,10 @@ import { startTaskd } from '../server/src/taskd-runtime.mjs'
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'tasks-recorder-v3-compat-'))
-  const store = createJournalStore({ databasePath: join(directory, 'tasks.sqlite') })
+  const store = createJournalStore({
+    databasePath: join(directory, 'tasks.sqlite'),
+    clock: () => new Date('2026-08-20T07:00:00.000Z'),
+  })
   const changes = []
   const journal = createJournalService({ store, onChange: (change) => changes.push(change) })
   const service = createV3CompatibilityService({
@@ -121,7 +124,7 @@ test('v3 service serves the canonical Project-first Dashboard projection without
       ['task-b', 'project:project-a'],
     ])
     assert.equal(snapshot.tasks[0].entity_type, 'project')
-    assert.equal(snapshot.tasks[1].actual_segment_count, 1)
+    assert.equal(snapshot.tasks.find(({ id }) => id === 'task-a').actual_segment_count, 1)
     assert.equal(snapshot.projects[0].name, 'Project A')
     assert.equal('sessions' in snapshot, false)
   } finally {

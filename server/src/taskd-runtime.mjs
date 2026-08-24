@@ -12,6 +12,9 @@ import { prepareJournalStartup } from './journal-startup.mjs'
 import { createRevisionHub } from './revision-hub.mjs'
 import { createStructuredLogger } from './structured-logger.mjs'
 
+export const AUTO_ARCHIVE_AFTER_MS = 5 * 24 * 60 * 60 * 1000
+export const AUTO_ARCHIVE_SWEEP_MS = 60 * 60 * 1000
+
 export async function startTaskd({
   config,
   dashboardPath,
@@ -27,6 +30,11 @@ export async function startTaskd({
   gitResolver = discoverGitContext,
   renderer = renderProjections,
   dashboardAdapter = createJournalDashboardSnapshot,
+  clock = () => new Date(),
+  autoArchiveAfterMs = AUTO_ARCHIVE_AFTER_MS,
+  autoArchiveSweepMs = AUTO_ARCHIVE_SWEEP_MS,
+  scheduleInterval = setInterval,
+  clearScheduledInterval = clearInterval,
 }) {
   const store = createStore({ databasePath: config.databasePath })
   const hub = createRevisionHub()
@@ -71,19 +79,47 @@ export async function startTaskd({
     dashboardHtml,
   })
   let closed = false
+  let autoArchiveTimer = null
+  let autoArchivePending = null
+
+  function archiveCompletedRoots() {
+    if (autoArchivePending) return autoArchivePending
+    autoArchivePending = (async () => {
+      const now = clock()
+      const timestamp = now instanceof Date ? now : new Date(now)
+      if (Number.isNaN(timestamp.valueOf())) throw new TypeError('clock must return a valid date')
+      const completedBefore = new Date(timestamp.valueOf() - autoArchiveAfterMs).toISOString()
+      return journalService.archiveCompletedRoots({ completed_before: completedBefore })
+    })().catch(async (error) => {
+      await logger.write('maintenance.failed', {
+        operation: 'task.auto_archive',
+        error_code: error?.code ?? 'AUTO_ARCHIVE_FAILED',
+      }).catch(() => undefined)
+      return { ok: false, persisted: false, error_code: error?.code ?? 'AUTO_ARCHIVE_FAILED' }
+    }).finally(() => {
+      autoArchivePending = null
+    })
+    return autoArchivePending
+  }
+
   try {
     await prepareStartup({
       service: journalService,
       spool,
       detectInactiveSessions,
     })
+    await archiveCompletedRoots()
     const address = await api.listen()
+    autoArchiveTimer = scheduleInterval(() => archiveCompletedRoots(), autoArchiveSweepMs)
+    autoArchiveTimer.unref?.()
     return {
       address,
       startup: { schema_version: store.check().schemaVersion },
       async close() {
         if (closed) return
         closed = true
+        if (autoArchiveTimer) clearScheduledInterval(autoArchiveTimer)
+        await autoArchivePending
         hub.close()
         try {
           await api.close()
@@ -93,6 +129,7 @@ export async function startTaskd({
       },
     }
   } catch (error) {
+    if (autoArchiveTimer) clearScheduledInterval(autoArchiveTimer)
     hub.close()
     store.close()
     throw error

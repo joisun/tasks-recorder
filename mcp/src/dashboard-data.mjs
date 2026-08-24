@@ -36,6 +36,13 @@ function count(value) {
   return Number.isInteger(value) && value >= 0 ? value : 0
 }
 
+function latestInstant(values) {
+  return values
+    .map(validInstant)
+    .filter(Boolean)
+    .sort((left, right) => right.localeCompare(left))[0] ?? null
+}
+
 export function createDashboardSnapshot(snapshot, {
   now = new Date(),
   homeDirectory = homedir(),
@@ -249,6 +256,38 @@ function semanticProgress(tasks) {
   }
 }
 
+function rollupLifecycle(task, children) {
+  const included = children.filter(({ lifecycle, deleted_at: deletedAt }) => (
+    lifecycle !== 'canceled' && !deletedAt
+  ))
+  return included.length > 0 && included.every(({ lifecycle }) => lifecycle === 'done')
+    ? 'done'
+    : task.lifecycle
+}
+
+function sortDashboardTree(rows) {
+  const childrenByParent = new Map()
+  for (const row of rows) {
+    const children = childrenByParent.get(row.parent_id) ?? []
+    children.push(row)
+    childrenByParent.set(row.parent_id, children)
+  }
+  const compare = (left, right) => (
+    String(right.last_activity ?? '').localeCompare(String(left.last_activity ?? ''))
+    || left.sort_order - right.sort_order
+    || left.id.localeCompare(right.id)
+  )
+  const sorted = []
+  function append(parentId) {
+    for (const row of [...(childrenByParent.get(parentId) ?? [])].sort(compare)) {
+      sorted.push(row)
+      append(row.id)
+    }
+  }
+  append(null)
+  return sorted
+}
+
 function projectLifecycle(tasks) {
   const current = tasks.filter(({ archived_at: archivedAt }) => !archivedAt)
   if (current.length === 0 || current.every(({ lifecycle }) => ['done', 'canceled'].includes(lifecycle))) {
@@ -386,6 +425,10 @@ export function createJournalDashboardSnapshot(snapshot, {
     return task.parent_id === null ? [task, ...(childrenByParent.get(task.id) ?? [])] : [task]
   }
 
+  function derivedTaskLifecycle(task) {
+    return rollupLifecycle(task, childrenByParent.get(task.id) ?? [])
+  }
+
   function factsFor(scopeTasks) {
     const scopedSegments = scopeTasks.flatMap((task) => segmentsByTask.get(task.id) ?? [])
     const scopedExecutions = [...new Set(scopedSegments.map(({ execution_id: id }) => id))]
@@ -406,6 +449,11 @@ export function createJournalDashboardSnapshot(snapshot, {
     const actual = actualProjection(scopedSegments, { summary })
     const planned = projectedPlan(scope)
     const context = projectionContext(scopedExecutions, sessionById)
+    const rollup = derivedTaskLifecycle(task)
+    const lastActivity = latestInstant([
+      ...scopedSegments.map((segment) => segment.last_seen_at ?? segment.ended_at ?? segment.started_at),
+      ...scope.map(({ updated_at: updatedAt }) => updatedAt),
+    ])
     const fallbackStart = actual.actual?.start ?? planned?.start ?? validInstant(task.created_at)
     const fallbackEnd = actual.actual?.end ?? planned?.end ?? validInstant(task.updated_at) ?? fallbackStart
     return {
@@ -417,6 +465,7 @@ export function createJournalDashboardSnapshot(snapshot, {
       description: task.description ?? null,
       lifecycle: task.lifecycle,
       status: legacyLifecycle(task.lifecycle),
+      rollup_state: legacyLifecycle(rollup),
       next_action: task.next_action ?? null,
       sort_order: Number.isInteger(task.sort_order) ? task.sort_order : 0,
       revision: task.revision,
@@ -429,6 +478,7 @@ export function createJournalDashboardSnapshot(snapshot, {
       end: fallbackEnd,
       ...liveExecutionSummary(scopedExecutions, currentTime),
       ...context,
+      last_activity: lastActivity,
       updated_at: validInstant(task.updated_at),
     }
   }
@@ -451,7 +501,17 @@ export function createJournalDashboardSnapshot(snapshot, {
     const planned = projectedPlan(projectTasks)
     const fallbackLocation = projectLocation(project.id, locations)
     const context = projectionContext(projectExecutions, sessionById, fallbackLocation)
-    const lifecycle = projectLifecycle(mainTasks)
+    const rollupMainTasks = mainTasks.map((task) => ({
+      ...task,
+      lifecycle: derivedTaskLifecycle(task),
+    }))
+    const lifecycle = projectLifecycle(rollupMainTasks)
+    const lastActivity = latestInstant([
+      ...scopedSegments.map((segment) => segment.last_seen_at ?? segment.ended_at ?? segment.started_at),
+      ...projectTasks.map(({ updated_at: updatedAt }) => updatedAt),
+      context.last_activity,
+      ...(projectTasks.length === 0 ? [project.updated_at] : []),
+    ])
     const fallbackStart = actual.actual?.start ?? planned?.start ?? validInstant(project.created_at)
     const fallbackEnd = actual.actual?.end ?? planned?.end ?? validInstant(project.updated_at) ?? fallbackStart
     const row = {
@@ -463,12 +523,13 @@ export function createJournalDashboardSnapshot(snapshot, {
       description: project.description ?? null,
       lifecycle,
       status: legacyLifecycle(lifecycle),
+      rollup_state: legacyLifecycle(lifecycle),
       next_action: mainTasks.find(({ lifecycle: state }) => state === 'in_progress')?.next_action ?? null,
       sort_order: 0,
       revision: project.revision,
       archived_at: validInstant(project.archived_at),
       deleted_at: null,
-      progress: semanticProgress(mainTasks),
+      progress: semanticProgress(rollupMainTasks),
       planned,
       ...actual,
       start: fallbackStart,
@@ -476,6 +537,7 @@ export function createJournalDashboardSnapshot(snapshot, {
       blocked_count: projectTasks.filter(({ lifecycle: state }) => state === 'blocked').length,
       ...liveExecutionSummary(projectExecutions, currentTime),
       ...context,
+      last_activity: lastActivity,
       updated_at: validInstant(project.updated_at),
     }
     output.push(row)
@@ -526,7 +588,7 @@ export function createJournalDashboardSnapshot(snapshot, {
     unassigned_execution_count: count(snapshot?.attribution_inbox_count),
     projects: projectSummaries,
     project_inbox: projectInbox,
-    tasks: output,
+    tasks: sortDashboardTree(output),
     warnings: warnings.sort((left, right) => (
       String(left.task_id ?? left.segment_id).localeCompare(String(right.task_id ?? right.segment_id))
     )),

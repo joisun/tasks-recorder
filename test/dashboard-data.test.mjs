@@ -361,3 +361,45 @@ test('v3 dashboard derives idle and stale without pretending every open executio
   assert.equal(project.stale_execution_count, 1)
   assert.equal(project.active_execution_count, 3)
 })
+
+test('v3 dashboard derives completed groups and orders sibling branches by subtree activity', () => {
+  const snapshot = v3Snapshot()
+  snapshot.tasks = [
+    v3Task({
+      id: 'older-main', title: 'Older completed group', lifecycle: 'in_progress', sort_order: 0,
+      updated_at: '2026-08-19T07:00:00.000Z',
+    }),
+    v3Task({
+      id: 'older-child', parent_id: 'older-main', title: 'Older child', lifecycle: 'done',
+      updated_at: '2026-08-19T08:00:00.000Z', completed_at: '2026-08-19T08:00:00.000Z',
+    }),
+    v3Task({
+      id: 'newer-main', title: 'Newer completed group', lifecycle: 'in_progress', sort_order: 1,
+      updated_at: '2026-08-20T07:00:00.000Z',
+    }),
+    v3Task({
+      id: 'newer-child', parent_id: 'newer-main', title: 'Newer child', lifecycle: 'done',
+      updated_at: '2026-08-20T08:30:00.000Z', completed_at: '2026-08-20T08:30:00.000Z',
+    }),
+  ]
+  snapshot.segments = []
+  snapshot.executions = []
+
+  const result = createJournalDashboardSnapshot(snapshot, {
+    now: new Date('2026-08-20T10:00:00.000Z'),
+  })
+
+  assert.deepEqual(result.tasks.map(({ id }) => id), [
+    'project:recorder', 'newer-main', 'newer-child', 'older-main', 'older-child',
+  ])
+  const project = result.tasks[0]
+  const newer = result.tasks.find(({ id }) => id === 'newer-main')
+  assert.equal(newer.lifecycle, 'in_progress')
+  assert.equal(newer.status, 'active')
+  assert.equal(newer.rollup_state, 'done')
+  assert.equal(newer.last_activity, '2026-08-20T08:30:00.000Z')
+  assert.deepEqual(newer.progress, { remaining: 0, total: 1, completed: 1, ratio: 1 })
+  assert.equal(project.rollup_state, 'done')
+  assert.deepEqual(project.progress, { remaining: 0, total: 2, completed: 2, ratio: 1 })
+  assert.equal(project.last_activity, '2026-08-20T08:30:00.000Z')
+})

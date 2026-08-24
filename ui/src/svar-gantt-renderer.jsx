@@ -15,24 +15,20 @@ import {
   ActivityCell,
   AgentsCell,
   BranchCell,
-  ExecutionContextCell,
   ExecutionsCell,
   NoteCell,
   SessionCell,
   StatusCell,
   TaskBar,
   TaskCell,
-  WorkfolderCell,
-  WorktreeCell,
+  WorkspaceCell,
 } from './svar-gantt-cells.mjs'
 
 const CELL_COMPONENTS = {
   text: TaskCell,
   status: StatusCell,
-  execution_context: ExecutionContextCell,
   session_id: SessionCell,
-  workfolder: WorkfolderCell,
-  worktree: WorktreeCell,
+  workspace: WorkspaceCell,
   branch: BranchCell,
   note: NoteCell,
   active_agent_count: AgentsCell,
@@ -416,6 +412,11 @@ export function createSvarGanttRenderer({
         ? String(state._selected.at(-1).id)
         : view.selectedTaskId ?? null
       const gridScroller = element.querySelector('.wx-table-container')
+      const columnWidths = Object.fromEntries(
+        (state.columns ?? model.columns)
+          .filter(({ id, width }) => id && Number.isFinite(width))
+          .map(({ id, width }) => [id, Math.round(width)]),
+      )
       return {
         ...view,
         displayMode: state.displayMode ?? view.displayMode,
@@ -425,7 +426,8 @@ export function createSvarGanttRenderer({
         timelineX: state.scrollLeft ?? 0,
         verticalY: state.scrollTop ?? 0,
         selectedTaskId,
-        taskColumnWidth: state.columns?.[0]?.width ?? view.taskColumnWidth ?? 240,
+        columnWidths,
+        taskColumnWidth: columnWidths.text ?? view.taskColumnWidth ?? 240,
       }
     },
 

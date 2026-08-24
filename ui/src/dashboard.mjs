@@ -1,5 +1,6 @@
 import {
   copyTextToClipboard,
+  canArchiveTask,
   contextPopoverPosition,
   createTaskIndex,
   effectiveGridPanelWidth,
@@ -212,6 +213,7 @@ function installContextInteractions() {
     if (anchor && anchor !== pinnedContextAnchor) hideContextPopover(anchor)
   })
   ganttElement.addEventListener('click', (event) => {
+    if (event.target.closest?.('[data-copy-context-value]')) return
     const anchor = event.target.closest?.('.context-path[data-full-path]')
     if (!anchor) return
     event.preventDefault()
@@ -239,23 +241,27 @@ function installContextInteractions() {
 
 function installSessionCopyInteractions() {
   ganttElement.addEventListener('click', async (event) => {
-    const button = event.target.closest?.('[data-copy-session-id]')
+    const button = event.target.closest?.('[data-copy-session-id], [data-copy-context-value]')
     if (!button) return
     event.preventDefault()
     event.stopPropagation()
     const sessionId = button.dataset.copySessionId
-    if (!await copyTextToClipboard(sessionId)) {
-      setRefreshMessage('mutation', 'Session ID 复制失败，请手动选择文本复制')
+    const contextValue = button.dataset.copyContextValue
+    const contextLabel = button.dataset.copyContextLabel
+    const value = sessionId ?? contextValue
+    const label = sessionId ? `Session ID ${sessionId}` : contextLabel
+    if (!await copyTextToClipboard(value)) {
+      setRefreshMessage('mutation', `${label} 复制失败，请手动选择文本复制`)
       return
     }
     button.classList.add('is-copied')
-    button.setAttribute('aria-label', `已复制 Session ID ${sessionId}`)
-    button.title = '已复制'
+    button.setAttribute('aria-label', `已复制 ${label}`)
+    if (sessionId) button.title = '已复制'
     setTimeout(() => {
       if (!button.isConnected) return
       button.classList.remove('is-copied')
-      button.setAttribute('aria-label', `复制 Session ID ${sessionId}`)
-      button.title = '复制 Session ID'
+      button.setAttribute('aria-label', sessionId ? `复制 Session ID ${sessionId}` : `复制 ${contextLabel}`)
+      if (sessionId) button.title = '复制 Session ID'
     }, 1_600)
   }, true)
 }
@@ -362,8 +368,8 @@ function statusMenu() {
   menu = document.createElement('div')
   menu.id = 'status-menu'
   menu.className = 'status-menu'
-  menu.setAttribute('role', 'listbox')
-  menu.setAttribute('aria-label', '选择任务状态')
+  menu.setAttribute('role', 'menu')
+  menu.setAttribute('aria-label', '任务状态与操作')
   menu.hidden = true
   document.querySelector('.app').appendChild(menu)
   return menu
@@ -417,14 +423,19 @@ function openStatusMenu(trigger, { focus = 'selected' } = {}) {
   trigger.setAttribute('aria-expanded', 'true')
   const menu = statusMenu()
   menu.dataset.taskId = taskId
-  menu.innerHTML = STATUS_ORDER.map((status) => (
-    `<button class="status-option status-${status}" id="status-option-${status}" type="button" role="option" data-status="${status}" aria-selected="${task.status === status}" tabindex="-1"><span class="status-option-dot" aria-hidden="true"></span><span>${STATUS_LABELS[status]}</span>${task.status === status ? '<span class="status-option-check" aria-hidden="true">✓</span>' : ''}</button>`
+  const effectiveStatus = task.rollup_state ?? task.status
+  const optionsMarkup = STATUS_ORDER.map((status) => (
+    `<button class="status-option status-${status}" id="status-option-${status}" type="button" role="menuitemradio" data-status="${status}" aria-checked="${effectiveStatus === status}" tabindex="-1"><span class="status-option-dot" aria-hidden="true"></span><span>${STATUS_LABELS[status]}</span>${effectiveStatus === status ? '<span class="status-option-check" aria-hidden="true">✓</span>' : ''}</button>`
   )).join('')
+  const archiveMarkup = canArchiveTask(task)
+    ? '<div class="status-menu-separator" role="separator"></div><button class="status-option status-action" type="button" role="menuitem" data-status-action="archive" tabindex="-1"><span class="archive-option-icon" aria-hidden="true"></span><span>归档任务</span><span></span></button>'
+    : ''
+  menu.innerHTML = `${optionsMarkup}${archiveMarkup}`
   menu.hidden = false
   positionStatusMenu(menu, trigger)
-  const options = [...menu.querySelectorAll('[role="option"]')]
+  const options = [...menu.querySelectorAll('button:not([disabled])')]
   const selectedIndex = Math.max(0, options.findIndex((option) => (
-    option.getAttribute('aria-selected') === 'true'
+    option.getAttribute('aria-checked') === 'true'
   )))
   const targetIndex = focus === 'first' ? 0 : focus === 'last' ? options.length - 1 : selectedIndex
   options[targetIndex]?.focus({ preventScroll: true })
@@ -460,8 +471,28 @@ async function updateTaskStatus(taskId, status) {
   }
 }
 
+async function archiveTask(taskId) {
+  const task = raw.find((item) => item.id === taskId)
+  if (!task || pendingStatus.has(taskId) || !canArchiveTask(task)) return
+  pendingStatus.add(taskId)
+  setRefreshMessage('mutation', '')
+  rendererController.refreshTask(taskId, { statusPending: true })
+  try {
+    await dashboardApi.archiveTask(taskId, task.revision)
+    await coordinator?.invalidate()
+  } catch (error) {
+    setRefreshMessage('mutation', statusMutationMessage(error))
+    if (['TASK_VERSION_CONFLICT', 'TASK_NOT_FOUND'].includes(error?.code)) {
+      await coordinator?.invalidate()
+    }
+  } finally {
+    pendingStatus.delete(taskId)
+    rendererController.refreshTask(taskId, { statusPending: false })
+  }
+}
+
 function moveStatusOption(menu, key) {
-  const options = [...menu.querySelectorAll('[role="option"]')]
+  const options = [...menu.querySelectorAll('button:not([disabled])')]
   const current = Math.max(0, options.indexOf(document.activeElement))
   const next = key === 'Home' ? 0
     : key === 'End' ? options.length - 1
@@ -487,12 +518,16 @@ function installStatusInteractions() {
     })
   })
   document.addEventListener('click', (event) => {
-    const option = event.target.closest?.('#status-menu [role="option"]')
+    const option = event.target.closest?.('#status-menu [data-status], #status-menu [data-status-action]')
     if (!option) return
     const taskId = openStatusTaskId
     const status = option.dataset.status
+    const action = option.dataset.statusAction
     closeStatusMenu({ restoreFocus: false })
-    updateTaskStatus(taskId, status).finally(() => restoreStatusFocus(taskId))
+    const mutation = action === 'archive'
+      ? archiveTask(taskId)
+      : updateTaskStatus(taskId, status)
+    mutation.finally(() => restoreStatusFocus(taskId))
   })
   document.addEventListener('keydown', (event) => {
     const menu = event.target.closest?.('#status-menu')

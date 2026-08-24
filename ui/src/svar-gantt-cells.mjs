@@ -25,11 +25,11 @@ export function TaskCell({ row }) {
   const project = row.entity_type === 'project'
   const title = rowTitle(row)
   const expandedText = row.open ? '当前已展开' : '当前已折叠'
-  if (project) {
+  if (project || row.history_context) {
     return h('span', {
-      className: 'task-label is-summary is-project',
+      className: `task-label is-summary${project ? ' is-project' : ' is-context'}`,
       title,
-      'aria-label': `项目：${title}；${expandedText}`,
+      'aria-label': `${project ? '项目' : '历史上下文'}：${title}；${expandedText}`,
     }, title)
   }
   return h('button', {
@@ -49,43 +49,53 @@ export function TaskCell({ row }) {
 
 export function StatusCell({ row }) {
   const statusLabel = STATUS_LABELS[row.status] ?? row.status ?? '未知状态'
-  const task = { ...row.source, title: rowTitle(row) }
+  const task = {
+    ...row.source,
+    title: rowTitle(row),
+    status: row.source?.status ?? row.status,
+    rollup_state: row.source?.rollup_state ?? row.status,
+  }
   const presentation = progressPresentation(task, statusLabel)
+  const isSubtask = row.entity_type === 'subtask'
+  const hierarchyClass = isSubtask ? ' entity-subtask' : ''
+  const groupProgressClass = presentation.indicator === 'bar' ? ' is-group-progress' : ''
+  const indicator = h('span', {
+    className: isSubtask
+      ? `status-dot status-${presentation.state}`
+      : presentation.indicator === 'bar'
+        ? `group-progress-bar status-${presentation.state}`
+        : `progress-ring kind-${presentation.kind} status-${presentation.state}`,
+    style: { '--progress': `${Math.round(presentation.ratio * 100)}%` },
+    'aria-hidden': 'true',
+    key: 'indicator',
+  })
   if (row.entity_type === 'project') {
     const running = Number.isInteger(row.running_execution_count) ? row.running_execution_count : 0
     const blocked = Number.isInteger(row.blocked_count) ? row.blocked_count : 0
-    const liveLabel = running > 0 ? `${running} running` : statusLabel
-    const progress = task.progress?.total > 0
-      ? `${task.progress.completed}/${task.progress.total}`
-      : '—'
+    const liveLabel = running > 0 ? `${running} running` : null
     return h('span', {
-      className: `project-health live-${row.live_state ?? 'none'}`,
-      'aria-label': `${task.title}：${liveLabel}；进度 ${progress}${blocked ? `；${blocked} 个阻塞` : ''}`,
+      className: `status-control${groupProgressClass} is-readonly live-${row.live_state ?? 'none'}${hierarchyClass}`,
+      'aria-label': `${presentation.ariaLabel}${liveLabel ? `；${liveLabel}` : ''}${blocked ? `；${blocked} 个阻塞` : ''}`,
     }, [
-      h('span', { className: 'project-health-dot', 'aria-hidden': 'true', key: 'dot' }),
-      h('span', { className: 'project-health-live', key: 'live' }, liveLabel),
-      h('span', { className: 'project-health-progress', key: 'progress' }, progress),
+      indicator,
+      h('span', { className: 'progress-text', key: 'text' }, presentation.text),
     ])
   }
+  if (row.historical || row.history_context) {
+    return h('span', {
+      className: `status-control${groupProgressClass} is-readonly${hierarchyClass}`,
+      'aria-label': presentation.ariaLabel,
+    }, [indicator, h('span', { className: 'progress-text', key: 'text' }, presentation.text)])
+  }
   return h('button', {
-    className: presentation.ring ? 'progress-control' : `status-pill status-${row.status}`,
+    className: `status-control${groupProgressClass}${hierarchyClass}`,
     type: 'button',
     'data-status-task-id': row.id,
-    'aria-haspopup': 'listbox',
+    'aria-haspopup': 'menu',
     'aria-expanded': 'false',
     'aria-label': presentation.ariaLabel,
     disabled: Boolean(row.statusPending),
-  }, presentation.ring
-    ? [
-        h('span', {
-          className: 'progress-ring',
-          style: { '--progress': `${Math.round(presentation.ratio * 100)}%` },
-          'aria-hidden': 'true',
-          key: 'ring',
-        }),
-        h('span', { className: 'progress-text', key: 'text' }, presentation.text),
-      ]
-    : presentation.text)
+  }, [indicator, h('span', { className: 'progress-text', key: 'text' }, presentation.text)])
 }
 
 export function SessionCell({ row }) {
@@ -107,47 +117,41 @@ export function SessionCell({ row }) {
   ])
 }
 
-function ContextCell({ row, field, displayField = field }) {
-  const full = row[field]
+function ContextCell({ full, display, label }) {
   if (typeof full !== 'string' || full === '') {
     return h('span', { className: 'context-path is-empty' }, '—')
   }
   return h('span', {
-    className: 'context-path',
+    className: 'context-path context-value-cell',
     tabIndex: 0,
-    title: full,
-    'aria-label': `完整路径：${full}`,
+    'aria-label': `${label}：${full}`,
     'data-full-path': full,
-  }, row[displayField] || full)
+  }, [
+    h('span', { className: 'context-value', key: 'value' }, display || full),
+    h('button', {
+      className: 'context-copy',
+      type: 'button',
+      'data-copy-context-value': full,
+      'data-copy-context-label': label,
+      'aria-label': `复制 ${label}`,
+      key: 'copy',
+    }, [
+      h('span', { className: 'session-copy-icon', 'aria-hidden': 'true', key: 'icon' }),
+      h('span', { className: 'session-copy-check', 'aria-hidden': 'true', key: 'check' }, '✓'),
+    ]),
+  ])
 }
 
-export function WorkfolderCell({ row }) {
-  return h(ContextCell, { row, field: 'workfolder', displayField: 'workfolder_display' })
-}
-
-export function WorktreeCell({ row }) {
-  return h(ContextCell, { row, field: 'worktree', displayField: 'worktree_display' })
+export function WorkspaceCell({ row }) {
+  return h(ContextCell, {
+    full: row.workspace,
+    display: row.workspace_display,
+    label: 'Workspace',
+  })
 }
 
 export function BranchCell({ row }) {
-  return h(ContextCell, { row, field: 'branch' })
-}
-
-export function ExecutionContextCell({ row }) {
-  const workfolder = row.workfolder_display || row.workfolder || '—'
-  const worktree = row.worktree_display || row.worktree || workfolder
-  const branch = row.branch || '未绑定分支'
-  const description = `工作目录：${row.workfolder || '—'}；Worktree：${row.worktree || '—'}；Branch：${row.branch || '—'}`
-  return h('span', {
-    className: 'context-path execution-context-cell',
-    tabIndex: 0,
-    title: description,
-    'aria-label': description,
-    'data-full-path': description,
-  }, [
-    h('span', { className: 'execution-context-location', key: 'location' }, worktree),
-    h('span', { className: 'execution-context-branch', key: 'branch' }, branch),
-  ])
+  return h(ContextCell, { full: row.branch, display: row.branch, label: 'Branch' })
 }
 
 export function NoteCell({ row }) {
@@ -181,6 +185,7 @@ export function ActivityCell({ row }) {
   const activity = row.activity ?? { text: '—', tone: 'default' }
   return h('span', {
     className: `activity-time${activity.tone === 'default' ? '' : ` is-${activity.tone}`}`,
+    ...(activity.title ? { title: activity.title } : {}),
   }, activity.text)
 }
 

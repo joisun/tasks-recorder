@@ -1,8 +1,8 @@
 # Tasks Recorder Dashboard Context, Timeline, and Status Design
 
-> Historical baseline: 本文描述 v0.4.0 的 DHTMLX renderer。当前 renderer architecture 已由 [SVAR Gantt Dashboard 替代实现设计](2026-08-16-svar-gantt-dashboard-design.md) 取代；taskd、REST/SSE 与 mutation contracts 仍沿用本文。
+> Historical baseline: 本文描述 v0.4.0 的 DHTMLX renderer。当前 renderer architecture 已由 [SVAR Gantt Dashboard 替代实现设计](2026-08-16-svar-gantt-dashboard-design.md) 取代；Project-first hierarchy、rollup、显式归档与 History projection 以 [Project Journalist Lifecycle Design](2026-08-19-project-journalist-lifecycle-design.md) 为准。taskd、REST/SSE 与 mutation contracts 仍沿用本文。
 >
-> 当前 Grid 不再把九个存储字段全部平铺为独立列。SVAR 版本使用五列决策视图，并把工作目录、Worktree 与 Branch 合并为 Execution Context；完整值、复制和 mutation contracts 均保留。
+> 当前 Grid 不再把九个存储字段全部平铺。SVAR 版本使用 `任务 | 最近活跃 | 状态/进度 | Workspace | Branch | Session ID` 六列决策视图；Workspace 表示 source session cwd，旧 `worktree` 只作为缺失时的兼容 fallback。
 
 > 日期：2026-08-12（Asia/Shanghai）  
 > 状态：已实现并验证
@@ -91,7 +91,7 @@ Grid 列顺序固定为：
 任务 | 状态 | Session ID | 工作目录 | Worktree | Branch | 说明 | Agent | 活动
 ```
 
-以上是 DHTMLX historical layout。当前 SVAR layout 为 `任务 | 状态/进度 | 执行上下文 | Session ID | 活动`，总宽度匹配默认 792px Grid，不产生首屏横向滚动。
+以上是 DHTMLX historical layout。当前 SVAR layout 为 `任务 | 最近活跃 | 状态/进度 | Workspace | Branch | Session ID`，base width 总和为 684px；最末 Session ID 是唯一 flex column，在更宽 Grid 中吸收余量而不引发 sibling column 联动。
 
 - Session ID 与三项上下文使用独立列；Session ID 展示最近 session 的完整值，并提供复制按钮和成功反馈。
 - `workfolder` 和 `worktree` 默认宽度 180px、最小宽度 140px；`branch` 默认宽度 160px、最小宽度 120px。

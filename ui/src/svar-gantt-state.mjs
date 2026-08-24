@@ -2,7 +2,6 @@ import {
   contextPathPresentation,
   createTaskIndex,
   endOf,
-  isHistoricalRoot,
   progressOf,
   relativeActivity,
 } from './dashboard-state.mjs'
@@ -13,45 +12,67 @@ export const SVAR_SCALE_HEIGHT = 24
 export const SVAR_TIMELINE_ZOOMS = Object.freeze(['auto', 'day', 'week', 'month'])
 
 export const SVAR_GRID_COLUMNS = Object.freeze([
-  { id: 'text', header: '任务', width: 240, resize: true },
-  { id: 'status', header: '状态 / 进度', width: 124, align: 'center' },
-  { id: 'execution_context', header: '执行上下文', width: 216 },
-  { id: 'session_id', header: 'Session ID', width: 148 },
-  { id: 'activity', header: '活动', width: 64, align: 'right' },
+  { id: 'text', header: '任务', width: 200, resize: true },
+  { id: 'activity', header: '最近活跃', width: 100, align: 'right', resize: true },
+  { id: 'status', header: '状态 / 进度', width: 88, align: 'center', resize: true },
+  { id: 'workspace', header: 'Workspace', width: 105, resize: true },
+  { id: 'branch', header: 'Branch', width: 75, resize: true },
+  { id: 'session_id', header: 'Session ID', width: 116, flexgrow: 1, resize: false },
 ])
-
-function rootOf(task, index) {
-  let root = task
-  const visited = new Set()
-  while (root?.parent_id) {
-    if (visited.has(root.id)) return null
-    visited.add(root.id)
-    root = index.byId.get(root.parent_id)
-  }
-  return root ?? null
-}
-
-function matchingRoot(root, filter, index) {
-  const historical = isHistoricalRoot(root, index)
-  if (filter === 'history') return historical
-  if (historical) return false
-  return filter === 'all' || root.status === filter
-}
 
 export function filterSvarTasks(tasks, filter = 'all') {
   const index = createTaskIndex(tasks)
-  const result = []
+  const roots = tasks.filter(({ parent_id: parentId }) => parentId === null)
 
-  function appendBranch(task) {
-    result.push(task)
-    for (const child of index.childrenByParent.get(task.id) ?? []) appendBranch(child)
+  function currentBranch(task, ancestorArchived = false) {
+    const archived = ancestorArchived || Boolean(task.archived_at)
+    if (archived) return []
+    const children = index.childrenByParent.get(task.id) ?? []
+    const descendants = children.flatMap((child) => currentBranch(child, archived))
+    if (task.entity_type === 'project' && children.length > 0 && descendants.length === 0) return []
+    return [task, ...descendants]
   }
 
-  for (const task of tasks) {
-    if (task.parent_id !== null) continue
-    if (matchingRoot(task, filter, index)) appendBranch(task)
+  if (filter !== 'history') {
+    return roots.flatMap((root) => {
+      if (filter !== 'all' && (root.rollup_state ?? root.status) !== filter) return []
+      return currentBranch(root)
+    })
   }
-  return result
+
+  const selected = new Set()
+  const context = new Set()
+  function addDescendants(task) {
+    for (const child of index.childrenByParent.get(task.id) ?? []) {
+      selected.add(child.id)
+      addDescendants(child)
+    }
+  }
+  function addAncestors(task) {
+    let current = task
+    const visited = new Set()
+    while (current?.parent_id && !visited.has(current.id)) {
+      visited.add(current.id)
+      current = index.byId.get(current.parent_id)
+      if (current) {
+        selected.add(current.id)
+        context.add(current.id)
+      }
+    }
+  }
+  for (const task of tasks.filter(({ archived_at: archivedAt }) => Boolean(archivedAt))) {
+    selected.add(task.id)
+    addAncestors(task)
+    if (task.entity_type !== 'subtask') addDescendants(task)
+  }
+  function historyBranch(task) {
+    if (!selected.has(task.id)) return []
+    return [
+      { ...task, history_context: context.has(task.id) && !task.archived_at },
+      ...(index.childrenByParent.get(task.id) ?? []).flatMap(historyBranch),
+    ]
+  }
+  return roots.flatMap(historyBranch)
 }
 
 export function createSvarTaskProjection(tasks, {
@@ -59,6 +80,7 @@ export function createSvarTaskProjection(tasks, {
   openIds = null,
   now = new Date(),
   homeDirectory = '',
+  timeZone,
 } = {}) {
   const index = createTaskIndex(tasks)
   const filtered = filterSvarTasks(tasks, filter)
@@ -127,12 +149,10 @@ export function createSvarTaskProjection(tasks, {
   }
 
   return filtered.map((task) => {
-    const root = rootOf(task, index) ?? task
-    const historical = isHistoricalRoot(root, index)
     const children = (index.childrenByParent.get(task.id) ?? [])
       .filter(({ id }) => retainedIds.has(id))
-    const workfolder = contextPathPresentation(task.workfolder, homeDirectory)
-    const worktree = contextPathPresentation(task.worktree, homeDirectory)
+    const workspaceValue = task.workfolder ?? task.worktree ?? null
+    const workspace = contextPathPresentation(workspaceValue, homeDirectory)
     const scope = timeScope(task)
     const actual = children.length > 0
       ? canonicalScope(task, 'actual')
@@ -163,7 +183,7 @@ export function createSvarTaskProjection(tasks, {
       progress: Math.round(progressOf(task, index) * 100),
       type: children.length > 0 ? 'summary' : 'task',
       open: children.length > 0 && (openIds === null ? true : openIds.has(String(task.id))),
-      status: historical && task.parent_id === null ? 'done' : task.status,
+      status: task.rollup_state ?? task.status,
       entity_type: task.entity_type ?? 'task',
       visual_mode: visualMode,
       actual_segment_count: Number.isInteger(task.actual_segment_count)
@@ -180,18 +200,18 @@ export function createSvarTaskProjection(tasks, {
         ? task.stale_execution_count
         : 0,
       blocked_count: Number.isInteger(task.blocked_count) ? task.blocked_count : 0,
-      archived: historical,
+      archived: Boolean(task.archived_at),
+      historical: filter === 'history',
+      history_context: Boolean(task.history_context),
       session_id: task.session_id ?? null,
-      workfolder: task.workfolder ?? null,
-      workfolder_display: workfolder.display,
-      worktree: task.worktree ?? null,
-      worktree_display: worktree.display,
+      workspace: workspaceValue,
+      workspace_display: workspace.display,
       branch: task.branch ?? null,
       note: task.next_action ?? '',
       agent: task.agent ?? 'Unknown',
       active_agent_count: Number.isInteger(task.active_agent_count) ? task.active_agent_count : 0,
       execution_count: Number.isInteger(task.execution_count) ? task.execution_count : 0,
-      activity: relativeActivity(task, now),
+      activity: relativeActivity(task, now, { timeZone }),
       last_activity: task.last_activity ?? null,
       updated_at: task.updated_at ?? null,
       source: task,

@@ -18,33 +18,42 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value))
 }
 
-function leavesOf(task, index) {
-  const children = index.childrenByParent.get(task.id) ?? []
-  return children.length === 0 ? [task] : children.flatMap((child) => leavesOf(child, index))
-}
-
 export function isArchivedGroup(task, index) {
   const children = index.childrenByParent.get(task.id) ?? []
-  return task.parent_id === null
-    && children.length > 0
-    && leavesOf(task, index).every(({ status }) => status === 'done')
+  return Boolean(task?.archived_at) && children.length > 0
 }
 
 export function isHistoricalRoot(task, index) {
-  return task.parent_id === null
-    && (task.status === 'done' || task.status === 'canceled' || Boolean(task.archived_at))
+  return task.parent_id === null && Boolean(task.archived_at)
+}
+
+function branchHas(task, index, predicate) {
+  return predicate(task)
+    || (index.childrenByParent.get(task.id) ?? []).some((child) => branchHas(child, index, predicate))
+}
+
+function branchHasCurrent(task, index) {
+  if (task.archived_at) return false
+  const children = index.childrenByParent.get(task.id) ?? []
+  return task.entity_type === 'project' && children.length > 0
+    ? children.some((child) => branchHasCurrent(child, index))
+    : true
 }
 
 export function tabCount(key, tasks, index = createTaskIndex(tasks)) {
   const roots = tasks.filter(({ parent_id }) => parent_id === null)
-  if (key === 'history') return roots.filter((task) => isHistoricalRoot(task, index)).length
-  const current = roots.filter((task) => !isHistoricalRoot(task, index))
-  return key === 'all' ? current.length : current.filter(({ status }) => status === key).length
+  if (key === 'history') {
+    return roots.filter((task) => branchHas(task, index, ({ archived_at: value }) => Boolean(value))).length
+  }
+  const current = roots.filter((task) => branchHasCurrent(task, index))
+  return key === 'all'
+    ? current.length
+    : current.filter((task) => (task.rollup_state ?? task.status) === key).length
 }
 
 export function endOf(task, now = new Date()) {
   if (task.end) return new Date(task.end)
-  if (task.status === 'done') return new Date(task.last_activity ?? task.start)
+  if ((task.rollup_state ?? task.status) === 'done') return new Date(task.last_activity ?? task.start)
   const activity = new Date(task.last_activity ?? task.start)
   return new Date(Math.max(now.getTime(), activity.getTime() + 20 * 60_000))
 }
@@ -85,39 +94,67 @@ export function progressOf(task, index) {
 }
 
 export function progressPresentation(task, statusLabel) {
+  const state = task?.rollup_state ?? task?.status ?? 'planned'
   const progress = task?.progress
   if (!progress || !Number.isInteger(progress.total) || progress.total < 1) {
     return {
-      ring: false,
-      ratio: null,
+      indicator: 'ring',
+      kind: 'status',
+      state,
+      ratio: ({ done: 1, canceled: 1, active: 0.65, waiting: 0.5, blocked: 0.25 })[state] ?? 0,
       text: statusLabel,
       ariaLabel: `${task.title}：${statusLabel}`,
     }
   }
-  const ratio = Math.min(1, Math.max(0, Number(progress.ratio) || 0))
+  const completed = Math.min(progress.total, Math.max(0, Number(progress.completed) || 0))
+  const ratio = completed / progress.total
   const percentage = Math.round(ratio * 100)
-  const text = `未完成 ${progress.remaining} / ${progress.total}`
+  const text = `${completed}/${progress.total}`
   return {
-    ring: true,
+    indicator: 'bar',
+    kind: 'progress',
+    state: completed >= progress.total ? 'done' : state,
     ratio,
     text,
-    ariaLabel: `${task.title}：${text}，已完成 ${percentage}%`,
+    ariaLabel: `${task.title}：已完成 ${text}，${percentage}%`,
   }
 }
 
-export function relativeActivity(task, now = new Date()) {
-  if (task.status === 'done') return { text: '完成', tone: 'default', minutes: null }
-  if (!task.last_activity) return { text: '—', tone: 'default', minutes: null }
+function exactActivityTime(value, timeZone) {
+  const options = {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    ...(timeZone ? { timeZone } : {}),
+  }
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', options).formatToParts(value)
+      .filter(({ type }) => type !== 'literal')
+      .map(({ type, value: part }) => [type, part]),
+  )
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`
+}
+
+export function relativeActivity(task, now = new Date(), { timeZone } = {}) {
+  if (!task.last_activity || Number.isNaN(Date.parse(task.last_activity))) {
+    return { text: '—', title: null, tone: 'default', minutes: null }
+  }
+  const activity = new Date(task.last_activity)
+  const title = exactActivityTime(activity, timeZone)
   const minutes = Math.max(0, Math.round((now - new Date(task.last_activity)) / 60_000))
   const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  const days = Math.floor(hours / 24)
-  const dayHours = hours % 24
-  const text = days > 0
-    ? `${days}d${dayHours ? ` ${dayHours}h` : ''}`
-    : minutes < 60 ? `${minutes}m` : `${hours}h${rest ? ` ${rest}m` : ''}`
-  const tone = minutes >= 60 ? 'dead' : minutes >= 30 ? 'stale' : 'default'
-  return { text, tone, minutes }
+  const days = Math.floor(minutes / (24 * 60))
+  const text = minutes < 1 ? 'now'
+    : minutes < 60 ? `${minutes}m ago`
+      : hours < 24 ? `${hours}h ago`
+        : days < 7 ? `${days}d ago`
+          : title
+  const tone = days >= 7 ? 'dead' : days >= 1 ? 'stale' : 'default'
+  return { text, title, tone, minutes }
+}
+
+export function canArchiveTask(task) {
+  if (!task || task.archived_at) return false
+  return ['done', 'canceled'].includes(task.rollup_state ?? task.status)
 }
 
 export function estimatedTimelineLabelWidth(text) {
@@ -237,6 +274,8 @@ export function statusMutationMessage(error) {
       return '状态修改被本机安全策略拒绝'
     case 'TASK_STATUS_INVALID':
       return '状态请求无效'
+    case 'TASK_ARCHIVE_STATUS_INVALID':
+      return '只有已完成、已取消或全部子任务完成的任务组可以归档'
     default:
       return '状态修改失败，仍显示最后一次成功数据'
   }
