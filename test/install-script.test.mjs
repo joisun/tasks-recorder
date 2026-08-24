@@ -151,6 +151,11 @@ test('installer replaces an existing current symlink instead of nesting it in th
       join(installRoot, 'releases', '0.6.2'),
     )
     assert.deepEqual(await readdir(oldRelease), [])
+    assert.equal(
+      JSON.parse(await readFile(join(homeDirectory, '.config', 'tasks-recorder', 'config.json'), 'utf8'))
+        .resume_terminal,
+      'terminal',
+    )
   } finally {
     await rm(homeDirectory, { recursive: true, force: true })
     await rm(releaseDirectory, { recursive: true, force: true })

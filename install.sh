@@ -160,6 +160,7 @@ if [ ! -f "$config_path" ]; then
   cat > "$config_path" <<'EOF'
 {
   "output_dir": ".",
+  "resume_terminal": "terminal",
   "server_host": "127.0.0.1",
   "server_port": 43127
 }

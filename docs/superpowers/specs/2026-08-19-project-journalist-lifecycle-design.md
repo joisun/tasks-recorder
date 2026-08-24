@@ -424,6 +424,15 @@ Project
 - 业务列使用 SVAR native column resize；被拖列独立改变宽度，最右侧不可拖动的“最近活跃”只在纯 Grid 模式吸收剩余空间，Grid/Timeline splitter 不参与列宽计算。
 - Project Inbox 与 Task Attribution Inbox 分开，避免“项目未知”和“工作目标未知”混为一类。
 
+### Session recall
+
+- 有 accepted Attribution 的 Main Task、Subtask 与独立 Task 可以直接召回其最新 Codex Source Session；Project projection 不提供 Resume。
+- Browser 只提交 Task ID。taskd 从 canonical Task scope、Segment、Execution 与 Source Session 重新解析 Session ID、Workspace，不信任 client 提交 path、session 或 command。
+- Dashboard 是否展示 Resume 以本机 `~/.codex/sessions` inventory 为准。inventory 通过标准 rollout 文件名建立 30 秒 bounded cache；实际 launch 前必须读取 transcript `session_meta` 再次核对 exact Session ID。旧 migration 产生的 `legacy` source 只有通过该校验才可召回；显式 Claude source 永远拒绝。
+- 设置面板从右上角 Settings 进入，首个 General setting 为 Resume terminal。`config.json` 使用 `resume_terminal` 保存 allowlisted adapter ID；当前 macOS 支持 Terminal.app、Otty 与 Ghostty，未安装 adapter 不可保存。
+- Otty 使用 authoritative Workspace 创建持久化交互式 shell，只向本次新建 window 的唯一 pane 发送由 taskd 构造并严格 shell quoting 的 allowlisted `codex resume <session-id>`，不使用 `exec` 替换 shell，也不产生中间文件。Codex 退出后回到该 shell，window 生命周期不与 Session 绑定。需要 `.command` bridge 的 terminal adapter 才在 `~/.config/tasks-recorder/runtime/` 创建权限 `0700` 的一次性 launcher，并在进程开始时自删除。route 不接受 browser 提交的 shell command。
+- Window title 取自被点击 Task 的 canonical title，不接受 browser 自定义。Otty 1.4.1 的 create/open focus 与 `--title` 不能作为 macOS foreground 或最终标题保证；adapter 因此串行执行一次 launch control flow：读取 window inventory、以非阻塞 `otty open <workspace>` 创建 shell、用 ID 差集唯一解析新窗口、解析其唯一 pane 并以 `pane send-keys` 提交 Resume、`window rename` 设置 canonical Task name，最后以 `window focus <id>` 激活 Otty 到前台。若同时出现多个外部窗口或目标 pane 不唯一，adapter fail closed，不猜测目标。
+
 ### Rollup、完成与归档
 
 - 所有非 canceled、非 deleted children 都为 `done` 时，group 的 Dashboard `rollup_state` 为 `done`；这是 read-model projection，不是后台 lifecycle mutation。

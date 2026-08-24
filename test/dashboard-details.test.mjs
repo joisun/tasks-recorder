@@ -50,6 +50,9 @@ test('dashboard API maps details reads and optimistic task mutations', async () 
     title: 'Child', parent_id: 'task-a', project: 'Recorder',
     session_id: 'session-a', workfolder: '/workspace',
   })
+  await api.settings()
+  await api.updateSettings({ resume_terminal: 'otty' })
+  await api.resumeTask('task-a')
 
   assert.deepEqual(calls, [
     { url: '/api/v1/tasks/task-a', method: 'GET', body: null },
@@ -78,6 +81,9 @@ test('dashboard API maps details reads and optimistic task mutations', async () 
         session_id: 'session-a', workfolder: '/workspace', actor: 'user',
       },
     },
+    { url: '/api/v1/settings', method: 'GET', body: null },
+    { url: '/api/v1/settings', method: 'PATCH', body: { resume_terminal: 'otty' } },
+    { url: '/api/v1/tasks/task-a/resume', method: 'POST', body: {} },
   ])
 })
 

@@ -293,6 +293,7 @@ function v3Snapshot() {
 test('v3 dashboard read model roots the hierarchy at Project and keeps A to B to A segments', () => {
   const result = createJournalDashboardSnapshot(v3Snapshot(), {
     now: new Date('2026-08-20T10:00:00.000Z'), homeDirectory: '/Users/me',
+    resumableSessionIds: new Set(['session-external-1']),
   })
 
   assert.equal(result.schema_version, 3)
@@ -308,6 +309,8 @@ test('v3 dashboard read model roots the hierarchy at Project and keeps A to B to
     { id: 'segment-a2', start: '2026-08-19T11:00:00.000Z', end: '2026-08-20T09:59:00.000Z' },
   ])
   assert.equal(dashboard.session_id, 'session-external-1')
+  assert.equal(dashboard.session_source, 'codex')
+  assert.equal(dashboard.resume_available, true)
   assert.equal(dashboard.live_state, 'running')
   assert.equal(dashboard.branch, 'feature/journalist-model-v3')
   assert.deepEqual(dashboard.planned, {

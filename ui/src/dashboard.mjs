@@ -23,6 +23,7 @@ import { createDashboardApi } from './dashboard-api.mjs'
 import { createTaskDetailsSheet } from './task-details-sheet.mjs'
 import { createExecutionInbox, inboxButtonLabel } from './execution-inbox.mjs'
 import { createProjectInbox, projectInboxButtonLabel } from './project-inbox.mjs'
+import { createSettingsDialog } from './settings-dialog.mjs'
 
 const TIMELINE_LABEL_KEY = 'dashboard-show-timeline-labels'
 const TIMELINE_PANEL_KEY = 'dashboard-show-timeline'
@@ -64,6 +65,7 @@ let coordinator = null
 let detailsSheet = null
 let executionInbox = null
 let projectInbox = null
+let settingsDialog = null
 let unassignedExecutionCount = 0
 let unresolvedProjectCount = 0
 let projectInboxItems = []
@@ -73,7 +75,9 @@ let pinnedContextAnchor = null
 let compactDashboard = window.matchMedia?.('(max-width: 720px)')?.matches
   ?? window.innerWidth <= 720
 const pendingStatus = new Set()
+const pendingResume = new Set()
 const refreshMessages = { connection: '', freshness: '', mutation: '' }
+let transientMutationTimer = null
 
 function ganttContainerWidth() {
   return ganttElement.clientWidth
@@ -129,6 +133,8 @@ function installTaskDetailsInteractions() {
     event.preventDefault()
     event.stopPropagation()
     executionInbox?.close()
+    projectInbox?.close()
+    settingsDialog?.close()
     detailsSheet.open(trigger.dataset.taskDetailsId, { trigger })
   }, true)
 }
@@ -150,6 +156,68 @@ function installProjectInboxInteractions() {
     api: dashboardApi,
     onChanged: () => coordinator?.invalidate(),
   })
+}
+
+function installSettingsInteractions() {
+  settingsDialog = createSettingsDialog({
+    element: document.getElementById('settings-dialog'),
+    backdrop: document.getElementById('settings-backdrop'),
+    api: dashboardApi,
+  })
+}
+
+function resumeErrorMessage(error) {
+  const messages = {
+    TASK_NOT_RESUMABLE: '该任务还没有可召回的 Codex 会话',
+    CODEX_SESSION_NOT_FOUND: '本机找不到该 Codex 会话记录，可能已被清理或移动',
+    SESSION_SOURCE_UNSUPPORTED: '当前仅支持召回 Codex 会话',
+    TERMINAL_UNAVAILABLE: '所选终端当前不可用，请在 Settings 中重新选择',
+    CODEX_UNAVAILABLE: '未找到 Codex CLI，请检查本机安装路径',
+    WORKSPACE_NOT_FOUND: '该会话的 Workspace 已不存在',
+    WORKSPACE_INVALID: '该会话没有有效的 Workspace',
+    TERMINAL_LAUNCH_FAILED: '终端启动失败，请检查应用权限或重新选择终端',
+  }
+  return messages[error?.code] ?? error?.message ?? '会话召回失败'
+}
+
+function transientMutationMessage(message) {
+  if (transientMutationTimer) clearTimeout(transientMutationTimer)
+  setRefreshMessage('mutation', message)
+  transientMutationTimer = setTimeout(() => {
+    if (refreshMessages.mutation === message) setRefreshMessage('mutation', '')
+  }, 3_200)
+}
+
+function installResumeInteractions() {
+  ganttElement.addEventListener('click', async (event) => {
+    const button = event.target.closest?.('[data-resume-task-id]')
+    if (!button) return
+    event.preventDefault()
+    event.stopPropagation()
+    const taskId = button.dataset.resumeTaskId
+    if (!taskId || pendingResume.has(taskId)) return
+    pendingResume.add(taskId)
+    button.disabled = true
+    button.classList.add('is-launching')
+    button.setAttribute('aria-busy', 'true')
+    setRefreshMessage('mutation', '')
+    try {
+      const result = await dashboardApi.resumeTask(taskId)
+      const session = result.session_id?.length > 13
+        ? `${result.session_id.slice(0, 8)}…${result.session_id.slice(-4)}`
+        : result.session_id
+      transientMutationMessage(`已在 ${result.terminal_label} 召回 Session ${session}`)
+    } catch (error) {
+      transientMutationMessage(resumeErrorMessage(error))
+    } finally {
+      pendingResume.delete(taskId)
+      if (button.isConnected) {
+        button.disabled = false
+        button.classList.remove('is-launching')
+        button.removeAttribute('aria-busy')
+      }
+    }
+  }, true)
 }
 
 function contextPopover() {
@@ -292,6 +360,7 @@ function renderTabs() {
         <button class="timeline-tool timeline-label-toggle${showTimelineLabels ? ' is-active' : ''}" type="button" aria-pressed="${showTimelineLabels}" title="${showTimelineLabels ? '隐藏任务名称' : '显示任务名称'}" ${showTimeline ? '' : 'disabled'}>标签</button>
         <button class="timeline-tool locate-now" type="button" title="定位到今天">今天</button>
       </div>
+      <button class="settings-toggle" type="button" data-settings-toggle aria-label="打开 Settings"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="2.4"></circle><path d="M9 1.75v1.5M9 14.75v1.5M16.25 9h-1.5M3.25 9h-1.5M14.13 3.87l-1.06 1.06M4.93 13.07l-1.06 1.06M14.13 14.13l-1.06-1.06M4.93 4.93 3.87 3.87"></path><circle cx="9" cy="9" r="5.15"></circle></svg></button>
     </div>`
 
   tabs.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => {
@@ -310,12 +379,20 @@ function renderTabs() {
   tabs.querySelector('[data-project-inbox-toggle]').addEventListener('click', (event) => {
     detailsSheet?.close()
     executionInbox?.close()
+    settingsDialog?.close()
     projectInbox?.open(event.currentTarget)
   })
   tabs.querySelector('[data-execution-inbox-toggle]').addEventListener('click', (event) => {
     detailsSheet?.close()
     projectInbox?.close()
+    settingsDialog?.close()
     executionInbox?.open(event.currentTarget)
+  })
+  tabs.querySelector('[data-settings-toggle]').addEventListener('click', (event) => {
+    detailsSheet?.close()
+    executionInbox?.close()
+    projectInbox?.close()
+    settingsDialog?.open(event.currentTarget)
   })
   tabs.querySelectorAll('[data-dashboard-view]').forEach((button) => button.addEventListener('click', () => {
     const mode = button.dataset.dashboardView
@@ -617,10 +694,12 @@ function renderSnapshot(snapshot, { initial = false } = {}) {
 
 installContextInteractions()
 installSessionCopyInteractions()
+installResumeInteractions()
 installStatusInteractions()
 installTaskDetailsInteractions()
 installExecutionInboxInteractions()
 installProjectInboxInteractions()
+installSettingsInteractions()
 
 coordinator = createSnapshotCoordinator({
   load: () => dashboardApi.snapshot(),

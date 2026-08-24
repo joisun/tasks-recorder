@@ -8,9 +8,13 @@ import { renderProjections } from '../../mcp/src/renderer.mjs'
 import { createV3CompatibilityService } from '../../mcp/src/v3-compatibility-service.mjs'
 import { createEventSpool } from '../../hooks/src/event-spool.mjs'
 import { createApiServer } from './api-server.mjs'
+import { createDashboardSettings } from './dashboard-settings.mjs'
+import { createCodexSessionInventory } from './codex/session-inventory.mjs'
 import { prepareJournalStartup } from './journal-startup.mjs'
 import { createRevisionHub } from './revision-hub.mjs'
+import { createSessionResumeService } from './session-resume-service.mjs'
 import { createStructuredLogger } from './structured-logger.mjs'
+import { createTerminalLauncher } from './terminal-launcher.mjs'
 
 export const AUTO_ARCHIVE_AFTER_MS = 5 * 24 * 60 * 60 * 1000
 export const AUTO_ARCHIVE_SWEEP_MS = 60 * 60 * 1000
@@ -25,6 +29,10 @@ export async function startTaskd({
   createSpool = createEventSpool,
   createLogger = createStructuredLogger,
   createDiagnostics = createJournalDiagnostics,
+  createSettings = createDashboardSettings,
+  createSessionInventory = createCodexSessionInventory,
+  createResumeService = createSessionResumeService,
+  createLauncher = createTerminalLauncher,
   prepareStartup = prepareJournalStartup,
   detectInactiveSessions = async () => [],
   gitResolver = discoverGitContext,
@@ -52,6 +60,23 @@ export async function startTaskd({
     maxAgeMs: config.logMaxAgeMs ?? 14 * 24 * 60 * 60 * 1000,
   })
   const diagnostics = createDiagnostics({ store, spool, logger })
+  const terminalLauncher = createLauncher({
+    runtimeDirectory: join(dataDirectory, 'runtime'),
+  })
+  const dashboardSettings = createSettings({
+    configPath: config.configPath ?? join(dataDirectory, 'config.json'),
+    terminalLauncher,
+  })
+  const sessionInventory = createSessionInventory()
+  const sessionResume = createResumeService({
+    store,
+    settings: dashboardSettings,
+    terminalLauncher,
+    sessionInventory,
+  })
+  const resumableDashboardAdapter = async (snapshot) => dashboardAdapter(snapshot, {
+    resumableSessionIds: await sessionInventory.ids(),
+  })
   const journalService = createJournal({
     store,
     logger,
@@ -65,7 +90,7 @@ export async function startTaskd({
     renderer,
     outputDir: config.outputDir,
     dashboardPath,
-    dashboardAdapter,
+    dashboardAdapter: resumableDashboardAdapter,
     onChange: () => hub.publish(),
   })
   const api = createApiServer({
@@ -77,6 +102,8 @@ export async function startTaskd({
     host: config.serverHost,
     port: config.serverPort,
     dashboardHtml,
+    dashboardSettings,
+    sessionResume,
   })
   let closed = false
   let autoArchiveTimer = null

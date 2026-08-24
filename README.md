@@ -97,6 +97,7 @@ Tasks Recorder 把事实记录与用户语义分开：
 8. Timeline 把 Planned 与 Actual 分开表达：planned-only Task 使用细密 dash-dot outline，叶子 Task 保留 A → B → A 这样的真实 split Segment，Main Task 与 Project 使用覆盖全部 descendants 的 actual envelope，因此父级 scope 不会与子级交叉。默认 `Auto` 会按当前 Project 的 planned/actual extent 在 hour、day、week、quarter 之间自适应并保留水平留白；也可手动切换日、周、月粒度。
 9. 状态列按信息层级表达：Project 与有 children 的 Main Task 使用横向 progress bar，以半透明灰色 track 表达总量、彩色 fill 表达已完成量，并只显示 `completed/total`；叶子 Main Task 使用 circle，Subtask 使用更轻的 status dot 表达 lifecycle。一个 group 的所有有效 children 都完成时，Dashboard 立即把它投影为完成。完成不会立即等同于历史：用户可以手动提前归档；未手动处理的一级任务组或独立任务连续完成满 5 天后，由 taskd 在启动检查或每小时 sweep 中自动归档。Subtask 不单独自动归档，canceled Task 也不参与该策略。derived-complete Main Task 的完成起点取最后一个有效 Subtask 的 `completed_at`，归档时 taskd 在一次事务中完成 lifecycle normalization 与 archive。
 10. “Project Inbox”处理尚未确认属于哪个 Project 的 Source Session；“任务待归属”处理 Project 已知但 Task 未知的 Work Segment。两者分开呈现，分配必须由明确选择或确定性证据驱动，不按 branch、标题相似或时间邻近猜测。选中 Task 可打开 details Sheet，编辑 Summary、查看 Executions 与 Activity，并执行 archive、soft delete、restore 等操作；所有编辑使用 revision/compare-and-set，避免覆盖较新的 Agent 或浏览器更新。
+11. 有可验证本机 Codex transcript 的 Main Task、Subtask 或独立任务，会在任务名称末尾显示 Resume。浏览器只把 Task ID 发给 taskd；taskd 从 canonical Attribution 重新解析最新 Source Session、Workspace 与 Task name，再校验 `~/.codex/sessions` 中的 rollout metadata，最后通过设置中选定的 allowlisted terminal 执行 `codex resume <session-id>`。Otty adapter 使用立即返回的 `otty open` 创建持久化交互式 shell，通过创建前后的 window ID 差集锁定新窗口，再向其唯一 pane 发送严格 quoting 的 Resume 命令；最后显式设置 Task name 并调用 `window focus` 激活 Otty 到 macOS 前台。Codex 退出后回到 shell，window 不随 Session 关闭。旧数据库中的 `legacy` source 也必须通过同一 transcript 校验，不会仅凭标签获得启动权限。
 
 这是一种本机 C/S 架构：plugin adapter 是 client，`taskd` 是 server，Dashboard 是另一个 browser client。adapter 没有 service 时会报告 `SERVICE_UNAVAILABLE`；service 没有 adapter 时仍可以运行并查看已有数据。
 
@@ -116,6 +117,7 @@ Tasks Recorder 把事实记录与用户语义分开：
 ~/.config/tasks-recorder/
 ├── config.json                         # user configuration
 ├── tasks.sqlite                        # canonical data
+├── runtime/                            # terminals that require a 0700 one-shot launcher
 ├── spool/                              # bounded Event Envelope；*.invalid 为不可重试事件隔离证据
 └── logs/
     └── tasks-recorder.ndjson           # privacy-bounded structured events
@@ -133,12 +135,15 @@ Canonical database 的完整路径是 `~/.config/tasks-recorder/tasks.sqlite`。
 ```json
 {
   "output_dir": ".",
+  "resume_terminal": "terminal",
   "server_host": "127.0.0.1",
   "server_port": 43127
 }
 ```
 
 `output_dir` 只用于兼容旧版 `Tasks.md` / `History.md` projection；Dashboard 不依赖这些 Markdown files。
+
+Dashboard 右上角的 Settings 可以选择 Session Resume 使用的 terminal。当前 macOS adapter 支持 `terminal`（Terminal.app）、`otty` 与 `ghostty`；未安装的选项会显示为不可用。设置由 taskd 原子写回 `config.json`，不会覆盖其他配置项。
 
 当前 runtime 使用 schema v3。空数据库会直接初始化为 v3；已有 schema v1/v2 数据库不会被静默升级，`taskd` 会以 `SCHEMA_MIGRATION_REQUIRED` 拒绝启动。旧 runtime 也不能打开 v3 数据库，因此升级现有安装时必须显式执行下述 migration。
 
@@ -245,6 +250,9 @@ curl -fsS http://127.0.0.1:43127/api/v1/status
 - `health/ready` 可访问但状态为 degraded：查看 `/api/v1/status` 中的 schema、spool、logger 与 recovery 摘要；该接口不会返回 Event payload 或凭据。
 - `spool.last_replay_error` 为 `SPOOL_REPLAY_SEND_FAILED`：升级到最新 patch release 并重启 service；临时错误会保留重试，确定不可重试的 identity/contract conflict 会以 `0600` `.invalid` 文件隔离并继续 replay，不需要手动删除 active spool。
 - Dashboard 正常但没有自动记录：确认 adapter 已启用、重启宿主，并完成 hook trust/MCP approval。
+- Task 行没有 Resume：该 Task 必须存在 accepted Attribution、Workspace 仍可用，且 Session ID 能在本机 `~/.codex/sessions` 中唯一解析为真实 Codex rollout transcript；Project 行以及 Claude session 不显示该操作。
+- Resume 返回 `CODEX_SESSION_NOT_FOUND`：对应 transcript 已被移动、清理或不在默认 Codex sessions 目录；Tasks Recorder 不会仅凭数据库里的 Session ID 启动命令。
+- Resume 返回 `CODEX_UNAVAILABLE` 或 `TERMINAL_UNAVAILABLE`：确认 `codex` CLI 可从常见 executable path 找到，并在 Dashboard Settings 中选择当前已安装的 terminal。
 - 历史 import 返回 `CODEX_SESSION_NOT_FOUND`：确认使用完整、精确的 root Session ID；非默认 Codex 数据目录需要传 `--codex-home`。
 - 历史 import 后仍有未归属记录：这是无法唯一证明归属时的预期行为；先在 Project Inbox 确认 Project，再在“任务待归属”中分配 Task 或标记 `non_work`。
 - 历史 import route 不存在：service runtime 版本早于 importer，请先升级 service；只升级 adapter 不会更新 `taskd`。
@@ -309,6 +317,7 @@ npm run package:release
 - Hooks fail open：Tasks Recorder 故障不会阻断正常 tool call，但可能造成一次 activity/status 未记录。
 - SQLite 只保存 Task metadata、plan observation 和 lifecycle fields。Importer 不写入 prompt、reasoning、assistant message、tool output、token 或 transcript 正文；只保留本机 `transcript_path` 便于审计定位。
 - Installer 在解包或执行 runtime 前校验 SHA-256，并拒绝 archive path traversal。
+- Session Resume route 不接受 Session ID、Workspace 或任意 shell command。浏览器只能提交 Task ID；taskd 依据 canonical facts 解析目标、验证本机 Codex transcript，并只调用 Terminal.app、Otty 或 Ghostty adapter。Otty 只向本次新建 shell 的唯一 pane 发送由 taskd 构造并严格 quoting 的 allowlisted `codex resume` command，不产生中间文件；需要 `.command` bridge 的 adapter 使用 `0700` 一次性 launcher，并在启动时自删除。
 
 ## License
 

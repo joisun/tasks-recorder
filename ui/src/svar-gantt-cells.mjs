@@ -26,15 +26,16 @@ export function TaskCell({ row }) {
   const title = rowTitle(row)
   const expandedText = row.open ? '当前已展开' : '当前已折叠'
   if (project || row.history_context) {
-    return h('span', {
+    return h('span', { className: 'task-cell' }, h('span', {
       className: `task-label is-summary${project ? ' is-project' : ' is-context'}`,
       title,
       'aria-label': `${project ? '项目' : '历史上下文'}：${title}；${expandedText}`,
-    }, title)
+    }, title))
   }
-  return h('button', {
+  const label = h('button', {
     className: `task-label${summary ? ' is-summary' : ''}`,
     type: 'button',
+    key: 'label',
     title,
     'data-task-details-id': row.id,
     ...(summary ? {
@@ -45,6 +46,21 @@ export function TaskCell({ row }) {
       'aria-label': `打开任务详情：${title}`,
     }),
   }, title)
+  const resume = row.resume_available ? h('button', {
+    className: 'task-resume',
+    type: 'button',
+    'data-resume-task-id': row.id,
+    'aria-label': `在终端继续会话：${title}`,
+    key: 'resume',
+  }, h('svg', {
+    viewBox: '0 0 16 16', width: 16, height: 16, fill: 'none',
+    stroke: 'currentColor', strokeWidth: 1.35, strokeLinecap: 'round',
+    strokeLinejoin: 'round', 'aria-hidden': 'true',
+  }, [
+    h('rect', { x: 1.75, y: 2.25, width: 12.5, height: 10.5, rx: 2, key: 'frame' }),
+    h('path', { d: 'm4.25 5.25 2 2-2 2M8 9.25h3.25', key: 'prompt' }),
+  ])) : null
+  return h('span', { className: 'task-cell' }, [label, resume])
 }
 
 export function StatusCell({ row }) {

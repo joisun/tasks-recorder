@@ -29,6 +29,7 @@ const summary = {
   workspace: '/Users/me/project',
   workspace_display: '~/project',
   branch: 'feature/svar',
+  resume_available: true,
   note: 'Finish renderer integration',
   active_agent_count: 2,
   execution_count: 5,
@@ -42,6 +43,8 @@ function markup(Component, row = summary, extra = {}) {
 test('task cell exposes safe details and keyboard tree behavior', () => {
   const html = markup(TaskCell)
   assert.match(html, /data-task-details-id="root"/)
+  assert.match(html, /data-resume-task-id="root"/)
+  assert.match(html, /aria-label="在终端继续会话：Ship &lt;SVAR&gt; safely"/)
   assert.match(html, /data-task-toggle-id="root"/)
   assert.match(html, /class="task-label is-summary"/)
   assert.match(html, /aria-expanded="true"/)
@@ -49,6 +52,11 @@ test('task cell exposes safe details and keyboard tree behavior', () => {
   assert.match(html, /aria-label="打开任务详情：Ship &lt;SVAR&gt; safely；当前已展开"/)
   assert.match(html, /Ship &lt;SVAR&gt; safely/)
   assert.doesNotMatch(html, /<SVAR>|<script/)
+})
+
+test('Project rows never expose a session resume action', () => {
+  const html = markup(TaskCell, { ...summary, entity_type: 'project', resume_available: false })
+  assert.doesNotMatch(html, /data-resume-task-id/)
 })
 
 test('status and session cells preserve menu and complete-copy contracts', () => {

@@ -313,12 +313,22 @@ function agentName(execution, sourceSession) {
   return sourceSession?.source ?? 'Unknown'
 }
 
-function projectionContext(executions, sessionById, fallbackWorkfolder = null) {
+function projectionContext(
+  executions,
+  sessionById,
+  fallbackWorkfolder = null,
+  resumableSessionIds = new Set(),
+) {
   const execution = recentExecution(executions)
   const session = execution ? sessionById.get(execution.source_session_id) : null
   return {
     agent: agentName(execution, session),
     session_id: session?.external_session_id ?? null,
+    session_source: session?.source ?? null,
+    resume_available: Boolean(
+      session?.external_session_id
+      && resumableSessionIds.has(session.external_session_id),
+    ),
     workfolder: execution?.workfolder ?? fallbackWorkfolder,
     worktree: execution?.worktree ?? null,
     branch: execution?.branch ?? null,
@@ -359,6 +369,7 @@ function actualProjection(segments, { summary = false } = {}) {
 export function createJournalDashboardSnapshot(snapshot, {
   now = new Date(),
   homeDirectory = homedir(),
+  resumableSessionIds = new Set(),
 } = {}) {
   const generatedAt = validInstant(now instanceof Date ? now.toISOString() : now)
   if (!generatedAt) throw new TypeError('now must be a valid date')
@@ -448,7 +459,7 @@ export function createJournalDashboardSnapshot(snapshot, {
     const { scopedSegments, scopedExecutions } = factsFor(scope)
     const actual = actualProjection(scopedSegments, { summary })
     const planned = projectedPlan(scope)
-    const context = projectionContext(scopedExecutions, sessionById)
+    const context = projectionContext(scopedExecutions, sessionById, null, resumableSessionIds)
     const rollup = derivedTaskLifecycle(task)
     const lastActivity = latestInstant([
       ...scopedSegments.map((segment) => segment.last_seen_at ?? segment.ended_at ?? segment.started_at),
@@ -500,7 +511,12 @@ export function createJournalDashboardSnapshot(snapshot, {
     const actual = actualProjection(scopedSegments, { summary: true })
     const planned = projectedPlan(projectTasks)
     const fallbackLocation = projectLocation(project.id, locations)
-    const context = projectionContext(projectExecutions, sessionById, fallbackLocation)
+    const context = projectionContext(
+      projectExecutions,
+      sessionById,
+      fallbackLocation,
+      resumableSessionIds,
+    )
     const rollupMainTasks = mainTasks.map((task) => ({
       ...task,
       lifecycle: derivedTaskLifecycle(task),

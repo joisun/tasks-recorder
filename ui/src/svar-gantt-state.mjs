@@ -14,7 +14,7 @@ export const SVAR_TIMELINE_ZOOMS = Object.freeze(['auto', 'day', 'week', 'month'
 export const SVAR_GRID_COLUMNS = Object.freeze([
   { id: 'text', header: '任务', width: 200, resize: true },
   { id: 'activity', header: '最近活跃', width: 100, align: 'right', resize: true },
-  { id: 'status', header: '状态 / 进度', width: 88, align: 'center', resize: true },
+  { id: 'status', header: '状态 / 进度', width: 100, align: 'center', resize: true },
   { id: 'workspace', header: 'Workspace', width: 105, resize: true },
   { id: 'branch', header: 'Branch', width: 75, resize: true },
   { id: 'session_id', header: 'Session ID', width: 116, flexgrow: 1, resize: false },
@@ -204,6 +204,11 @@ export function createSvarTaskProjection(tasks, {
       historical: filter === 'history',
       history_context: Boolean(task.history_context),
       session_id: task.session_id ?? null,
+      session_source: task.session_source ?? null,
+      resume_available: task.entity_type !== 'project'
+        && task.resume_available === true
+        && typeof task.session_id === 'string'
+        && typeof workspaceValue === 'string',
       workspace: workspaceValue,
       workspace_display: workspace.display,
       branch: task.branch ?? null,

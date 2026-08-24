@@ -78,6 +78,11 @@ export function createDashboardApi({
 
   return {
     snapshot: () => request('/api/v1/snapshot'),
+    settings: () => request('/api/v1/settings'),
+    updateSettings: (input) => request('/api/v1/settings', { method: 'PATCH', body: input }),
+    resumeTask: (id) => request(`/api/v1/tasks/${encodeURIComponent(id)}/resume`, {
+      method: 'POST', body: {},
+    }),
     task: (id) => request(`/api/v1/tasks/${encodeURIComponent(id)}`),
     events: async (id) => (await request(`/api/v1/tasks/${encodeURIComponent(id)}/events`)).events ?? [],
     executions: async (filters = {}) => (

@@ -31,6 +31,14 @@ function statusFor(error) {
     || error.code === 'EXECUTION_INTENT_CONFLICT'
     || error.code === 'PROJECT_VERSION_CONFLICT'
     || error.code === 'SOURCE_SESSION_PROJECT_CONFLICT'
+    || error.code === 'TASK_NOT_RESUMABLE'
+    || error.code === 'CODEX_SESSION_NOT_FOUND'
+    || error.code === 'SESSION_SOURCE_UNSUPPORTED'
+    || error.code === 'TERMINAL_UNAVAILABLE'
+    || error.code === 'TERMINAL_LAUNCH_FAILED'
+    || error.code === 'CODEX_UNAVAILABLE'
+    || error.code === 'WORKSPACE_INVALID'
+    || error.code === 'WORKSPACE_NOT_FOUND'
   ) return 409
   if (error instanceof TaskRecorderError) return 400
   return 500
@@ -65,6 +73,8 @@ export function createApiServer({
   host = '127.0.0.1',
   port,
   dashboardHtml,
+  dashboardSettings = null,
+  sessionResume = null,
 }) {
   let expectedHost = `${host}:${port}`
   let origin = `http://${expectedHost}`
@@ -111,6 +121,15 @@ export function createApiServer({
       }
       if (request.method === 'GET' && pathname === '/api/v1/snapshot') {
         sendJson(response, 200, { ...hub.current(), ...await service.dashboardSnapshot() })
+        return
+      }
+      if (request.method === 'GET' && pathname === '/api/v1/settings' && dashboardSettings) {
+        sendJson(response, 200, await dashboardSettings.get())
+        return
+      }
+      if (request.method === 'PATCH' && pathname === '/api/v1/settings' && dashboardSettings) {
+        requireJson(request)
+        sendJson(response, 200, await dashboardSettings.update(await readJson(request)))
         return
       }
       if (request.method === 'GET' && pathname === '/api/v1/events') {
@@ -245,6 +264,13 @@ export function createApiServer({
         requireJson(request)
         const input = await readJson(request)
         sendJson(response, 200, await service.complete({ ...input, id: decodeURIComponent(complete[1]) }))
+        return
+      }
+      const taskResume = pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/resume$/)
+      if (request.method === 'POST' && taskResume && sessionResume) {
+        requireJson(request)
+        await readJson(request)
+        sendJson(response, 200, await sessionResume.resumeTask(decodeURIComponent(taskResume[1])))
         return
       }
       const taskEvents = pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/events$/)

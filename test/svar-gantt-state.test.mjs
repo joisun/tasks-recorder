@@ -18,6 +18,8 @@ const tasks = [
     id: 'child-b', parent_id: 'root', title: 'Second child', status: 'waiting',
     start: '2026-08-15T09:00:00.000Z', end: null, last_activity: '2026-08-16T09:50:00.000Z',
     session_id: 'session-child', workfolder: '/Users/me/project', worktree: null,
+    session_source: 'codex',
+    resume_available: true,
     branch: 'feature/svar', next_action: 'Wait for review', agent: 'Codex',
     active_agent_count: 1, execution_count: 2, updated_at: '2026-08-16T09:50:00.000Z',
   },
@@ -32,6 +34,8 @@ const tasks = [
     start: '2026-08-14T08:00:00.000Z', end: null, last_activity: '2026-08-16T09:45:00.000Z',
     progress: { remaining: 1, total: 2, completed: 1, ratio: 0.5 },
     session_id: '019fa297-4567-7bf0-a69a-84fd23b3aaab',
+    session_source: 'codex',
+    resume_available: true,
     workfolder: '/Users/me/project', worktree: '/Users/me/project/.worktree/feature-svar',
     branch: 'feature/svar', next_action: 'Finish renderer integration', agent: 'Codex',
     active_agent_count: 2, execution_count: 5, updated_at: '2026-08-16T09:45:00.000Z',
@@ -81,6 +85,8 @@ test('retains every Dashboard field and converts dates and progress for SVAR', (
   assert.equal(root.progress, 50)
   assert.equal(root.status, 'active')
   assert.equal(root.session_id, '019fa297-4567-7bf0-a69a-84fd23b3aaab')
+  assert.equal(root.session_source, 'codex')
+  assert.equal(root.resume_available, true)
   assert.equal(root.workspace, '/Users/me/project')
   assert.equal(root.workspace_display, '~/project')
   assert.equal(root.branch, 'feature/svar')
@@ -165,7 +171,7 @@ test('defines six decision-focused grid columns with activity second', () => {
     ['session_id', 'Session ID'],
   ])
   assert.equal(SVAR_GRID_COLUMNS.find(({ id }) => id === 'activity').width, 100)
-  assert.equal(SVAR_GRID_COLUMNS.reduce((total, { width }) => total + width, 0), 684)
+  assert.equal(SVAR_GRID_COLUMNS.reduce((total, { width }) => total + width, 0), 696)
   assert.deepEqual(SVAR_GRID_COLUMNS.map(({ id, resize }) => [id, resize]), [
     ['text', true],
     ['activity', true],

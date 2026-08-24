@@ -7,7 +7,7 @@ import { createApiServer } from '../server/src/api-server.mjs'
 import { createRevisionHub } from '../server/src/revision-hub.mjs'
 import { taskInput, temporaryStore } from './helpers.mjs'
 
-async function fixture() {
+async function fixture(apiOverrides = {}) {
   const temporary = await temporaryStore({ clock: () => new Date('2026-08-12T08:00:00.000Z') })
   const hub = createRevisionHub({ instanceId: 'server-test', keepaliveMs: 60_000 })
   const service = createTaskService({
@@ -30,6 +30,7 @@ async function fixture() {
     host: '127.0.0.1',
     port: 0,
     dashboardHtml: '<!doctype html><title>Tasks Recorder</title>',
+    ...apiOverrides,
   })
   const address = await api.listen()
   return {
@@ -145,6 +146,44 @@ test('local routes require loopback Host and same Origin without CORS', async ()
     const wrongHost = await rawRequest(`${current.url}/health/live`, { Host: 'attacker.example' })
     assert.equal(wrongHost.status, 403)
     assert.equal(wrongHost.body.error.code, 'HOST_REJECTED')
+  } finally {
+    await current.cleanup()
+  }
+})
+
+test('settings and task resume routes expose only their typed local operations', async () => {
+  const calls = []
+  const current = await fixture({
+    dashboardSettings: {
+      get: async () => ({ settings: { resume_terminal: 'terminal' }, terminal_options: [] }),
+      update: async (input) => {
+        calls.push(['settings', input])
+        return { settings: input, terminal_options: [] }
+      },
+    },
+    sessionResume: {
+      resumeTask: async (taskId) => {
+        calls.push(['resume', taskId])
+        return { ok: true, task_id: taskId, terminal: 'terminal' }
+      },
+    },
+  })
+  try {
+    const settings = await fetch(`${current.url}/api/v1/settings`).then((response) => response.json())
+    assert.equal(settings.settings.resume_terminal, 'terminal')
+    const updated = await fetch(`${current.url}/api/v1/settings`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resume_terminal: 'otty' }),
+    }).then((response) => response.json())
+    assert.equal(updated.settings.resume_terminal, 'otty')
+    const resumed = await fetch(`${current.url}/api/v1/tasks/task-a/resume`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    }).then((response) => response.json())
+    assert.equal(resumed.task_id, 'task-a')
+    assert.deepEqual(calls, [
+      ['settings', { resume_terminal: 'otty' }],
+      ['resume', 'task-a'],
+    ])
   } finally {
     await current.cleanup()
   }
