@@ -16,8 +16,7 @@ const roots = [
   'adapters/codex/tasks-recorder/mcp',
   'adapters/claude/tasks-recorder/hooks',
   'adapters/claude/tasks-recorder/mcp',
-  'ui/src',
-  'ui/build.mjs',
+  'ui',
 ]
 
 async function sourceFiles(path) {
@@ -43,4 +42,3 @@ for (const file of [...new Set(files)].sort()) {
   await execFileAsync(process.execPath, ['--check', file])
 }
 process.stdout.write(`syntax checked ${files.length} source files\n`)
-

@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "node ui/build.mjs",
+    "dev:ui": "node ui/dev-server.mjs",
     "check": "node scripts/check-syntax.mjs",
     "taskd": "node server/control.mjs",
     "taskd:run": "node server/taskd.mjs",
