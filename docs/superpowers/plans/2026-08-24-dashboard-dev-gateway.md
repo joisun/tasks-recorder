@@ -40,7 +40,7 @@
 - Produces: `writeDashboard({ outputPath?, compile? }): Promise<{ outputPath: string, bytes: number }>` using a same-directory temporary file and atomic rename.
 - Preserves: `node ui/build.mjs` and `npm run build` continue writing `ui/dist/index.html` with byte-identical content for unchanged inputs.
 
-- [ ] **Step 1: Write the failing compiler contract test**
+- [x] **Step 1: Write the failing compiler contract test**
 
 Create `test/dashboard-compiler.test.mjs`:
 
@@ -86,7 +86,7 @@ test('writer atomically publishes only a successful compilation', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -96,7 +96,7 @@ node --test test/dashboard-compiler.test.mjs
 
 Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `ui/compiler.mjs`. This proves the test requires the new compiler boundary.
 
-- [ ] **Step 3: Move the existing compiler into the reusable module**
+- [x] **Step 3: Move the existing compiler into the reusable module**
 
 Create `ui/compiler.mjs` with the current esbuild/template/CSS behavior. Keep the existing font and completeness guards unchanged:
 
@@ -164,7 +164,7 @@ import { writeDashboard } from './compiler.mjs'
 await writeDashboard()
 ```
 
-- [ ] **Step 4: Rebuild and verify GREEN plus production parity**
+- [x] **Step 4: Rebuild and verify GREEN plus production parity**
 
 Run:
 
@@ -176,7 +176,7 @@ git diff -- ui/dist/index.html
 
 Expected: both test files PASS and `git diff -- ui/dist/index.html` has no output. If esbuild produces a byte change, compare it before proceeding; do not accept unexplained bundle churn.
 
-- [ ] **Step 5: Run focused syntax and diff checks**
+- [x] **Step 5: Run focused syntax and diff checks**
 
 Run:
 
@@ -188,7 +188,7 @@ git diff --check
 
 Expected: all exit `0`.
 
-- [ ] **Step 6: Commit the compiler boundary**
+- [x] **Step 6: Commit the compiler boundary**
 
 ```bash
 git add ui/compiler.mjs ui/build.mjs test/dashboard-compiler.test.mjs
@@ -208,7 +208,7 @@ git commit -m "refactor(ui): extract dashboard compiler"
 - `listen(): Promise<{ host: string, port: number, url: string }>` resolves the actual address; internal `port: 0` is allowed for isolated tests, but env parsing accepts only `1..65535`.
 - `broadcastReload()` sends one `event: reload` to every current dev reload client.
 
-- [ ] **Step 1: Write failing config and HTML-injection tests**
+- [x] **Step 1: Write failing config and HTML-injection tests**
 
 Create `test/dashboard-dev-gateway.test.mjs` with these first contracts:
 
@@ -262,7 +262,7 @@ test('reload client is injected once and remains absent from source HTML', () =>
 })
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -272,7 +272,7 @@ node --test test/dashboard-dev-gateway.test.mjs
 
 Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `ui/dev-gateway.mjs`.
 
-- [ ] **Step 3: Implement validated config and dev-only injection**
+- [x] **Step 3: Implement validated config and dev-only injection**
 
 In `ui/dev-gateway.mjs`, add exact validation before any listener is created:
 
@@ -316,7 +316,7 @@ export function injectDashboardReloadClient(html) {
 }
 ```
 
-- [ ] **Step 4: Add real HTTP proxy, security, and streaming tests**
+- [x] **Step 4: Add real HTTP proxy, security, and streaming tests**
 
 Extend the same test file with real ephemeral servers. Use these helpers:
 
@@ -489,7 +489,7 @@ test('gateway broadcasts one reload event on the dedicated dev SSE channel', asy
 })
 ```
 
-- [ ] **Step 5: Implement the minimal gateway**
+- [x] **Step 5: Implement the minimal gateway**
 
 Use `node:http` `createServer` and `request`, not `fetch`, so request bodies and SSE responses remain streaming. The server request handler must execute this order:
 
@@ -522,7 +522,7 @@ with status `502`, `Content-Type: application/json; charset=utf-8`, and `Cache-C
 
 `close()` must end all reload responses, destroy active proxy sockets if needed, and await `server.close()` so test processes cannot hang.
 
-- [ ] **Step 6: Verify focused GREEN and connection cleanup**
+- [x] **Step 6: Verify focused GREEN and connection cleanup**
 
 Run:
 
@@ -532,7 +532,7 @@ node --test test/dashboard-dev-gateway.test.mjs
 
 Expected: all config, HTML, security, body proxy, SSE proxy, reload SSE, 404, 502, and close tests PASS; the test process exits without `--test-force-exit`.
 
-- [ ] **Step 7: Run affected regressions and commit**
+- [x] **Step 7: Run affected regressions and commit**
 
 Run:
 
@@ -564,7 +564,7 @@ git commit -m "feat(ui): add dashboard dev gateway"
 - Produces: `startDashboardDevRuntime({ config, projectRoot?, compile?, watchSources?, stderr?, debounceMs? }): Promise<{ address, whenIdle(), close() }>`.
 - Produces: executable `ui/dev-server.mjs`, used by `npm run dev:ui`.
 
-- [ ] **Step 1: Write the failing last-good build loop test**
+- [x] **Step 1: Write the failing last-good build loop test**
 
 Create `test/dashboard-dev-runtime.test.mjs`:
 
@@ -642,7 +642,7 @@ test('initial build failure propagates before runtime can listen', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -652,7 +652,7 @@ node --test test/dashboard-dev-runtime.test.mjs
 
 Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `ui/dev-runtime.mjs`.
 
-- [ ] **Step 3: Implement the serialized build loop and source watcher**
+- [x] **Step 3: Implement the serialized build loop and source watcher**
 
 In `ui/dev-runtime.mjs`, implement one build at a time. `notifyChange()` debounces; if called while compiling it sets one pending flag, never launches a concurrent esbuild. `whenIdle()` resolves only when timer, active build, and pending flag are all clear. `close()` cancels a timer and waits for an active build.
 
@@ -670,7 +670,7 @@ export function watchDashboardSources({ sourceRoot, onChange, watchImpl = watch 
 
 The loop's `buildInitial()` must propagate failure; scheduled builds must call `onError(error)` and remain usable. `onSuccess(html, { durationMs })` is called only after a complete successful compile.
 
-- [ ] **Step 4: Add a runtime integration test with injected compiler and watcher**
+- [x] **Step 4: Add a runtime integration test with injected compiler and watcher**
 
 Extend `test/dashboard-dev-runtime.test.mjs`:
 
@@ -770,7 +770,7 @@ test('runtime keeps last-good HTML after failure and reloads after recovery', as
 })
 ```
 
-- [ ] **Step 5: Compose compiler, gateway, watcher, logging, and signals**
+- [x] **Step 5: Compose compiler, gateway, watcher, logging, and signals**
 
 `startDashboardDevRuntime` must:
 
@@ -872,7 +872,7 @@ Add to `package.json` scripts:
 
 Change `scripts/check-syntax.mjs` roots from separate `ui/src` and `ui/build.mjs` entries to one `ui` entry. Its existing recursive walker already skips `dist` and `node_modules`, so it will check compiler, gateway, runtime, CLI, and source modules exactly once.
 
-- [ ] **Step 6: Verify focused GREEN, real CLI startup, and signal shutdown**
+- [x] **Step 6: Verify focused GREEN, real CLI startup, and signal shutdown**
 
 Run focused tests:
 
@@ -896,9 +896,9 @@ curl -fsS http://127.0.0.1:43128/ >/dev/null
 curl -fsS http://127.0.0.1:43128/api/v1/snapshot >/dev/null
 ```
 
-Send `Ctrl-C`; expected process exits `0` and `curl http://127.0.0.1:43128/` can no longer connect.
+Send `Ctrl-C`; acceptance requires `curl http://127.0.0.1:43128/` can no longer connect. Direct `node ui/dev-server.mjs` must exit `0`; an interactive `npm run dev:ui` wrapper may itself report the delivered terminal signal as a non-zero shell status even though the child closed cleanly.
 
-- [ ] **Step 7: Commit the complete live-development workflow**
+- [x] **Step 7: Commit the complete live-development workflow**
 
 ```bash
 git add ui/dev-runtime.mjs ui/dev-server.mjs test/dashboard-dev-runtime.test.mjs package.json scripts/check-syntax.mjs
@@ -918,7 +918,7 @@ git commit -m "feat(ui): add live dashboard development workflow"
 - Documents: installed Dashboard `43127` versus source preview `43128`, override variables, real-data mutation warning, and production Release separation.
 - Closes: all automated, browser, packaging, documentation-tree, and Johari evidence required by the spec.
 
-- [ ] **Step 1: Update README Development instructions**
+- [x] **Step 1: Update README Development instructions**
 
 In `## Develop from source`, after `npm ci`, add the primary UI loop:
 
@@ -944,7 +944,7 @@ dev gateway 只监听 loopback，不读取 SQLite，也不会写入已安装的 
 
 Keep the existing build/check/test command block after this explanation. Do not describe `npm run dev:ui` as part of normal end-user installation.
 
-- [ ] **Step 2: Run fresh focused and full automated gates**
+- [x] **Step 2: Run fresh focused and full automated gates**
 
 Run from the feature worktree:
 
@@ -960,7 +960,7 @@ git diff --check
 
 Expected: every command exits `0`; production UI contains no `__tasks_recorder_dev`, `43128`, or reload client. Record exact test and syntax counts in the spec closeout note.
 
-- [ ] **Step 3: Verify release archives exclude dev source runtime**
+- [x] **Step 3: Verify release archives exclude dev source runtime**
 
 Run:
 
@@ -974,7 +974,7 @@ rg -n '__tasks_recorder_dev|43128|data-tasks-recorder-dev-reload' ui/dist/index.
 
 Expected: archives are readable and both negative scans produce no matches.
 
-- [ ] **Step 4: Run Playwright headless against the real dev gateway**
+- [x] **Step 4: Run Playwright headless against the real dev gateway**
 
 Use the existing `playwright-headless` MCP server. Keep installed taskd `43127` ready and run `npm run dev:ui` in this worktree. At `1440×900` open `http://127.0.0.1:43128` and verify:
 
@@ -987,7 +987,7 @@ Use the existing `playwright-headless` MCP server. Keep installed taskd `43127` 
 
 Then make a reversible source-only presentation change in `ui/src/dashboard.css` using `apply_patch`, observe automatic page reload and the computed style change, immediately revert that exact patch with `apply_patch`, and observe a second automatic reload restoring the original computed style. Confirm `git diff -- ui/src/dashboard.css` is empty afterward. Record initial build and both reload latencies; if a stable reload exceeds two seconds, stop and reassess the HMR assumption instead of declaring success.
 
-- [ ] **Step 5: Perform the required documentation-tree scan**
+- [x] **Step 5: Perform the required documentation-tree scan**
 
 Run:
 
@@ -999,11 +999,11 @@ rg -n "npm run build|Develop from source|43127|Dashboard|ui/build\.mjs" README.m
 
 Update only documentation whose current public contract is affected. Historical specs/plans remain historical. If no other file needs changes, record exactly: `扫描了文档树，无需同步`.
 
-- [ ] **Step 6: Close the spec and plan with evidence**
+- [x] **Step 6: Close the spec and plan with evidence**
 
 Change the spec header status from `待用户复核` to `已实现并验证`. Append a short `## Implementation Evidence` section containing:
 
-- the two design commit hashes and three preceding code commit hashes；final documentation commit 在提交后由 handoff 报告，不能把 commit 自身 hash 写进自身；
+- the design/spec/plan commit hashes and four preceding code commit hashes；final documentation commit 在提交后由 handoff 报告，不能把 commit 自身 hash 写进自身；
 - focused and full test counts;
 - syntax count and production/release build results;
 - Playwright URL, viewport, snapshot/SSE/reload/console results, and measured latency;
@@ -1012,7 +1012,7 @@ Change the spec header status from `待用户复核` to `已实现并验证`. Ap
 
 Check every completed plan checkbox only after its command or observation has direct evidence. Do not mark a failed or skipped gate complete.
 
-- [ ] **Step 7: Run final diff, link, and worktree checks**
+- [x] **Step 7: Run final diff, link, and worktree checks**
 
 Run:
 
@@ -1024,7 +1024,7 @@ node --test test/dashboard-compiler.test.mjs test/dashboard-dev-gateway.test.mjs
 
 Resolve the spec link from this plan and every new relative README link. Expected: no missing target, no whitespace error, and only Task 4 documentation files remain uncommitted.
 
-- [ ] **Step 8: Commit documentation and verification closeout**
+- [x] **Step 8: Commit documentation and verification closeout**
 
 ```bash
 git add README.md \

@@ -1,7 +1,7 @@
 # Dashboard Dev Gateway 设计
 
 > 日期：2026-08-24（Asia/Shanghai）
-> 状态：已批准，待实施
+> 状态：已实现并验证
 > 范围：Tasks Recorder Dashboard 的本地开发预览链路
 
 ## 结论
@@ -106,6 +106,7 @@ production compiler 默认不接受或注入 dev client。dev reload script 由 
 路由契约：
 
 - `GET /`、`GET /index.html`：返回注入 reload client 的 last-good HTML；
+- `GET /favicon.ico`：与 taskd 一致返回空的 `204`，避免浏览器产生无意义的 resource error；
 - `GET /__tasks_recorder_dev/reload`：dev-only SSE channel；
 - `/api/*`、`/health/*`：透明 streaming proxy；
 - 其他路径：`404`；
@@ -154,7 +155,7 @@ gateway 自身没有写数据库的能力，但它会透明代理 Dashboard muta
 
 1. compiler：production HTML 与现有 bundle contract 一致，且不含 dev client；
 2. config：默认值、合法 override、loopback restriction、端口冲突；
-3. gateway：HTML、404、upstream 502、GET/POST body/status/header 代理，以及非法 `Host` / `Origin` 拒绝；
+3. gateway：HTML、favicon 204、404、upstream 502、GET/POST body/status/header 代理，以及非法 `Host` / `Origin` 拒绝；
 4. streaming：upstream SSE chunk 能在连接不结束时到达浏览器侧；
 5. rebuild state：失败保留 last-good，下一次成功替换 HTML并广播一次 reload；
 6. shutdown：watcher、server 与 SSE clients 可确定性关闭；
@@ -181,3 +182,15 @@ gateway 自身没有写数据库的能力，但它会透明代理 Dashboard muta
 - 不向 release archive 安装 dev server。
 - 不实现公网访问、LAN 访问或 remote debugging。
 - 不实现 sandbox data、mock backend、fixture editor 或组件级 HMR。
+
+## Implementation Evidence
+
+- 设计与计划 commits：`28d6010`（初始设计）、`c1f97c7`（Origin trust boundary）、`36bd126`（implementation plan）。
+- 代码 commits：`f776297`（compiler extraction）、`6c7eba0`（secure gateway）、`62448cf`（watch/reload runtime）、`c19b771`（browser-discovered favicon console fix）。
+- TDD evidence：compiler 首轮因缺少 module RED；gateway 首轮 3 个 HTTP contracts 因 fail-closed factory RED；runtime integration 首轮 2 个 cases 因 unavailable runtime RED；favicon contract 首轮为 `404 !== 204` RED。最终 dev-focused suite 为 10/10。
+- Fresh automated gate：`TZ=UTC npm test` 295/295，`npm run check` 检查 89 个 source files；production UI、Codex/Claude adapters 与三份 release archives 均构建成功，`bash -n install.sh` 与 `git diff --check` 通过。新 worktree 首轮 full suite 的唯一失败是尚未执行本地 `npm ci` 导致 SVAR package metadata 不存在；完成 worktree-local install（0 vulnerabilities）后从头 fail-fast 重跑全绿。
+- Release isolation：三份 archives 均可读取；runtime archive 不含 `ui/dev-*` 或 `ui/compiler.mjs`；production `ui/dist/index.html` 不含 `__tasks_recorder_dev`、`43128` 或 reload client。
+- Playwright headless：在 `1440×900` 打开 `http://127.0.0.1:43128`，title 为 `Agent Control`，Project-first Gantt 真实渲染 33 行；proxied snapshot 为 200，favicon 为 204，taskd `/api/v1/events` 与 dev reload channel 均收到 `ready`。fresh page 及 source change/recovery 后 console 均为 0 error / 0 warning。
+- Performance/recovery：独立 compiler 为 126ms；CSS source change 与精确恢复的 rebuild 分别为 97ms / 110ms，reload signal 到新 navigation 为 4ms；两次均改变 `performance.timeOrigin`，恢复后 CSS probe 为空且 `git diff -- ui/src/dashboard.css` 无输出。
+- 文档扫描：README 已区分 installed `43127` 与 source `43128`，说明 override 与真实 mutation 风险；扫描了文档树，无需同步其他当前文档，历史 specs/plans 保持不变。
+- 已知限制：dev 页面 mutation 会写入真实本机数据；sandbox backend 仍是独立的未来设计，不在本功能中暗中引入第二个 SQLite owner。

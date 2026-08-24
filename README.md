@@ -257,6 +257,27 @@ curl -fsS http://127.0.0.1:43127/api/v1/status
 git clone https://github.com/joisun/tasks-recorder.git
 cd tasks-recorder
 npm ci
+```
+
+保持已安装的 taskd 在 <http://127.0.0.1:43127> 运行，然后启动源码 Dashboard：
+
+```bash
+npm run dev:ui
+```
+
+打开 <http://127.0.0.1:43128>。`ui/src` 构建成功后页面会自动刷新；实时 snapshot、任务变更 SSE 和 API 操作仍由 `43127` 的正式 taskd 提供，不需要发布 Release 或重新安装。
+
+`43128` 页面中的编辑、归属和状态修改会写入当前真实本机数据库。只做视觉检查时不要触发 mutation；需要其他端口或 taskd upstream 时使用：
+
+```bash
+TASKS_RECORDER_DEV_PORT=44128 \
+TASKS_RECORDER_DEV_UPSTREAM=http://127.0.0.1:44127 \
+npm run dev:ui
+```
+
+dev gateway 只监听 loopback，不读取 SQLite，也不会写入已安装的 immutable release。正式交付前执行 production gates：
+
+```bash
 npm run build
 npm run build:adapters
 npm run check
