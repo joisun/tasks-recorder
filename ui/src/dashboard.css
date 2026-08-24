@@ -60,7 +60,7 @@ button{font:inherit}.app{display:flex;width:100%;height:100dvh;min-height:360px;
 .svar-timeline-separator::before{left:7px}
 .svar-timeline-separator:hover::before,.svar-timeline-separator.is-dragging::before{width:2px;background:var(--accent-hover)}
 .svar-timeline-separator.is-dragging{background:color-mix(in oklab,var(--accent) 8%,transparent)}
-.svar-gantt-shell[data-display-mode="all"] .wx-chart{width:calc(var(--gantt-shell-width) - var(--grid-panel-width) - 5px)!important;min-width:0;flex:0 0 calc(var(--gantt-shell-width) - var(--grid-panel-width) - 5px)!important}
+.svar-gantt-shell[data-display-mode="all"] .wx-chart{width:calc(var(--gantt-shell-width) - var(--grid-panel-width) - 5px)!important;min-width:0;flex:1 1 auto!important}
 .gantt-empty-state{position:absolute;z-index:14;inset:49px 0 0;display:grid;place-content:center;justify-items:center;gap:7px;padding:24px;background:color-mix(in oklab,var(--bg) 96%,transparent);text-align:center}
 .gantt-empty-state strong{color:var(--fg-2);font-size:13px;font-weight:590}
 .gantt-empty-state span{color:var(--muted);font-size:11px}

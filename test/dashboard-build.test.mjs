@@ -34,3 +34,16 @@ test('standalone dashboard bundle uses REST + SSE and contains no embedded MCP A
   assert.doesNotMatch(html, /DHTMLX Gantt Standard 9\.1 · GPL-2\.0 · SQLite 实时视图/)
   assert.doesNotMatch(html, /class="license-note"/)
 })
+
+test('timeline width does not become the vertical flex basis of the chart', async () => {
+  const html = await readFile(new URL('../ui/dist/index.html', import.meta.url), 'utf8')
+
+  assert.match(
+    html,
+    /\.svar-gantt-shell\[data-display-mode="all"\] \.wx-chart\{[^}]*flex:1 1 auto[^}]*\}/,
+  )
+  assert.doesNotMatch(
+    html,
+    /\.svar-gantt-shell\[data-display-mode="all"\] \.wx-chart\{[^}]*flex:0 0 calc\(/,
+  )
+})
