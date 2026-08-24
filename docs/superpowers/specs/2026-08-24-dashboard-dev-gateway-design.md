@@ -1,7 +1,7 @@
 # Dashboard Dev Gateway 设计
 
 > 日期：2026-08-24（Asia/Shanghai）
-> 状态：待用户复核
+> 状态：已批准，待实施
 > 范围：Tasks Recorder Dashboard 的本地开发预览链路
 
 ## 结论
