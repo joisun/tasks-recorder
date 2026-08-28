@@ -53,9 +53,14 @@ test('installer creates versioned runtime and preserves existing config/database
     await mkdir(dataDirectory, { recursive: true })
     const existingConfig = JSON.stringify({
       output_dir: './legacy', server_host: '127.0.0.1', server_port: 43210,
+      codex_path: '/opt/explicit/codex', scheduler_database_path: './private/scheduler.sqlite',
     })
     await writeFile(join(dataDirectory, 'config.json'), existingConfig)
     await writeFile(join(dataDirectory, 'tasks.sqlite'), 'existing-database')
+    await writeFile(join(dataDirectory, 'private', 'scheduler.sqlite'), 'existing-scheduler-database').catch(async () => {
+      await mkdir(join(dataDirectory, 'private'), { recursive: true })
+      await writeFile(join(dataDirectory, 'private', 'scheduler.sqlite'), 'existing-scheduler-database')
+    })
 
     const first = await runInstaller({
       homeDirectory, releaseDirectory, args: ['--version', 'v0.6.2', '--no-start'],
@@ -73,6 +78,7 @@ test('installer creates versioned runtime and preserves existing config/database
     )
     assert.equal(await readFile(join(dataDirectory, 'config.json'), 'utf8'), existingConfig)
     assert.equal(await readFile(join(dataDirectory, 'tasks.sqlite'), 'utf8'), 'existing-database')
+    assert.equal(await readFile(join(dataDirectory, 'private', 'scheduler.sqlite'), 'utf8'), 'existing-scheduler-database')
 
     const wrapper = join(homeDirectory, '.local', 'bin', 'tasks-recorder')
     const wrapperSource = await readFile(wrapper, 'utf8')
@@ -104,9 +110,33 @@ test('installer creates versioned runtime and preserves existing config/database
     })
     assert.equal(second.code, 0, second.stderr)
     assert.equal(await readFile(join(dataDirectory, 'tasks.sqlite'), 'utf8'), 'existing-database')
+    assert.equal(await readFile(join(dataDirectory, 'private', 'scheduler.sqlite'), 'utf8'), 'existing-scheduler-database')
   } finally {
     await rm(homeDirectory, { recursive: true, force: true })
     await rm(releaseDirectory, { recursive: true, force: true })
+  }
+})
+
+test('installer leaves runtime discovery to the runtime registry', async () => {
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-home-'))
+  const releaseDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-release-'))
+  const commandDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-codex-'))
+  try {
+    await createReleaseFixture(releaseDirectory)
+    const fakeCodex = join(commandDirectory, 'codex')
+    await writeFile(fakeCodex, '#!/usr/bin/env sh\n[ "$1" = exec ] && [ "$2" = --help ]\n')
+    await chmod(fakeCodex, 0o755)
+    const installed = await runInstaller({
+      homeDirectory, releaseDirectory, args: ['--version', 'v0.6.2', '--no-start'],
+      env: { PATH: `${commandDirectory}:${process.env.PATH}` },
+    })
+    assert.equal(installed.code, 0, installed.stderr)
+    const config = JSON.parse(await readFile(join(homeDirectory, '.config', 'tasks-recorder', 'config.json'), 'utf8'))
+    assert.equal(Object.hasOwn(config, 'codex_path'), false)
+  } finally {
+    await rm(homeDirectory, { recursive: true, force: true })
+    await rm(releaseDirectory, { recursive: true, force: true })
+    await rm(commandDirectory, { recursive: true, force: true })
   }
 })
 

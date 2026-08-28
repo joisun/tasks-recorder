@@ -139,6 +139,8 @@ tar -xzf "$archive_path" -C "$extract_root"
 runtime_source="$extract_root/$archive_root"
 [ -f "$runtime_source/ui/dist/index.html" ] || die 'prebuilt Dashboard is missing from the release'
 [ -f "$runtime_source/server/taskd.mjs" ] || die 'taskd runtime is missing from the release'
+[ -f "$runtime_source/server/src/runtime/runtime-agent-registry.mjs" ] || die 'runtime agent registry is missing from the release'
+[ -f "$runtime_source/server/src/scheduler/scheduler-service.mjs" ] || die 'Scheduler runtime is missing from the release'
 
 installed_version="$(node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(p.version)' "$runtime_source/package.json")"
 case "$installed_version" in
@@ -156,17 +158,27 @@ if [ ! -d "$release_directory" ]; then
   mv "$runtime_source" "$release_directory"
 fi
 
-if [ ! -f "$config_path" ]; then
-  cat > "$config_path" <<'EOF'
-{
-  "output_dir": ".",
-  "resume_terminal": "terminal",
-  "server_host": "127.0.0.1",
-  "server_port": 43127
+node - "$config_path" <<'NODE'
+const { existsSync, readFileSync, writeFileSync, chmodSync } = require('node:fs')
+const [configPath] = process.argv.slice(2)
+const exists = existsSync(configPath)
+let config
+if (exists) {
+  config = JSON.parse(readFileSync(configPath, 'utf8'))
+  if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('config must be an object')
+} else {
+  config = {
+    output_dir: '.',
+    resume_terminal: 'terminal',
+    server_host: '127.0.0.1',
+    server_port: 43127,
+  }
 }
-EOF
-  chmod 600 "$config_path"
-fi
+if (!exists) {
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
+}
+chmodSync(configPath, 0o600)
+NODE
 
 temporary_link="$install_root/.current.$$.tmp"
 ln -s "$release_directory" "$temporary_link"

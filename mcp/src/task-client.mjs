@@ -143,5 +143,7 @@ export function createTaskClient({
     }),
     render: () => request('/api/v1/render', { method: 'POST' }),
     check: () => request('/api/v1/check'),
+    schedulerStatus: () => request('/api/v1/status'),
+    schedulerReconcile: () => request('/api/v1/scheduler/reconcile', { method: 'POST', body: {} }),
   }
 }

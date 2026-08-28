@@ -70,6 +70,53 @@ test('controller install is repeatable and uninstall removes only the plist', as
   }
 })
 
+test('controller uninstall delegates schedule cleanup through the owned-unit verifier and preserves Scheduler data', async () => {
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'tasks-recorder-control-schedules-'))
+  const projectRoot = join(homeDirectory, 'projects', 'tasks-recorder')
+  const known = [
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222',
+  ]
+  const calls = []
+  try {
+    const controller = createTaskdController({
+      projectRoot,
+      homeDirectory,
+      nodePath: '/opt/homebrew/bin/node',
+      uid: 502,
+      config: {
+        serverBaseUrl: 'http://127.0.0.1:43127',
+        schedulerDatabasePath: join(homeDirectory, '.config', 'tasks-recorder', 'scheduler.sqlite'),
+        schedulerLogsDirectory: join(homeDirectory, '.config', 'tasks-recorder', 'schedules', 'logs'),
+      },
+      run: async (command, args, options = {}) => {
+        calls.push(['launchctl', command, args, options.allowFailure ?? false])
+        return { code: 0, stdout: '', stderr: '' }
+      },
+      cleanupLegacySchedules: async (options) => {
+        calls.push(['cleanup-legacy', options.uid, options.homeDirectory])
+        return {
+          removed: known.map((job_id) => ({
+            job_id,
+            label: `com.joi.tasks-recorder.schedule.${job_id}`,
+          })),
+          skipped: [],
+        }
+      },
+    })
+
+    const result = await controller.uninstall()
+    assert.deepEqual(calls, [
+      ['cleanup-legacy', 502, homeDirectory],
+      ['launchctl', 'launchctl', ['bootout', 'gui/502', controller.paths.plistPath], true],
+    ])
+    assert.ok(result.preserved.includes(join(homeDirectory, '.config', 'tasks-recorder', 'scheduler.sqlite')))
+    assert.ok(result.preserved.includes(join(homeDirectory, '.config', 'tasks-recorder', 'schedules', 'logs')))
+  } finally {
+    await rm(homeDirectory, { recursive: true, force: true })
+  }
+})
+
 test('controller rejects old Node and a foreign service occupying the configured port', async () => {
   const common = {
     projectRoot: '/projects/tasks-recorder', homeDirectory: '/Users/me', nodePath: '/node', uid: 502,

@@ -10,7 +10,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "node ui/build.mjs",
+    "build": "node scripts/build-server-vendor.mjs && node ui/build.mjs",
     "dev:ui": "node ui/dev-server.mjs",
     "check": "node scripts/check-syntax.mjs",
     "taskd": "node server/control.mjs",
@@ -24,6 +24,7 @@
     "@svar-ui/react-gantt": "2.7.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "yaml": "^2.9.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

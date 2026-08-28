@@ -39,6 +39,8 @@ test('task client maps every operation to the token-free versioned HTTP contract
     await client.complete({ id: 'task-a', session_id: 'session-1', workfolder: '/workspace' })
     await client.render()
     await client.check()
+    await client.schedulerStatus()
+    await client.schedulerReconcile()
     await client.updateStatus({
       id: 'task-a',
       status: 'blocked',
@@ -55,6 +57,8 @@ test('task client maps every operation to the token-free versioned HTTP contract
         ['POST', '/api/v1/tasks/task-a/complete'],
         ['POST', '/api/v1/render'],
         ['GET', '/api/v1/check'],
+        ['GET', '/api/v1/status'],
+        ['POST', '/api/v1/scheduler/reconcile'],
         ['PATCH', '/api/v1/tasks/task-a/status'],
       ],
     )
@@ -64,6 +68,7 @@ test('task client maps every operation to the token-free versioned HTTP contract
       status: 'blocked',
       expected_updated_at: '2026-08-12T08:00:00.000Z',
     })
+    assert.deepEqual(recorder.requests.at(-2).body, {})
   } finally {
     await recorder.close()
   }

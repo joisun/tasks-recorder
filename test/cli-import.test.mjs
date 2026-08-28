@@ -12,6 +12,8 @@ import { taskInput } from './helpers.mjs'
 test('CLI parses service defaults and the complete Codex import argument set', () => {
   assert.deepEqual(parseCliArguments([]), { type: 'control', command: 'status' })
   assert.deepEqual(parseCliArguments(['start']), { type: 'control', command: 'start' })
+  assert.deepEqual(parseCliArguments(['scheduler', 'status']), { type: 'scheduler', command: 'status' })
+  assert.deepEqual(parseCliArguments(['scheduler', 'reconcile']), { type: 'scheduler', command: 'reconcile' })
   assert.deepEqual(parseCliArguments([
     'import', 'codex', '--session', 'root-session', '--dry-run', '--codex-home', '/tmp/codex',
   ]), {
@@ -54,6 +56,45 @@ test('CLI parses service defaults and the complete Codex import argument set', (
     () => parseCliArguments(['migrate', '--apply']),
     /--backup is required with --apply/,
   )
+  assert.throws(() => parseCliArguments(['scheduler', 'status', '--prompt', 'secret']), /does not accept/)
+  assert.throws(() => parseCliArguments(['scheduler', 'exec', 'anything']), /usage:/)
+})
+
+test('CLI scheduler commands delegate only to the typed taskd control-plane client', async () => {
+  const calls = []
+  const configResolver = async () => ({ serverBaseUrl: 'http://127.0.0.1:43127' })
+  const clientFactory = ({ baseUrl }) => ({
+    schedulerStatus: async () => {
+      calls.push(['status', baseUrl])
+      return { ready: true, scheduler: { supported: true } }
+    },
+    schedulerReconcile: async () => {
+      calls.push(['reconcile', baseUrl])
+      return { jobs: [{ id: '11111111-1111-4111-8111-111111111111', reconciled: true, error_code: null }] }
+    },
+  })
+
+  assert.deepEqual(await runCli(['scheduler', 'status'], { configResolver, clientFactory }), {
+    ready: true, scheduler: { supported: true },
+  })
+  assert.deepEqual(await runCli(['scheduler', 'reconcile'], { configResolver, clientFactory }), {
+    jobs: [{ id: '11111111-1111-4111-8111-111111111111', reconciled: true, error_code: null }],
+  })
+  assert.deepEqual(calls, [
+    ['status', 'http://127.0.0.1:43127'],
+    ['reconcile', 'http://127.0.0.1:43127'],
+  ])
+
+  await assert.rejects(runCli(['scheduler', 'reconcile'], {
+    configResolver,
+    clientFactory: () => ({
+      schedulerReconcile: async () => {
+        const error = new Error('unavailable')
+        error.code = 'SERVICE_UNAVAILABLE'
+        throw error
+      },
+    }),
+  }), (error) => error.code === 'SERVICE_UNAVAILABLE')
 })
 
 test('CLI delegates control commands and sends a normalized dry-run batch to taskd', async () => {

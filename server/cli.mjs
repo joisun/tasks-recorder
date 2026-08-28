@@ -27,6 +27,7 @@ function optionValue(argv, index, option) {
 function usageError() {
   return new Error(
     'usage: tasks-recorder [install|start|stop|status|uninstall] | '
+    + 'scheduler (status|reconcile) | '
     + 'migrate (--dry-run | --apply --backup <path>) [--database <path>] | '
     + 'import codex --session <id> [--dry-run] [--codex-home <path>]',
   )
@@ -96,6 +97,11 @@ export function parseCliArguments(argv) {
     if (argv.length !== 1) throw new Error(`${argv[0]} does not accept additional arguments`)
     return { type: 'control', command: argv[0] }
   }
+  if (argv[0] === 'scheduler') {
+    if (!['status', 'reconcile'].includes(argv[1])) throw usageError()
+    if (argv.length !== 2) throw new Error(`scheduler ${argv[1]} does not accept additional arguments`)
+    return { type: 'scheduler', command: argv[1] }
+  }
   if (argv[0] === 'migrate') return parseMigration(argv)
   if (argv[0] !== 'import' || argv[1] !== 'codex') {
     throw usageError()
@@ -149,6 +155,14 @@ export async function runCli(argv, {
 } = {}) {
   const command = parseCliArguments(argv)
   if (command.type === 'control') return controlRunner(command.command)
+
+  if (command.type === 'scheduler') {
+    const config = await configResolver({ projectRoot, env, homeDirectory })
+    const client = clientFactory({ baseUrl: config.serverBaseUrl })
+    return command.command === 'status'
+      ? client.schedulerStatus()
+      : client.schedulerReconcile()
+  }
 
   if (command.type === 'migrate') {
     const config = await configResolver({ projectRoot, env, homeDirectory })

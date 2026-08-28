@@ -8,6 +8,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { resolveAppConfig } from '../mcp/src/config.mjs'
+import { cleanupLegacyScheduleLaunchAgents } from './src/scheduler/legacy-launchd-cleanup.mjs'
 
 export const LAUNCH_AGENT_LABEL = 'com.joi.tasks-recorder.taskd'
 
@@ -108,6 +109,7 @@ export function createTaskdController({
   run = runCommand,
   build = createInstallBuildStep({ projectRoot, nodePath, run }),
   probeHealth = defaultProbeHealth,
+  cleanupLegacySchedules = cleanupLegacyScheduleLaunchAgents,
 }) {
   const launchAgentsDirectory = join(homeDirectory, 'Library', 'LaunchAgents')
   const logDirectory = join(homeDirectory, 'Library', 'Logs', 'tasks-recorder')
@@ -146,6 +148,14 @@ export function createTaskdController({
     if (health && health.service !== 'tasks-recorder') {
       throw new Error(`${config.serverBaseUrl} is occupied by another service`)
     }
+    const legacyCleanup = await cleanupLegacySchedules({
+      homeDirectory,
+      uid,
+      commandRunner: run,
+    })
+    if (legacyCleanup.skipped.length > 0) {
+      throw new Error(`legacy Schedule cleanup failed: ${legacyCleanup.skipped[0].error_code}`)
+    }
     await build()
     await writePlist()
     await run('launchctl', ['bootout', domain, paths.plistPath], { allowFailure: true })
@@ -179,9 +189,25 @@ export function createTaskdController({
   }
 
   async function uninstall() {
+    const legacyCleanup = await cleanupLegacySchedules({
+      uid,
+      homeDirectory,
+      commandRunner: run,
+    })
+    if (legacyCleanup.skipped.length > 0) {
+      throw new Error(`legacy Schedule cleanup failed: ${legacyCleanup.skipped[0].error_code}`)
+    }
     await run('launchctl', ['bootout', domain, paths.plistPath], { allowFailure: true })
     await rm(paths.plistPath, { force: true })
-    return { uninstalled: true, preserved: [paths.stdoutPath, paths.stderrPath] }
+    return {
+      uninstalled: true,
+      preserved: [
+        paths.stdoutPath,
+        paths.stderrPath,
+        config.schedulerDatabasePath,
+        config.schedulerLogsDirectory,
+      ].filter(Boolean),
+    }
   }
 
   return { install, start, stop, status, uninstall, paths }

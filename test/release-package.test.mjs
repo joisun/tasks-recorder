@@ -33,6 +33,13 @@ test('release packaging creates allowlisted service and independent adapter arch
       '/server/taskd.mjs',
       '/server/control.mjs',
       '/server/cli.mjs',
+      '/server/src/scheduler/scheduler-service.mjs',
+      '/server/src/scheduler/scheduler-clock.mjs',
+      '/server/src/runtime/runtime-agent-registry.mjs',
+      '/server/src/runtime/adapters/codex.mjs',
+      '/server/src/runs/run-service.mjs',
+      '/server/vendor/yaml.mjs',
+      '/server/THIRD_PARTY_NOTICES.md',
       '/server/src/codex/importer.mjs',
       '/server/src/codex/transcript-reader.mjs',
       '/mcp/src/task-client.mjs',
@@ -46,11 +53,14 @@ test('release packaging creates allowlisted service and independent adapter arch
       assert.ok(runtimeEntries.some((entry) => entry.endsWith(suffix)), `missing ${suffix}`)
     }
     assert.ok(runtimeEntries.every((entry) => !entry.includes('/test/')))
-    assert.ok(runtimeEntries.every((entry) => !entry.includes('/adapters/')))
+    assert.ok(runtimeEntries.every((entry) => !/^tasks-recorder-[^/]+\/adapters\//.test(entry)))
     assert.ok(runtimeEntries.every((entry) => !entry.includes('/node_modules/')))
     assert.ok(runtimeEntries.every((entry) => !entry.includes('/.git/')))
     assert.ok(runtimeEntries.every((entry) => !entry.endsWith('/mcp/server.mjs')))
     assert.ok(runtimeEntries.every((entry) => !entry.endsWith('/mcp/src/tools.mjs')))
+    assert.ok(runtimeEntries.every((entry) => !entry.endsWith('/server/scheduled-runner.mjs')))
+    assert.ok(runtimeEntries.every((entry) => !entry.includes('/server/src/scheduler/runner-')))
+    assert.ok(runtimeEntries.every((entry) => !entry.endsWith('/server/src/scheduler/launchd-backend.mjs')))
 
     for (const host of ['codex', 'claude']) {
       const entries = await archiveEntries(join(outputDirectory, `tasks-recorder-${host}-adapter.tar.gz`))
@@ -86,6 +96,7 @@ test('runtime package keeps production dependencies and excludes build-only depe
     assert.equal(manifest.dependencies['@svar-ui/react-gantt'], '2.7.1')
     assert.equal(manifest.dependencies.react, '19.2.8')
     assert.equal(manifest.dependencies['react-dom'], '19.2.8')
+    assert.equal(manifest.dependencies.yaml, '^2.9.0')
     assert.equal('dhtmlx-gantt' in manifest.dependencies, false)
     assert.equal(manifest.devDependencies.esbuild, '0.28.2')
   } finally {

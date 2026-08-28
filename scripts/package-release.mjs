@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 import { buildAdapters } from './build-adapters.mjs'
+import { buildServerVendor } from './build-server-vendor.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -34,8 +35,11 @@ export async function packageRelease({
   await mkdir(outputDirectory, { recursive: true })
 
   try {
-    await execFileAsync(process.execPath, [join(projectRoot, 'ui', 'build.mjs')], { cwd: projectRoot })
-    await buildAdapters({ projectRoot })
+    await Promise.all([
+      execFileAsync(process.execPath, [join(projectRoot, 'ui', 'build.mjs')], { cwd: projectRoot }),
+      buildAdapters({ projectRoot }),
+      buildServerVendor({ projectRoot }),
+    ])
 
     const runtimeName = `tasks-recorder-${version}`
     const runtimeRoot = join(stageDirectory, runtimeName)

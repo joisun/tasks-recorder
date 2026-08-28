@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { TaskRecorderError } from './errors.mjs'
 
@@ -13,6 +13,77 @@ function positiveInteger(value, field, fallback) {
     throw new TaskRecorderError('CONFIG_INVALID', `${field} must be a positive safe integer.`)
   }
   return normalized
+}
+
+function schedulerPositiveInteger(value, field, fallback) {
+  if (value === null) {
+    throw new TaskRecorderError('CONFIG_INVALID', `${field} must be a positive safe integer.`)
+  }
+  return positiveInteger(value, field, fallback)
+}
+
+function isUnsafeRemotePath(value) {
+  return value.startsWith('//')
+    || value.startsWith('\\\\')
+    || /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
+}
+
+function resolvesUnderDirectory(value, directory) {
+  const pathRelative = relative(directory, value)
+  return pathRelative === '' || (!pathRelative.startsWith('..') && !isAbsolute(pathRelative))
+}
+
+function schedulerPath(value, field, fallback, dataDirectory) {
+  const candidate = value === undefined ? fallback : value
+  if (
+    typeof candidate !== 'string'
+    || candidate.trim() === ''
+    || candidate.includes('\0')
+    || isUnsafeRemotePath(candidate)
+  ) {
+    throw new TaskRecorderError('CONFIG_INVALID', `${field} must be a safe non-empty local path.`)
+  }
+
+  const resolved = isAbsolute(candidate)
+    ? resolve(candidate)
+    : resolve(dataDirectory, candidate)
+  if (!resolvesUnderDirectory(resolved, dataDirectory)) {
+    throw new TaskRecorderError('CONFIG_INVALID', `${field} must resolve under the data directory.`)
+  }
+  return resolved
+}
+
+function definitionsDirectory(value, dataDirectory) {
+  const candidate = value ?? 'schedules'
+  if (
+    typeof candidate !== 'string'
+    || candidate.trim() === ''
+    || candidate.includes('\0')
+    || isUnsafeRemotePath(candidate)
+  ) {
+    throw new TaskRecorderError('CONFIG_INVALID', 'schedule_definitions_dir must be a safe non-empty local path.')
+  }
+  const resolved = isAbsolute(candidate) ? resolve(candidate) : resolve(dataDirectory, candidate)
+  if (dirname(resolved) === resolved) {
+    throw new TaskRecorderError('CONFIG_INVALID', 'schedule_definitions_dir must not be a filesystem root.')
+  }
+  return resolved
+}
+
+function configuredCodexPath(value) {
+  if (value === undefined || value === null) {
+    return null
+  }
+  if (
+    typeof value !== 'string'
+    || value.trim() === ''
+    || value.includes('\0')
+    || !isAbsolute(value)
+    || isUnsafeRemotePath(value)
+  ) {
+    throw new TaskRecorderError('CONFIG_INVALID', 'codex_path must be an absolute local executable path or null.')
+  }
+  return resolve(value)
 }
 
 export async function resolveAppConfig({
@@ -101,6 +172,39 @@ export async function resolveAppConfig({
     14 * 24 * 60 * 60 * 1000,
   )
 
+  const schedulerDatabasePath = schedulerPath(
+    fileConfig.scheduler_database_path,
+    'scheduler_database_path',
+    'scheduler.sqlite',
+    dataDirectory,
+  )
+  const scheduleDefinitionsDirectory = definitionsDirectory(
+    env.AGENT_TASKS_SCHEDULE_DEFINITIONS_DIR ?? fileConfig.schedule_definitions_dir,
+    dataDirectory,
+  )
+  const schedulerLogsDirectory = schedulerPath(
+    fileConfig.scheduler_logs_dir,
+    'scheduler_logs_dir',
+    join('schedules', 'logs'),
+    dataDirectory,
+  )
+  const schedulerLogMaxFileBytes = schedulerPositiveInteger(
+    fileConfig.scheduler_log_max_file_bytes,
+    'scheduler_log_max_file_bytes',
+    1024 * 1024,
+  )
+  const schedulerLogMaxFiles = schedulerPositiveInteger(
+    fileConfig.scheduler_log_max_files,
+    'scheduler_log_max_files',
+    8,
+  )
+  const schedulerLogMaxAgeMs = schedulerPositiveInteger(
+    fileConfig.scheduler_log_max_age_ms,
+    'scheduler_log_max_age_ms',
+    7 * 24 * 60 * 60 * 1000,
+  )
+  const codexPath = configuredCodexPath(fileConfig.codex_path)
+
   const configuredHost = fileConfig.server_host ?? '127.0.0.1'
   const configuredPort = fileConfig.server_port ?? 43127
   if (configuredHost !== '127.0.0.1') {
@@ -142,6 +246,13 @@ export async function resolveAppConfig({
     logMaxFileBytes,
     logMaxFiles,
     logMaxAgeMs,
+    schedulerDatabasePath,
+    scheduleDefinitionsDirectory,
+    schedulerLogsDirectory,
+    schedulerLogMaxFileBytes,
+    schedulerLogMaxFiles,
+    schedulerLogMaxAgeMs,
+    codexPath,
     serverHost: serverUrl.hostname,
     serverPort,
     serverBaseUrl: serverUrl.origin,

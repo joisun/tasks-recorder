@@ -127,3 +127,39 @@ test('GET status exposes diagnostics without weakening local transport guards', 
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test('scheduler diagnostics are a privacy-bounded degraded sibling and do not make Journal unready', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tasks-recorder-diagnostics-scheduler-'))
+  const store = createJournalStore({ databasePath: join(directory, 'tasks.sqlite') })
+  const spool = createEventSpool({ directory: join(directory, 'spool') })
+  const diagnostics = createJournalDiagnostics({
+    store,
+    spool,
+    scheduler: async () => ({
+      capability: { backend: 'launchd', supported: true, prompt: 'private' },
+      ready: false,
+      degraded: true,
+      error_code: 'SCHEDULER_STALE_RECOVERY_UNAVAILABLE',
+      backlog: { pending: 2, path: '/private/spool' },
+      counts: { jobs: 3, runs: 4, nonce: 'secret' },
+      workspace: '/private/workspace',
+    }),
+  })
+  try {
+    const status = await diagnostics.status()
+    assert.equal(status.ready, true)
+    assert.equal(status.degraded, true)
+    assert.deepEqual(status.scheduler, {
+      capability: { backend: 'launchd', supported: true },
+      ready: false,
+      degraded: true,
+      error_code: 'SCHEDULER_STALE_RECOVERY_UNAVAILABLE',
+      backlog: 2,
+      count: 7,
+    })
+    assert.doesNotMatch(JSON.stringify(status.scheduler), /private|workspace|nonce|prompt|path|secret/)
+  } finally {
+    store.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
