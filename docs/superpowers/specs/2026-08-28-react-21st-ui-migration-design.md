@@ -1,7 +1,7 @@
 # Tasks Recorder React + 21st.dev UI 迁移设计
 
 **Date:** 2026-08-28
-**Status:** Draft for user review
+**Status:** Approved; implementation in progress
 **Scope:** 在不改变 taskd、REST/SSE、SQLite、Runtime Registry 与 Agent adapter contract 的前提下，将现有 Dashboard 从 Vanilla DOM controller 迁移为 React + TypeScript UI，并建立可受控使用 21st.dev registry component 的前端基础。Agent Elements 集成属于下一份独立设计，不在本阶段实施。
 
 ## 1. 决策摘要

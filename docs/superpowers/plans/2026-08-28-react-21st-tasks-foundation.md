@@ -10,6 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-28-react-21st-ui-migration-design.md`
 
+## Execution Status — 2026-08-28
+
+| Task | Status | Evidence |
+| --- | --- | --- |
+| 0. Isolated baseline/worktree | Complete | branch `feature/react-dashboard` in `.worktree/feature-react-dashboard` |
+| 1–4. Toolchain, dual entry, design system, typed data boundary | Complete | commit `ec20056`; offline build and typed REST/SSE tests green |
+| 5. App Shell | Complete | commit `f436cea`; 1440×900 and 1024×768 VDR clear |
+| 6. Tasks projection and SVAR timeline | Complete | 27 UI tests, 30 related Node tests, real-data VDR clear |
+| 7–10. Toolbar/mutations/details, Inboxes, artifact/docs, final acceptance | Pending | continue after the Task 6 phase checkpoint |
+
+The detailed checkboxes below remain the original execution recipe. This status table is the current progress record and avoids rewriting historical red/green implementation steps after the fact.
+
 ## Global Constraints
 
 - 本计划只覆盖 React foundation、App Shell、Tasks/SVAR vertical slice。Scheduled、Settings、production cutover、legacy cleanup、Agent Elements 各自另写计划。

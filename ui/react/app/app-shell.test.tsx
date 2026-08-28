@@ -7,6 +7,10 @@ import type { DashboardMeta, DashboardSnapshot, TaskRecord } from '@/lib/api/typ
 import { AppProviders } from './app-providers'
 import { DashboardApp } from './dashboard-app'
 
+vi.mock('@/features/tasks/task-gantt', () => ({
+  TaskGantt: () => <div data-testid="task-gantt" />,
+}))
+
 const meta: DashboardMeta = {
   service: 'tasks-recorder',
   service_version: '0.6.2',

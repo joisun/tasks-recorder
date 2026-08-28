@@ -6,6 +6,7 @@ import {
   persistDashboardView,
   readDashboardView,
 } from '@/lib/preferences/dashboard-preferences'
+import { TaskGantt } from '@/features/tasks/task-gantt'
 import { AppShell } from './app-shell'
 import { useDashboardApi, useDashboardConnection } from './app-providers'
 
@@ -30,6 +31,7 @@ export function DashboardApp() {
         aria-busy={snapshot.isPending || meta.isPending}
         data-service-version={meta.data?.service_version}
       >
+        {snapshot.data ? <TaskGantt snapshot={snapshot.data} /> : null}
         {snapshot.isError && !snapshot.data ? (
           <div className="tasks-workspace__unavailable" role="alert">
             <strong>无法读取任务数据</strong>

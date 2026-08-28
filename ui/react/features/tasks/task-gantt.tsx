@@ -1,0 +1,128 @@
+import { Gantt, type IApi, type ITask } from '@svar-ui/react-gantt'
+import '@svar-ui/react-gantt/all.css'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+
+import type { DashboardSnapshot } from '@/lib/api/types'
+import {
+  createTaskColumns,
+  DEFAULT_TASK_COLUMN_WIDTHS,
+  resizeTaskColumn,
+  type TaskColumnId,
+  type TaskColumnWidths,
+} from './task-columns'
+import { projectTaskSnapshot } from './task-projection'
+import type { TaskGanttRow, TimelineZoom } from './task-types'
+
+const ROW_HEIGHT = 30
+const SCALE_HEIGHT = 24
+
+function TaskBar({ data: sourceData }: {
+  data: ITask
+  api: IApi
+  onaction: (event: { action: string; data: Record<string, unknown> }) => void
+}) {
+  const data = sourceData as TaskGanttRow
+  return (
+    <div
+      className="gantt-task-bar"
+      data-entity-type={data.entity_type}
+      data-task-id={data.id}
+      data-task-kind={data.type}
+      data-status={data.status}
+      data-planned-pattern={data.planned_pattern ?? undefined}
+    />
+  )
+}
+
+export function TaskGantt({
+  snapshot,
+  zoom = 'auto',
+  onTaskSelect = () => undefined,
+  onColumnResize = () => undefined,
+}: {
+  snapshot: DashboardSnapshot
+  zoom?: TimelineZoom
+  onTaskSelect?: (taskId: string) => void
+  onColumnResize?: (id: TaskColumnId, width: number) => void
+}) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const apiRef = useRef<IApi | null>(null)
+  const eventTag = useRef(`tasks-recorder-react-${Math.random().toString(36).slice(2)}`)
+  const [viewportWidth, setViewportWidth] = useState(900)
+  const [openIds, setOpenIds] = useState<Set<string> | null>(null)
+  const [columnWidths, setColumnWidths] = useState<TaskColumnWidths>(DEFAULT_TASK_COLUMN_WIDTHS)
+  const model = useMemo(() => projectTaskSnapshot(snapshot, {
+    viewportWidth,
+    openIds,
+    zoom,
+  }), [openIds, snapshot, viewportWidth, zoom])
+  const columns = useMemo(() => createTaskColumns(columnWidths), [columnWidths])
+  const gridWidth = Math.round(Math.min(720, Math.max(480, viewportWidth * 0.48)))
+
+  useLayoutEffect(() => {
+    const host = hostRef.current
+    if (!host) return undefined
+    const update = () => setViewportWidth(Math.max(320, host.clientWidth || 900))
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => () => apiRef.current?.detach(eventTag.current), [])
+
+  const initialize = useCallback((api: IApi) => {
+    apiRef.current?.detach(eventTag.current)
+    apiRef.current = api
+    api.on('select-task', ({ id }: { id: string | number }) => onTaskSelect(String(id)), {
+      tag: eventTag.current,
+    })
+    api.on('open-task', ({ id, mode }: { id: string | number; mode: boolean }) => {
+      setOpenIds((current) => {
+        const next = new Set(current ?? model.rows.filter(({ type }) => type === 'summary').map(({ id }) => id))
+        if (mode) next.add(String(id))
+        else next.delete(String(id))
+        return next
+      })
+    }, { tag: eventTag.current })
+    api.on('resize-column', ({ id, width }: { id: TaskColumnId; width: number }) => {
+      setColumnWidths((current) => resizeTaskColumn(current, id, width))
+      onColumnResize(id, width)
+    }, { tag: eventTag.current })
+  }, [model.rows, onColumnResize, onTaskSelect])
+
+  if (model.empty) {
+    return (
+      <div className="tasks-empty-state" role="status">
+        <strong>暂无任务</strong>
+        <span>Agent 开始工作后，项目周期会出现在这里。</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="tasks-gantt" ref={hostRef} data-scale={model.scale.id}>
+      <div className="wx-willow-dark-theme tasks-gantt__theme">
+        <Gantt
+          tasks={model.rows}
+          links={model.links}
+          columns={columns}
+          scales={model.scale.scales}
+          start={model.scale.start}
+          end={model.scale.end}
+          lengthUnit={model.scale.lengthUnit}
+          cellWidth={model.scale.cellWidth}
+          cellHeight={ROW_HEIGHT}
+          scaleHeight={SCALE_HEIGHT}
+          taskTemplate={TaskBar}
+          readonly
+          baselines
+          splitTasks
+          displayMode="all"
+          gridWidth={gridWidth}
+          init={initialize}
+        />
+      </div>
+    </div>
+  )
+}

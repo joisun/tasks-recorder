@@ -84,7 +84,11 @@ export async function compileReactDashboard({
   const javascript = bundled.outputFiles.find(({ path }) => extname(path) === '.js')?.text
   if (!javascript) throw new Error('React Dashboard bundle is incomplete')
   const generatedCss = bundled.outputFiles.find(({ path }) => extname(path) === '.css')?.text ?? ''
-  const dashboardCss = [await processCss(appCss, join(sourceRoot, 'styles', 'app.css')), generatedCss]
+  const localGeneratedCss = generatedCss.replace(/@font-face\s*\{[^{}]*\}/g, '')
+  const dashboardCss = [
+    await processCss(appCss, join(sourceRoot, 'styles', 'app.css')),
+    localGeneratedCss,
+  ]
     .filter(Boolean)
     .join('\n')
   if (/url\(\s*['\"]?https?:\/\//i.test(dashboardCss)) {

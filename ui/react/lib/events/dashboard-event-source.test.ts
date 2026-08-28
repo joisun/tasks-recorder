@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
-import { expect, test, vi } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
 import { DashboardEventSource } from './dashboard-event-source'
 import { queryKeys } from '../query/keys'
@@ -23,6 +23,8 @@ class FakeEventSource {
   }
 }
 
+afterEach(() => vi.useRealTimers())
+
 test('one changed revision invalidates the server-backed dashboard queries', () => {
   const queryClient = new QueryClient()
   const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue()
@@ -38,6 +40,29 @@ test('one changed revision invalidates the server-backed dashboard queries', () 
   expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.snapshot })
   expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.tasks })
   expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.executions })
+})
+
+test('continuous changed revisions are coalesced into one refresh per interval', () => {
+  vi.useFakeTimers()
+  const queryClient = new QueryClient()
+  const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue()
+  const source = new FakeEventSource()
+  const events = new DashboardEventSource({
+    queryClient,
+    createEventSource: () => source,
+    refreshIntervalMs: 2_000,
+  })
+
+  events.start()
+  source.emit('changed')
+  source.emit('changed')
+  source.emit('changed')
+
+  expect(invalidate).toHaveBeenCalledTimes(3)
+  vi.advanceTimersByTime(1_999)
+  expect(invalidate).toHaveBeenCalledTimes(3)
+  vi.advanceTimersByTime(1)
+  expect(invalidate).toHaveBeenCalledTimes(6)
 })
 
 test('connection state follows the native stream and close removes every listener', () => {
