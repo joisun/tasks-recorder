@@ -199,3 +199,185 @@ export interface ProjectAssignmentResponse {
   source_session: ProjectInboxRecord
   changed?: boolean
 }
+
+export type ScheduleCadence =
+  | { kind: 'once'; at: string; timezone_mode?: 'system' }
+  | { kind: 'hourly'; minute: number; timezone_mode?: 'system' }
+  | { kind: 'daily'; hour: number; minute: number; timezone_mode?: 'system' }
+  | { kind: 'weekly'; hour: number; minute: number; weekdays: number[]; timezone_mode?: 'system' }
+  | { kind: 'monthly'; hour: number; minute: number; day: number; timezone_mode?: 'system' }
+
+export type RunStatus =
+  | 'queued'
+  | 'claimed'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'timed_out'
+  | 'skipped_overlap'
+  | 'canceled'
+  | 'lost'
+  | 'interrupted'
+
+export type ScheduleExecutionStatus = RunStatus | 'dispatch_failed' | 'dispatch_stalled'
+
+export interface ScheduleExecutionSummary {
+  kind: 'run' | 'dispatch'
+  id: string
+  status: ScheduleExecutionStatus
+  trigger?: 'scheduled' | 'manual' | 'catchup' | string
+  requested_at?: string | null
+  last_attempted_at?: string | null
+  claim_deadline_at?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  error_code?: string | null
+  output_count?: number
+  attempt_count?: number
+}
+
+export interface ScheduleLastRun {
+  id: string
+  status: RunStatus
+  finished_at: string | null
+  reviewed_at: string | null
+}
+
+export interface ScheduleRecord {
+  id: string
+  title: string
+  prompt?: string
+  workspace: string
+  agent: string
+  cadence: ScheduleCadence
+  timezone_mode: string
+  thread_mode: string
+  sandbox_mode: 'read-only' | 'workspace-write' | 'danger-full-access'
+  model: string | null
+  reasoning_effort: string | null
+  timeout_seconds: number
+  enabled: boolean
+  etag: string
+  source_path: string
+  schedule_generation: number
+  sync_state: string
+  sync_error_code: string | null
+  next_run_at: string | null
+  last_run_at: string | null
+  unread_run_count?: number
+  last_run?: ScheduleLastRun | null
+  current_execution?: ScheduleExecutionSummary | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScheduleCapability {
+  supported: boolean
+  backend?: string
+  reason?: string | null
+  [key: string]: unknown
+}
+
+export interface InvalidScheduleDefinition {
+  path?: string
+  title?: string
+  code?: string
+  message?: string
+  [key: string]: unknown
+}
+
+export interface ScheduleListResponse {
+  capability: ScheduleCapability
+  jobs: ScheduleRecord[]
+  invalid?: InvalidScheduleDefinition[]
+}
+
+export interface ScheduleResponse {
+  job: ScheduleRecord
+  changed?: boolean
+}
+
+export interface RunFileChange {
+  path: string
+  kind: 'add' | 'update' | 'delete' | string
+}
+
+export interface RunRecord {
+  id: string
+  job_id: string
+  definition_etag: string
+  runtime_id: string
+  interactive: boolean
+  turn_revision: number | null
+  trigger: 'scheduled' | 'manual' | 'catchup' | string
+  status: RunStatus
+  thread_id: string | null
+  scheduled_for: string | null
+  claimed_at: string | null
+  started_at: string | null
+  heartbeat_at: string | null
+  finished_at: string | null
+  exit_code: number | null
+  error_code: string | null
+  final_message: string | null
+  file_changes: RunFileChange[]
+  has_stdout_log: boolean
+  has_stderr_log: boolean
+  reviewed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RunDispatchRecord extends ScheduleExecutionSummary {
+  kind: 'dispatch'
+  job_id?: string
+}
+
+export interface ScheduleRunsResponse {
+  runs: RunRecord[]
+  dispatches?: RunDispatchRecord[]
+}
+
+export interface RunResponse {
+  run: RunRecord
+  changed?: boolean
+}
+
+export interface RunLogResponse {
+  stream: 'stdout' | 'stderr'
+  content: string
+  truncated?: boolean
+}
+
+export interface RunControlResponse {
+  accepted: boolean
+  run_id: string
+  turn_revision: number
+}
+
+export interface RunResumeResponse {
+  ok?: boolean
+  terminal?: string
+  run_id?: string
+  session_id?: string
+}
+
+export interface RunEvent {
+  seq: number
+  run_id: string
+  type: string
+  timestamp: string
+  payload: Record<string, unknown>
+}
+
+export interface ScheduleMutationInput {
+  title: string
+  prompt: string
+  workspace: string
+  agent: string
+  cadence: ScheduleCadence
+  sandbox_mode: ScheduleRecord['sandbox_mode']
+  model: string | null
+  reasoning_effort: string | null
+  timeout_seconds: number
+}

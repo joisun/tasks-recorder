@@ -15,4 +15,8 @@ export const queryKeys = {
   inboxExecutionList: (count: number) => (
     ['dashboard', 'inbox', 'executions', count] as const
   ),
+  schedules: ['dashboard', 'schedules'] as const,
+  schedule: (id: string) => ['dashboard', 'schedules', id] as const,
+  runs: (scheduleId: string) => ['dashboard', 'schedules', scheduleId, 'runs'] as const,
+  run: (runId: string) => ['dashboard', 'runs', runId] as const,
 }

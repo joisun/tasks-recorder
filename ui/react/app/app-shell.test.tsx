@@ -2,7 +2,7 @@ import { QueryClient } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
-import type { DashboardApi } from '@/lib/api/dashboard-api'
+import { createDashboardApi, type DashboardApi } from '@/lib/api/dashboard-api'
 import type { DashboardMeta, DashboardSnapshot, TaskRecord } from '@/lib/api/types'
 import { AppProviders } from './app-providers'
 import { DashboardApp } from './dashboard-app'
@@ -80,6 +80,11 @@ const snapshot: DashboardSnapshot = {
 
 function dashboardApi(): DashboardApi {
   return {
+    ...createDashboardApi({
+      fetchImpl: vi.fn(async () => new Response('{}', {
+        headers: { 'Content-Type': 'application/json' },
+      })),
+    }),
     meta: vi.fn(async () => meta),
     snapshot: vi.fn(async () => snapshot),
     task: vi.fn(),

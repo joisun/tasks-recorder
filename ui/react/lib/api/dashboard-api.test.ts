@@ -55,6 +55,57 @@ describe('DashboardApi', () => {
     expect(fetchImpl).toHaveBeenCalledWith('/api/v1/tasks/task%2Fa/events', expect.any(Object))
   })
 
+  test('maps Scheduled and Run contracts to exact taskd routes and bodies', async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = []
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      calls.push({
+        url: String(url),
+        method: init.method ?? 'GET',
+        body: init.body === undefined ? null : JSON.parse(String(init.body)),
+      })
+      return jsonResponse({ ok: true, jobs: [], runs: [], run: null })
+    })
+    const api = createDashboardApi({ fetchImpl })
+    const scheduleId = 'schedule/id ?'
+    const runId = 'run/id ?'
+
+    await api.schedules()
+    await api.schedule(scheduleId)
+    await api.scheduleRuns(scheduleId)
+    await api.scheduledRun(runId)
+    await api.runScheduleNow(scheduleId, 'request-1')
+    await api.steerRun(runId, { expected_turn_revision: 2, text: 'Check rollback.' })
+    await api.stopRun(runId, { expected_turn_revision: 2 })
+    await api.scheduledRunLog(runId, { stream: 'stderr', tail: 4096 })
+    await api.markScheduledRunReviewed(runId)
+    await api.resumeScheduledRun(runId)
+
+    expect(calls).toEqual([
+      { url: '/api/v1/schedules', method: 'GET', body: null },
+      { url: '/api/v1/schedules/schedule%2Fid%20%3F', method: 'GET', body: null },
+      { url: '/api/v1/schedules/schedule%2Fid%20%3F/runs', method: 'GET', body: null },
+      { url: '/api/v1/scheduled-runs/run%2Fid%20%3F', method: 'GET', body: null },
+      {
+        url: '/api/v1/schedules/schedule%2Fid%20%3F/run', method: 'POST',
+        body: { idempotency_key: 'request-1' },
+      },
+      {
+        url: '/api/v1/runs/run%2Fid%20%3F/steer', method: 'POST',
+        body: { expected_turn_revision: 2, text: 'Check rollback.' },
+      },
+      {
+        url: '/api/v1/runs/run%2Fid%20%3F/stop', method: 'POST',
+        body: { expected_turn_revision: 2 },
+      },
+      {
+        url: '/api/v1/scheduled-runs/run%2Fid%20%3F/log?stream=stderr&tail=4096',
+        method: 'GET', body: null,
+      },
+      { url: '/api/v1/scheduled-runs/run%2Fid%20%3F/review', method: 'POST', body: {} },
+      { url: '/api/v1/scheduled-runs/run%2Fid%20%3F/resume', method: 'POST', body: {} },
+    ])
+  })
+
   test.each([
     {
       name: 'non-JSON response',

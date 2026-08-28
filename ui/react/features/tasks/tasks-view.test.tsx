@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 
-import { DashboardApiError, type DashboardApi } from '@/lib/api/dashboard-api'
+import { createDashboardApi, DashboardApiError, type DashboardApi } from '@/lib/api/dashboard-api'
 import type { DashboardSnapshot, TaskRecord } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query/keys'
 import { TasksView, filterTaskSnapshot } from './tasks-view'
@@ -55,6 +55,11 @@ const snapshot: DashboardSnapshot = {
 
 function apiMock(): DashboardApi {
   return {
+    ...createDashboardApi({
+      fetchImpl: vi.fn(async () => new Response('{}', {
+        headers: { 'Content-Type': 'application/json' },
+      })),
+    }),
     meta: vi.fn(), snapshot: vi.fn(),
     task: vi.fn(async (id) => ({ task: tasks.find((item) => item.id === id) as TaskRecord, children: [] })),
     events: vi.fn(async () => []), executions: vi.fn(async () => []),

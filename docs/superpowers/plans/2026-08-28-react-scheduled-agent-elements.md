@@ -35,17 +35,17 @@
 - Consumes: existing taskd Schedule, Run, log, steer, Stop, review and Resume routes.
 - Produces: `ScheduleRecord`, `RunRecord`, `RunEvent`, `RunLog` and typed `DashboardApi` methods.
 
-- [ ] **Step 1: Extend the existing API test**
+- [x] **Step 1: Extend the existing API test**
 
 Assert URL, method and body shapes for `schedules`, `schedule`, `scheduleRuns`, `scheduledRun`, `runScheduleNow`, `steerRun`, `stopRun`, `scheduledRunLog`, `markScheduledRunReviewed`, and `resumeScheduledRun`.
 
-- [ ] **Step 2: Verify the test fails for missing methods**
+- [x] **Step 2: Verify the test fails for missing methods**
 
 Run: `npm run test:ui -- ui/react/lib/api/dashboard-api.test.ts`
 
 Expected: FAIL because the React client lacks Scheduled/Run methods.
 
-- [ ] **Step 3: Add exact public types and methods**
+- [x] **Step 3: Add exact public types and methods**
 
 Reuse Legacy field names and request bodies. Add these query keys:
 
@@ -56,7 +56,7 @@ runs: (scheduleId: string) => ['schedules', scheduleId, 'runs'] as const,
 run: (runId: string) => ['runs', runId] as const,
 ```
 
-- [ ] **Step 4: Verify the client**
+- [x] **Step 4: Verify the client**
 
 Run: `npm run test:ui -- ui/react/lib/api/dashboard-api.test.ts && npm run check`
 
@@ -312,4 +312,3 @@ Update every current README, architecture and maintenance statement affected by 
 - [ ] **Step 5: Record evidence and decide cutover**
 
 Mark exact commands/results and screenshot paths. Remove the React migration label only after parity; retain Legacy files until a later explicit deletion task.
-

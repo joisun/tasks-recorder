@@ -6,6 +6,14 @@ import type {
   ExecutionFilters,
   ExecutionRecord,
   ProjectAssignmentResponse,
+  RunControlResponse,
+  RunLogResponse,
+  RunResponse,
+  RunResumeResponse,
+  ScheduleListResponse,
+  ScheduleMutationInput,
+  ScheduleResponse,
+  ScheduleRunsResponse,
   TaskDetailResponse,
   TaskEventRecord,
   TaskMutationResponse,
@@ -61,17 +69,49 @@ export interface DashboardApi {
     projectId: string,
     expectedProjectId?: string | null,
   ): Promise<ProjectAssignmentResponse>
+  schedules(): Promise<ScheduleListResponse>
+  schedule(id: string): Promise<ScheduleResponse>
+  createSchedule(input: ScheduleMutationInput): Promise<ScheduleResponse>
+  updateSchedule(
+    id: string,
+    expectedEtag: string,
+    patch: Partial<ScheduleMutationInput>,
+  ): Promise<ScheduleResponse>
+  pauseSchedule(id: string, expectedEtag: string): Promise<ScheduleResponse>
+  resumeSchedule(id: string, expectedEtag: string): Promise<ScheduleResponse>
+  deleteSchedule(id: string, expectedEtag: string): Promise<ScheduleResponse>
+  runScheduleNow(id: string, idempotencyKey: string): Promise<Record<string, unknown>>
+  scheduleRuns(id: string): Promise<ScheduleRunsResponse>
+  scheduledRun(id: string): Promise<RunResponse>
+  scheduledRunLog(
+    id: string,
+    options: { stream: 'stdout' | 'stderr'; tail: number },
+  ): Promise<RunLogResponse>
+  markScheduledRunReviewed(id: string): Promise<RunResponse>
+  resumeScheduledRun(id: string): Promise<RunResumeResponse>
+  steerRun(
+    id: string,
+    input: { expected_turn_revision: number; text: string },
+  ): Promise<RunControlResponse>
+  stopRun(id: string, input: { expected_turn_revision: number }): Promise<RunControlResponse>
 }
 
 type FetchImplementation = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
-function queryString(filters: ExecutionFilters = {}) {
+function queryString(filters: object = {}) {
   const parameters = new URLSearchParams()
   for (const [key, value] of Object.entries(filters)) {
     if (value !== undefined && value !== null && value !== '') parameters.set(key, String(value))
   }
   const query = parameters.toString()
   return query ? `?${query}` : ''
+}
+
+function scheduleEtag(value: string) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError('expectedEtag is required')
+  }
+  return value
 }
 
 export function createDashboardApi({
@@ -177,6 +217,50 @@ export function createDashboardApi({
         method: 'PATCH',
         body: { project_id: projectId, expected_project_id: expectedProjectId },
       },
+    ),
+    schedules: () => request('/api/v1/schedules'),
+    schedule: (id) => request(`/api/v1/schedules/${encodeURIComponent(id)}`),
+    createSchedule: (input) => request('/api/v1/schedules', { method: 'POST', body: input }),
+    updateSchedule: (id, expectedEtag, patch) => request(
+      `/api/v1/schedules/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: { expected_etag: scheduleEtag(expectedEtag), patch } },
+    ),
+    pauseSchedule: (id, expectedEtag) => request(
+      `/api/v1/schedules/${encodeURIComponent(id)}/pause`,
+      { method: 'POST', body: { expected_etag: scheduleEtag(expectedEtag) } },
+    ),
+    resumeSchedule: (id, expectedEtag) => request(
+      `/api/v1/schedules/${encodeURIComponent(id)}/resume`,
+      { method: 'POST', body: { expected_etag: scheduleEtag(expectedEtag) } },
+    ),
+    deleteSchedule: (id, expectedEtag) => request(
+      `/api/v1/schedules/${encodeURIComponent(id)}`,
+      { method: 'DELETE', body: { expected_etag: scheduleEtag(expectedEtag) } },
+    ),
+    runScheduleNow: (id, idempotencyKey) => request(
+      `/api/v1/schedules/${encodeURIComponent(id)}/run`,
+      { method: 'POST', body: { idempotency_key: idempotencyKey } },
+    ),
+    scheduleRuns: (id) => request(`/api/v1/schedules/${encodeURIComponent(id)}/runs`),
+    scheduledRun: (id) => request(`/api/v1/scheduled-runs/${encodeURIComponent(id)}`),
+    scheduledRunLog: (id, { stream, tail }) => request(
+      `/api/v1/scheduled-runs/${encodeURIComponent(id)}/log${queryString({ stream, tail })}`,
+    ),
+    markScheduledRunReviewed: (id) => request(
+      `/api/v1/scheduled-runs/${encodeURIComponent(id)}/review`,
+      { method: 'POST', body: {} },
+    ),
+    resumeScheduledRun: (id) => request(
+      `/api/v1/scheduled-runs/${encodeURIComponent(id)}/resume`,
+      { method: 'POST', body: {} },
+    ),
+    steerRun: (id, { expected_turn_revision, text }) => request(
+      `/api/v1/runs/${encodeURIComponent(id)}/steer`,
+      { method: 'POST', body: { expected_turn_revision, text } },
+    ),
+    stopRun: (id, { expected_turn_revision }) => request(
+      `/api/v1/runs/${encodeURIComponent(id)}/stop`,
+      { method: 'POST', body: { expected_turn_revision } },
     ),
   }
 }
