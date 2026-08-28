@@ -24,11 +24,20 @@ import { createTaskDetailsSheet } from './task-details-sheet.mjs'
 import { createExecutionInbox, inboxButtonLabel } from './execution-inbox.mjs'
 import { createProjectInbox, projectInboxButtonLabel } from './project-inbox.mjs'
 import { createSettingsDialog } from './settings-dialog.mjs'
+import { createScheduledTaskEditor } from './scheduled-task-editor.mjs'
+import { createScheduledRunReview } from './scheduled-run-review.mjs'
+import {
+  createScheduledTasksView,
+  nextDashboardView,
+  viewSwitchMarkup,
+} from './scheduled-tasks.mjs'
 
 const TIMELINE_LABEL_KEY = 'dashboard-show-timeline-labels'
 const TIMELINE_PANEL_KEY = 'dashboard-show-timeline'
 const TIMELINE_ZOOM_KEY = 'dashboard-timeline-zoom-v2'
 const GRID_WIDTH_KEY = 'dashboard-grid-width'
+const DASHBOARD_VIEW_KEY = 'dashboard-view-v1'
+const DASHBOARD_VIEWS = ['tasks', 'scheduled']
 const STATUS_LABELS = {
   active: '进行中', waiting: '等待中', blocked: '已阻塞', planned: '待安排',
   done: '已完成', canceled: '已取消',
@@ -48,10 +57,14 @@ const TIMELINE_ZOOM_DEFS = [
 const dashboardApi = createDashboardApi()
 const preferenceStorage = resolvePreferenceStorage()
 const ganttElement = document.getElementById('gantt_here')
+const scheduledTasksElement = document.getElementById('scheduled-tasks-panel')
 
 let raw = []
 let index = createTaskIndex(raw)
 let activeFilter = 'all'
+let activeDashboardView = readChoicePreference(
+  preferenceStorage, DASHBOARD_VIEW_KEY, DASHBOARD_VIEWS, 'tasks',
+)
 let showTimelineLabels = readBooleanPreference(preferenceStorage, TIMELINE_LABEL_KEY)
 let showTimeline = readBooleanPreference(preferenceStorage, TIMELINE_PANEL_KEY, true)
 let timelineZoom = readChoicePreference(
@@ -66,6 +79,9 @@ let detailsSheet = null
 let executionInbox = null
 let projectInbox = null
 let settingsDialog = null
+let scheduledTasksView = null
+let scheduledTaskEditor = null
+let scheduledRunReview = null
 let unassignedExecutionCount = 0
 let unresolvedProjectCount = 0
 let projectInboxItems = []
@@ -163,6 +179,43 @@ function installSettingsInteractions() {
     element: document.getElementById('settings-dialog'),
     backdrop: document.getElementById('settings-backdrop'),
     api: dashboardApi,
+  })
+}
+
+function installScheduledTaskEditorInteractions() {
+  scheduledTaskEditor = createScheduledTaskEditor({
+    element: document.getElementById('scheduled-task-editor'),
+    backdrop: document.getElementById('scheduled-task-editor-backdrop'),
+    api: dashboardApi,
+    onSaved: async () => scheduledTasksView?.refresh(),
+    onMessage: (message) => {
+      if (activeDashboardView === 'scheduled' && message) transientMutationMessage(message)
+    },
+  })
+}
+
+function installScheduledRunReviewInteractions() {
+  scheduledRunReview = createScheduledRunReview({
+    element: document.getElementById('scheduled-run-review'),
+    backdrop: document.getElementById('scheduled-run-review-backdrop'),
+    api: dashboardApi,
+    onReviewed: async () => scheduledTasksView?.refresh(),
+    onMessage: (message) => {
+      if (activeDashboardView === 'scheduled' && message) transientMutationMessage(message)
+    },
+  })
+}
+
+function installScheduledTasksInteractions() {
+  scheduledTasksView = createScheduledTasksView({
+    element: scheduledTasksElement,
+    api: dashboardApi,
+    onCreate: (trigger) => scheduledTaskEditor?.openCreate({ trigger }),
+    onEdit: (job, trigger) => scheduledTaskEditor?.openEdit(job.id, { trigger }),
+    onReview: (job, trigger) => scheduledRunReview?.open(job.id, job.last_run?.id ?? null, { trigger }),
+    onMessage: (message) => {
+      if (activeDashboardView === 'scheduled' && message) transientMutationMessage(message)
+    },
   })
 }
 
@@ -336,6 +389,7 @@ function installSessionCopyInteractions() {
 
 function renderTabs() {
   const tabs = document.getElementById('tabs')
+  const tasksActive = activeDashboardView === 'tasks'
   const filters = TAB_DEFS.map(([key, label]) => (
     `<button class="tab ${activeFilter === key ? 'is-active' : ''}" type="button" role="tab" aria-selected="${activeFilter === key}" tabindex="${activeFilter === key ? '0' : '-1'}" data-key="${key}">${label}<span class="tab-count">${tabCount(key, raw, index)}</span></button>`
   )).join('')
@@ -347,9 +401,10 @@ function renderTabs() {
        <button class="timeline-tool${showTimeline ? ' is-active' : ''}" type="button" data-dashboard-view="timeline" aria-pressed="${showTimeline}" title="显示 Timeline">Timeline</button>`
     : `<button class="timeline-tool timeline-panel-toggle${showTimeline ? ' is-active' : ''}" type="button" data-dashboard-view="toggle" aria-pressed="${showTimeline}" title="${showTimeline ? '隐藏 Timeline' : '显示 Timeline'}">Timeline</button>`
   tabs.innerHTML = `
-    <div class="status-filter-tabs" role="tablist" aria-label="任务状态">${filters}</div>
+    ${viewSwitchMarkup(activeDashboardView)}
+    ${tasksActive ? `<div class="status-filter-tabs" role="tablist" aria-label="任务状态">${filters}</div>` : ''}
     <div class="toolbar-actions">
-      <div class="inbox-tools" role="group" aria-label="待认领工作">
+      ${tasksActive ? `<div class="inbox-tools" role="group" aria-label="待认领工作">
         <button class="inbox-toggle${unresolvedProjectCount > 0 ? ' has-items' : ''}" type="button" data-project-inbox-toggle aria-label="打开 Project Inbox，${unresolvedProjectCount} 个 Source Session 待处理"><span>${projectInboxButtonLabel(unresolvedProjectCount)}</span></button>
         <button class="inbox-toggle${unassignedExecutionCount > 0 ? ' has-items' : ''}" type="button" data-execution-inbox-toggle aria-label="打开 Attribution Inbox，${unassignedExecutionCount} 个 Execution 待处理"><span>${inboxButtonLabel(unassignedExecutionCount)}</span></button>
       </div>
@@ -359,14 +414,22 @@ function renderTabs() {
         ${viewModeControls}
         <button class="timeline-tool timeline-label-toggle${showTimelineLabels ? ' is-active' : ''}" type="button" aria-pressed="${showTimelineLabels}" title="${showTimelineLabels ? '隐藏任务名称' : '显示任务名称'}" ${showTimeline ? '' : 'disabled'}>标签</button>
         <button class="timeline-tool locate-now" type="button" title="定位到今天">今天</button>
-      </div>
+      </div>` : ''}
       <button class="settings-toggle" type="button" data-settings-toggle aria-label="打开 Settings"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="2.4"></circle><path d="M9 1.75v1.5M9 14.75v1.5M16.25 9h-1.5M3.25 9h-1.5M14.13 3.87l-1.06 1.06M4.93 13.07l-1.06 1.06M14.13 14.13l-1.06-1.06M4.93 4.93 3.87 3.87"></path><circle cx="9" cy="9" r="5.15"></circle></svg></button>
     </div>`
 
+  tabs.querySelectorAll('[data-dashboard-view-tab]').forEach((button) => button.addEventListener('click', () => {
+    selectDashboardView(button.dataset.dashboardViewTab, { focus: true })
+  }))
+  tabs.querySelector('.global-view-tabs').addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    selectDashboardView(nextDashboardView(activeDashboardView, event.key), { focus: true })
+  })
   tabs.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => {
     selectTaskFilter(button.dataset.key, { focus: true })
   }))
-  tabs.querySelector('.status-filter-tabs').addEventListener('keydown', (event) => {
+  tabs.querySelector('.status-filter-tabs')?.addEventListener('keydown', (event) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
     const buttons = [...event.currentTarget.querySelectorAll('[role="tab"]')]
@@ -376,13 +439,13 @@ function renderTabs() {
         : (current + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length
     buttons[next]?.click()
   })
-  tabs.querySelector('[data-project-inbox-toggle]').addEventListener('click', (event) => {
+  tabs.querySelector('[data-project-inbox-toggle]')?.addEventListener('click', (event) => {
     detailsSheet?.close()
     executionInbox?.close()
     settingsDialog?.close()
     projectInbox?.open(event.currentTarget)
   })
-  tabs.querySelector('[data-execution-inbox-toggle]').addEventListener('click', (event) => {
+  tabs.querySelector('[data-execution-inbox-toggle]')?.addEventListener('click', (event) => {
     detailsSheet?.close()
     projectInbox?.close()
     settingsDialog?.close()
@@ -392,13 +455,15 @@ function renderTabs() {
     detailsSheet?.close()
     executionInbox?.close()
     projectInbox?.close()
+    scheduledTaskEditor?.close()
+    scheduledRunReview?.close()
     settingsDialog?.open(event.currentTarget)
   })
   tabs.querySelectorAll('[data-dashboard-view]').forEach((button) => button.addEventListener('click', () => {
     const mode = button.dataset.dashboardView
     applyLayout(mode === 'toggle' ? !showTimeline : mode === 'timeline')
   }))
-  tabs.querySelector('.timeline-label-toggle').addEventListener('click', () => {
+  tabs.querySelector('.timeline-label-toggle')?.addEventListener('click', () => {
     showTimelineLabels = !showTimelineLabels
     writeBooleanPreference(preferenceStorage, TIMELINE_LABEL_KEY, showTimelineLabels)
     renderTabs()
@@ -413,7 +478,7 @@ function renderTabs() {
     renderTabs()
     requestAnimationFrame(() => rendererController.locateNow())
   }))
-  tabs.querySelector('.locate-now').addEventListener('click', () => {
+  tabs.querySelector('.locate-now')?.addEventListener('click', () => {
     if (!showTimeline) applyLayout(true)
     rendererController.locateNow()
   })
@@ -425,6 +490,34 @@ function selectTaskFilter(nextFilter, { focus = false } = {}) {
   renderTabs()
   rendererController.setFilter(activeFilter)
   if (focus) document.querySelector(`.tab[data-key="${activeFilter}"]`)?.focus({ preventScroll: true })
+}
+
+function selectDashboardView(nextView, { focus = false } = {}) {
+  if (!DASHBOARD_VIEWS.includes(nextView)) return
+  const changed = activeDashboardView !== nextView
+  activeDashboardView = nextView
+  writeChoicePreference(preferenceStorage, DASHBOARD_VIEW_KEY, activeDashboardView, DASHBOARD_VIEWS)
+  const scheduled = activeDashboardView === 'scheduled'
+  if (scheduled) {
+    rendererController.setActive(false)
+    ganttElement.hidden = true
+    scheduledTasksElement.hidden = false
+    closeStatusMenu({ restoreFocus: false })
+    detailsSheet?.close()
+    executionInbox?.close()
+    projectInbox?.close()
+    if (changed) void scheduledTasksView?.show()
+  } else {
+    ganttElement.hidden = false
+    rendererController.setActive(true)
+    scheduledTasksElement.hidden = true
+    scheduledTaskEditor?.close()
+    scheduledRunReview?.close()
+    scheduledTasksView?.hide()
+    if (changed) void coordinator?.invalidate()
+  }
+  renderTabs()
+  if (focus) document.querySelector(`[data-dashboard-view-tab="${activeDashboardView}"]`)?.focus({ preventScroll: true })
 }
 
 function renderRefreshState() {
@@ -700,6 +793,9 @@ installTaskDetailsInteractions()
 installExecutionInboxInteractions()
 installProjectInboxInteractions()
 installSettingsInteractions()
+installScheduledTaskEditorInteractions()
+installScheduledRunReviewInteractions()
+installScheduledTasksInteractions()
 
 coordinator = createSnapshotCoordinator({
   load: () => dashboardApi.snapshot(),
@@ -714,13 +810,29 @@ coordinator = createSnapshotCoordinator({
   },
 })
 
+// Global navigation must exist even when the remembered initial view is
+// Scheduled and no Tasks snapshot has been requested yet.
+renderTabs()
+
+function refreshActiveDashboardView() {
+  return activeDashboardView === 'scheduled'
+    ? scheduledTasksView?.refresh()
+    : coordinator.invalidate()
+}
+
+if (activeDashboardView === 'scheduled') {
+  rendererController.setActive(false)
+  ganttElement.hidden = true
+  void scheduledTasksView.show()
+}
+
 if (typeof EventSource !== 'function') {
   setRefreshMessage('connection', '当前浏览器不支持实时连接，仅加载一次任务数据')
-  coordinator.invalidate()
+  void refreshActiveDashboardView()
 } else {
   const events = createEventStream({
     url: '/api/v1/events',
-    invalidate: () => coordinator.invalidate(),
+    invalidate: () => refreshActiveDashboardView(),
     onConnectionState: (state) => {
       setRefreshMessage('connection', state === 'connected' ? '' : '实时连接已断开，正在重连…')
     },
@@ -729,6 +841,8 @@ if (typeof EventSource !== 'function') {
   window.addEventListener('beforeunload', () => {
     coordinator.stop()
     events.stop()
+    scheduledTasksView.destroy()
+    scheduledRunReview.destroy()
     rendererController.destroy()
   }, { once: true })
 }

@@ -1,4 +1,11 @@
 const DEFAULT_TIMEOUT_MS = 5_000
+const SCHEDULE_CREATE_FIELDS = Object.freeze([
+  'title', 'prompt', 'workspace', 'cadence', 'sandbox_mode', 'model',
+  'reasoning_effort', 'timeout_seconds',
+])
+const SCHEDULE_PATCH_FIELDS = Object.freeze([...SCHEDULE_CREATE_FIELDS, 'next_run_at'])
+const RUN_STEER_FIELDS = Object.freeze(['expected_turn_revision', 'text'])
+const RUN_STOP_FIELDS = Object.freeze(['expected_turn_revision'])
 
 export class DashboardApiError extends Error {
   constructor(message, { status = 0, code = 'DASHBOARD_REQUEST_FAILED', details = null } = {}) {
@@ -17,6 +24,22 @@ function queryString(filters = {}) {
   }
   const query = params.toString()
   return query ? `?${query}` : ''
+}
+
+function pickFields(input, fields) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
+  const result = {}
+  for (const field of fields) {
+    if (Object.hasOwn(input, field)) result[field] = input[field]
+  }
+  return result
+}
+
+function scheduleEtag(expectedEtag) {
+  if (typeof expectedEtag !== 'string' || !/^[0-9a-f]{64}$/.test(expectedEtag)) {
+    throw new TypeError('expectedEtag must be a sha256 etag')
+  }
+  return expectedEtag
 }
 
 export function createDashboardApi({
@@ -77,6 +100,39 @@ export function createDashboardApi({
   )
 
   return {
+    meta: () => request('/api/v1/meta'),
+    runtimes: () => request('/api/v1/runtimes'),
+    refreshRuntimes: () => request('/api/v1/runtimes/refresh', {
+      method: 'POST', body: {},
+    }),
+    runtimeModels: (id) => request(
+      `/api/v1/runtimes/${encodeURIComponent(id)}/models`,
+    ),
+    createRun: (scheduleId, idempotencyKey) => request('/api/v1/runs', {
+      method: 'POST',
+      body: {
+        schedule_id: scheduleId,
+        origin: 'manual',
+        idempotency_key: idempotencyKey,
+      },
+    }),
+    runs: (filters = {}) => request(`/api/v1/runs${queryString(filters)}`),
+    run: (id) => request(`/api/v1/runs/${encodeURIComponent(id)}`),
+    cancelRun: (id) => request(`/api/v1/runs/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST', body: {},
+    }),
+    steerRun: (id, input) => request(`/api/v1/runs/${encodeURIComponent(id)}/steer`, {
+      method: 'POST', body: pickFields(input, RUN_STEER_FIELDS),
+    }),
+    stopRun: (id, input) => request(`/api/v1/runs/${encodeURIComponent(id)}/stop`, {
+      method: 'POST', body: pickFields(input, RUN_STOP_FIELDS),
+    }),
+    markRunReviewed: (id) => request(`/api/v1/runs/${encodeURIComponent(id)}/review`, {
+      method: 'POST', body: {},
+    }),
+    resumeRun: (id) => request(`/api/v1/runs/${encodeURIComponent(id)}/resume`, {
+      method: 'POST', body: {},
+    }),
     snapshot: () => request('/api/v1/snapshot'),
     settings: () => request('/api/v1/settings'),
     updateSettings: (input) => request('/api/v1/settings', { method: 'PATCH', body: input }),
@@ -109,5 +165,44 @@ export function createDashboardApi({
     archiveTask: (id, expectedRevision) => revisionAction(id, 'archive', expectedRevision),
     deleteTask: (id, expectedRevision) => revisionAction(id, 'delete', expectedRevision),
     restoreTask: (id, expectedRevision) => revisionAction(id, 'restore', expectedRevision),
+    schedules: () => request('/api/v1/schedules'),
+    schedule: (id) => request(`/api/v1/schedules/${encodeURIComponent(id)}`),
+    createSchedule: (input) => request('/api/v1/schedules', {
+      method: 'POST', body: pickFields(input, SCHEDULE_CREATE_FIELDS),
+    }),
+    updateSchedule: (id, expectedEtag, patch) => request(`/api/v1/schedules/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: {
+        expected_etag: scheduleEtag(expectedEtag),
+        patch: pickFields(patch, SCHEDULE_PATCH_FIELDS),
+      },
+    }),
+    pauseSchedule: (id, expectedEtag) => request(
+      `/api/v1/schedules/${encodeURIComponent(id)}/pause`,
+      { method: 'POST', body: { expected_etag: scheduleEtag(expectedEtag) } },
+    ),
+    resumeSchedule: (id, expectedEtag) => request(
+      `/api/v1/schedules/${encodeURIComponent(id)}/resume`,
+      { method: 'POST', body: { expected_etag: scheduleEtag(expectedEtag) } },
+    ),
+    runScheduleNow: (id, idempotencyKey) => request(
+      `/api/v1/schedules/${encodeURIComponent(id)}/run`,
+      { method: 'POST', body: { idempotency_key: idempotencyKey } },
+    ),
+    deleteSchedule: (id, expectedEtag) => request(`/api/v1/schedules/${encodeURIComponent(id)}`, {
+      method: 'DELETE', body: { expected_etag: scheduleEtag(expectedEtag) },
+    }),
+    scheduleRuns: (id) => request(`/api/v1/schedules/${encodeURIComponent(id)}/runs`),
+    scheduledRun: (id) => request(`/api/v1/scheduled-runs/${encodeURIComponent(id)}`),
+    scheduledRunLog: (id, options = {}) => {
+      const { stream, tail } = options ?? {}
+      return request(`/api/v1/scheduled-runs/${encodeURIComponent(id)}/log${queryString({ stream, tail })}`)
+    },
+    markScheduledRunReviewed: (id) => request(`/api/v1/scheduled-runs/${encodeURIComponent(id)}/review`, {
+      method: 'POST', body: {},
+    }),
+    resumeScheduledRun: (id) => request(`/api/v1/scheduled-runs/${encodeURIComponent(id)}/resume`, {
+      method: 'POST', body: {},
+    }),
   }
 }

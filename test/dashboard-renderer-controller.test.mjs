@@ -132,6 +132,29 @@ test('switches compact layouts between full-width chart and grid modes', () => {
   assert.equal(render[2].displayMode, 'grid')
 })
 
+test('treats an inactive dashboard route as a renderer lifecycle boundary', () => {
+  const renderer = fakeRenderer()
+  const controller = createDashboardRendererController({ renderer, now: () => NOW })
+  controller.setSnapshot(snapshot, { initial: true })
+  renderer.calls.length = 0
+
+  controller.setActive(false)
+  const callsAfterSuspend = renderer.calls.length
+  controller.setResponsiveLayout({ compact: true, timelineVisible: true, gridWidth: 240 })
+  controller.setFilter('blocked')
+  controller.setSnapshot({ ...snapshot, tasks: snapshot.tasks.map((task) => ({ ...task })) })
+  controller.locateNow()
+
+  assert.equal(renderer.calls.length, callsAfterSuspend)
+
+  controller.setActive(true)
+  assert.deepEqual(renderer.calls.slice(callsAfterSuspend).map(([name]) => name), ['render', 'locateNow'])
+  const render = renderer.calls.at(-2)
+  assert.equal(render[2].displayMode, 'chart')
+  assert.equal(render[2].gridWidth, 240)
+  assert.deepEqual(render[1].tasks.map(({ id }) => id), ['blocked'])
+})
+
 test('switches timeline granularity through semantic day, week, and month presets', () => {
   const renderer = fakeRenderer()
   const controller = createDashboardRendererController({ renderer, now: () => NOW })

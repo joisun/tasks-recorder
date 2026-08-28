@@ -9,9 +9,10 @@
 </head>
 <body>
 <main class="app" data-testid="agent-tasks-dashboard">
-  <nav class="tabs" id="tabs" aria-label="按任务状态筛选"></nav>
+  <nav class="tabs" id="tabs" aria-label="Dashboard 导航"></nav>
   <div class="refresh-state" id="refresh-state" role="status" aria-live="polite"></div>
   <div id="gantt_here" aria-label="Agent 任务甘特图"></div>
+  <section class="scheduled-tasks-panel" id="scheduled-tasks-panel" role="tabpanel" aria-labelledby="dashboard-view-scheduled" hidden></section>
 </main>
 <div class="details-backdrop" id="task-details-backdrop" hidden></div>
 <aside class="task-details-sheet" id="task-details-sheet" role="dialog" aria-modal="true" aria-labelledby="task-details-title" hidden></aside>
@@ -21,6 +22,10 @@
 <aside class="execution-inbox-layer project-inbox-layer" id="project-inbox" hidden></aside>
 <div class="settings-backdrop" id="settings-backdrop" hidden></div>
 <aside class="settings-dialog-layer" id="settings-dialog" hidden></aside>
+<div class="scheduled-task-editor-backdrop" id="scheduled-task-editor-backdrop" hidden></div>
+<aside class="scheduled-task-editor-layer" id="scheduled-task-editor" role="dialog" aria-modal="true" aria-labelledby="scheduled-task-editor-title" hidden></aside>
+<div class="scheduled-run-review-backdrop" id="scheduled-run-review-backdrop" hidden></div>
+<aside class="scheduled-run-review-layer" id="scheduled-run-review" role="dialog" aria-modal="true" aria-labelledby="scheduled-run-review-title" hidden></aside>
 <script type="module">/*__DASHBOARD_JS__*/</script>
 </body>
 </html>

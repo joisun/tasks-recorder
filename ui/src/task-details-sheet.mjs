@@ -247,7 +247,7 @@ export function detailsSheetMarkup({
   showChildForm = false,
 }) {
   const actions = taskActionVisibility(task)
-  return `<header class="details-header"><div><span class="details-eyebrow">Task details</span><h2 id="task-details-title">${escapeMarkup(task.title)}</h2></div><button class="details-close" type="button" data-details-close aria-label="关闭任务详情">×</button></header>
+  return `<header class="details-header"><div><h2 id="task-details-title">${escapeMarkup(task.title)}</h2></div><button class="details-close" type="button" data-details-close aria-label="关闭任务详情">×</button></header>
     <div class="details-tabs" role="tablist" aria-label="任务详情">${tabMarkup(activeTab)}</div>
     <div class="details-message${message ? ' is-visible' : ''}" role="status" aria-live="polite">${escapeMarkup(message)}</div>
     <div class="details-body" aria-busy="${busy}">

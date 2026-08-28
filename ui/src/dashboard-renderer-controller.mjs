@@ -19,13 +19,15 @@ export function createDashboardRendererController({
   let snapshot = { tasks: [], home_directory: '' }
   let filter = 'all'
   let rendered = false
+  let active = true
+  let pendingLocate = false
   let view = {
     displayMode: 'all', gridWidth: 792, labelsVisible: false, timelineZoom: 'auto', ...initialView,
   }
   let lastModel = null
 
   function captureView() {
-    if (rendered) {
+    if (rendered && active) {
       const captured = renderer.captureState()
       const visibleSummaryIds = new Set(
         lastModel?.tasks.filter(({ type }) => type === 'summary').map(({ id }) => String(id)) ?? [],
@@ -89,12 +91,30 @@ export function createDashboardRendererController({
   function renderCurrent(nextView = captureView()) {
     view = nextView
     lastModel = createModel()
+    if (!active) return lastModel
     renderer.render(lastModel, view)
     rendered = true
     return lastModel
   }
 
   return {
+    setActive(nextActive) {
+      const shouldActivate = Boolean(nextActive)
+      if (shouldActivate === active) return lastModel
+      if (!shouldActivate) {
+        view = captureView()
+        active = false
+        return lastModel
+      }
+      active = true
+      const model = renderCurrent(view)
+      if (pendingLocate) {
+        pendingLocate = false
+        renderer.locateNow(now())
+      }
+      return model
+    },
+
     setSnapshot(nextSnapshot, { initial = false } = {}) {
       if (!nextSnapshot || !Array.isArray(nextSnapshot.tasks)) {
         throw new TypeError('Dashboard snapshot is invalid')
@@ -112,6 +132,13 @@ export function createDashboardRendererController({
     refreshTask(taskId, patch = {}) {
       const projected = lastModel?.tasks.find(({ id }) => id === taskId)
       if (!projected) return false
+      if (!active) {
+        lastModel = {
+          ...lastModel,
+          tasks: lastModel.tasks.map((task) => task.id === taskId ? { ...task, ...patch } : task),
+        }
+        return true
+      }
       renderer.refreshTask(taskId, { ...projected, ...patch })
       return true
     },
@@ -136,12 +163,12 @@ export function createDashboardRendererController({
 
     setGridWidth(width) {
       view = { ...view, gridWidth: width }
-      renderer.setGridWidth(width)
+      if (active) renderer.setGridWidth(width)
     },
 
     setLabelsVisible(visible) {
       view = { ...view, labelsVisible: Boolean(visible) }
-      renderer.setLabelsVisible(Boolean(visible))
+      if (active) renderer.setLabelsVisible(Boolean(visible))
     },
 
     setTimelineZoom(nextZoom) {
@@ -150,7 +177,8 @@ export function createDashboardRendererController({
     },
 
     locateNow() {
-      renderer.locateNow(now())
+      if (active) renderer.locateNow(now())
+      else pendingLocate = true
     },
 
     captureState() {
@@ -164,6 +192,7 @@ export function createDashboardRendererController({
     destroy() {
       renderer.destroy()
       rendered = false
+      active = false
     },
   }
 }

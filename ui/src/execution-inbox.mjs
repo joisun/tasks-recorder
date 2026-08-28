@@ -138,7 +138,7 @@ export function inboxMarkup({
     .sort((left, right) => left.localeCompare(right))
   const allVisibleSelected = filtered.length > 0 && filtered.every(({ id }) => selection.has(id))
   return `<section class="inbox-shell" role="dialog" aria-modal="true" aria-labelledby="execution-inbox-title">
-    <header class="inbox-header"><div><span class="details-eyebrow">Attribution inbox</span><h2 id="execution-inbox-title">任务待归属</h2><p>${executions.length} 个 Work Execution</p></div><button class="details-close" type="button" data-inbox-close aria-label="关闭任务待归属">×</button></header>
+    <header class="inbox-header"><div><h2 id="execution-inbox-title">任务待归属</h2><p>${executions.length} 个 Work Execution</p></div><button class="details-close" type="button" data-inbox-close aria-label="关闭任务待归属">×</button></header>
     <div class="inbox-message${message ? ' is-visible' : ''}" role="status" aria-live="polite">${escapeMarkup(message)}</div>
     <div class="inbox-filters">
       <label><span>搜索 Agent / Path</span><input type="search" value="${escapeMarkup(filters.query)}" data-inbox-filter="query" placeholder="researcher / worktree"></label>

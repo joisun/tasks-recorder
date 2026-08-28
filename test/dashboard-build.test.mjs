@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
+import { compileDashboard } from '../ui/compiler.mjs'
+
 test('standalone dashboard bundle uses REST + SSE and contains no embedded MCP Apps transport', async () => {
   const html = await readFile(new URL('../ui/dist/index.html', import.meta.url), 'utf8')
 
@@ -33,6 +35,29 @@ test('standalone dashboard bundle uses REST + SSE and contains no embedded MCP A
   assert.doesNotMatch(html, /getLayoutView\?\.\(["']grid["']\)\?\.\$view/)
   assert.doesNotMatch(html, /DHTMLX Gantt Standard 9\.1 · GPL-2\.0 · SQLite 实时视图/)
   assert.doesNotMatch(html, /class="license-note"/)
+})
+
+test('Dashboard source build includes the accessible Scheduled view switch, editor and Run Review sheets, and right-aligned Settings', async () => {
+  const html = await compileDashboard()
+  const source = await readFile(new URL('../ui/src/dashboard.mjs', import.meta.url), 'utf8')
+
+  assert.match(html, /data-dashboard-view-tab="scheduled"/)
+  assert.match(html, /data-dashboard-view-tab="tasks"/)
+  assert.match(html, /scheduled-tasks-panel/)
+  assert.match(html, /global-view-tabs/)
+  assert.match(html, /scheduled-task-editor/)
+  assert.match(html, /scheduled-run-review/)
+  assert.match(html, /data-run-review-action/)
+  assert.match(html, /markScheduledRunReviewed/)
+  assert.match(html, /resumeScheduledRun/)
+  assert.match(html, /data-schedule-editor-form/)
+  assert.match(html, /createSchedule/)
+  assert.match(html, /updateSchedule/)
+  assert.match(html, /deleteSchedule/)
+  assert.match(html, /\.tabs:has\(\.global-view-tabs\):not\(:has\(\.status-filter-tabs\)\) \.toolbar-actions\{margin-left:auto\}/)
+  assert.match(html, /\.tabs:has\(\.global-view-tabs\):not\(:has\(\.status-filter-tabs\)\)\{display:grid;height:54px;min-height:54px;grid-template-columns:minmax\(0,1fr\) 44px/)
+  assert.match(html, /\.scheduled-task-main\{grid-column:1\/-1\}/)
+  assert.match(source, /coordinator = createSnapshotCoordinator\([\s\S]*?\nrenderTabs\(\)\n\nfunction refreshActiveDashboardView/)
 })
 
 test('timeline width does not become the vertical flex basis of the chart', async () => {

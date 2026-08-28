@@ -45,7 +45,7 @@ export function projectInboxMarkup({ sessions = [], projects = [], message = '',
     </li>`
   }).join('')
   return `<section class="inbox-shell project-inbox-shell" role="dialog" aria-modal="true" aria-labelledby="project-inbox-title">
-    <header class="inbox-header"><div><span class="details-eyebrow">Project resolution</span><h2 id="project-inbox-title">项目待认领</h2><p>${sessions.length} 个 Source Session</p></div><button class="details-close" type="button" data-project-inbox-close aria-label="关闭项目待认领">×</button></header>
+    <header class="inbox-header"><div><h2 id="project-inbox-title">项目待认领</h2><p>${sessions.length} 个 Source Session</p></div><button class="details-close" type="button" data-project-inbox-close aria-label="关闭项目待认领">×</button></header>
     <div class="inbox-message${message ? ' is-visible' : ''}" role="status" aria-live="polite">${escapeHtml(message)}</div>
     <p class="project-inbox-explainer">Project 只接受你的显式选择或已登记的本地路径；branch 名不会自动合并项目。</p>
     <div class="inbox-list-wrap" aria-busy="${Boolean(busyId)}"><ol class="inbox-list project-inbox-list">${rows || '<li class="details-empty">所有 Session 都已归属 Project</li>'}</ol></div>
