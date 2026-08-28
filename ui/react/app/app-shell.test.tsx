@@ -83,6 +83,7 @@ function dashboardApi(): DashboardApi {
     meta: vi.fn(async () => meta),
     snapshot: vi.fn(async () => snapshot),
     task: vi.fn(),
+    events: vi.fn(async () => []),
     executions: vi.fn(async () => []),
     updateTask: vi.fn(),
     resumeTask: vi.fn(),

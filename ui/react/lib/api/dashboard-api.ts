@@ -7,6 +7,7 @@ import type {
   ExecutionRecord,
   ProjectAssignmentResponse,
   TaskDetailResponse,
+  TaskEventRecord,
   TaskMutationResponse,
   TaskPatch,
   TaskResumeResponse,
@@ -48,6 +49,7 @@ export interface DashboardApi {
   meta(): Promise<DashboardMeta>
   snapshot(): Promise<DashboardSnapshot>
   task(id: string): Promise<TaskDetailResponse>
+  events(id: string): Promise<TaskEventRecord[]>
   executions(filters?: ExecutionFilters): Promise<ExecutionRecord[]>
   updateTask(id: string, expectedRevision: number, patch: TaskPatch): Promise<TaskMutationResponse>
   resumeTask(id: string): Promise<TaskResumeResponse>
@@ -148,6 +150,9 @@ export function createDashboardApi({
     meta: () => request('/api/v1/meta'),
     snapshot: () => request('/api/v1/snapshot'),
     task: (id) => request(`/api/v1/tasks/${encodeURIComponent(id)}`),
+    events: async (id) => (
+      await request<{ events: TaskEventRecord[] }>(`/api/v1/tasks/${encodeURIComponent(id)}/events`)
+    ).events ?? [],
     executions: async (filters = {}) => (
       await request<{ executions: ExecutionRecord[] }>(`/api/v1/executions${queryString(filters)}`)
     ).executions ?? [],

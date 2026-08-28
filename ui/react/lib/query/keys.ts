@@ -6,6 +6,7 @@ export const queryKeys = {
   snapshot: ['dashboard', 'snapshot'] as const,
   tasks: ['dashboard', 'tasks'] as const,
   task: (id: string) => ['dashboard', 'tasks', id] as const,
+  taskEvents: (id: string) => ['dashboard', 'tasks', id, 'events'] as const,
   executions: ['dashboard', 'executions'] as const,
   executionList: (filters: ExecutionFilters = {}) => (
     ['dashboard', 'executions', filters] as const

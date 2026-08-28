@@ -97,6 +97,7 @@ export async function compileReactDashboard({
   return template
     .replace('/*__REACT_CSS__*/', () => dashboardCss)
     .replace('/*__REACT_JS__*/', () => javascript)
+    .replace(/[ \t]+$/gm, '')
 }
 
 export async function writeReactDashboard({

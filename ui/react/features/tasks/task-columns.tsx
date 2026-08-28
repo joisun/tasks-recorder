@@ -1,5 +1,10 @@
 import type { IColumnConfig } from '@svar-ui/react-gantt'
+import { Terminal } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
+import type { TaskStatus } from '@/lib/api/types'
+import { ContextCell } from './context-cell'
+import { TaskStatusControl } from './task-status-control'
 import type { TaskGanttRow } from './task-types'
 
 interface CellProps { row: unknown }
@@ -20,26 +25,55 @@ export const DEFAULT_TASK_COLUMN_WIDTHS: TaskColumnWidths = {
   session_id: 156,
 }
 
-const STATUS_LABELS = {
-  planned: '待安排', active: '进行中', waiting: '等待中', blocked: '已阻塞',
-  done: '已完成', canceled: '已取消',
-}
-
-function relativeActivity(value: string | null) {
+export function relativeActivity(value: string | null, now = Date.now()) {
   if (!value) return '—'
-  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60_000))
+  const minutes = Math.max(0, Math.floor((now - Date.parse(value)) / 60_000))
   if (!Number.isFinite(minutes)) return '—'
-  if (minutes < 60) return `${minutes}m`
-  if (minutes < 1_440) return `${Math.floor(minutes / 60)}h`
-  if (minutes < 7_200) return `${Math.floor(minutes / 1_440)}d`
-  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(new Date(value))
+  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 1_440) return `${Math.floor(minutes / 60)}h ago`
+  if (minutes < 7_200) return `${Math.floor(minutes / 1_440)}d ago`
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(value))
 }
 
-function TaskCell({ row: sourceRow }: CellProps) {
+interface TaskColumnInteractions {
+  pendingTaskIds?: ReadonlySet<string>
+  onTaskSelect?: (taskId: string) => void
+  onTaskResume?: (taskId: string) => void
+  onStatusChange?: (taskId: string, status: TaskStatus) => void
+  onArchive?: (taskId: string) => void
+}
+
+function TaskCell({ row: sourceRow, interactions }: CellProps & { interactions: TaskColumnInteractions }) {
   const row = taskRow(sourceRow)
   return (
     <span className="gantt-task-cell" data-entity-type={row.entity_type} data-task-id={row.id}>
-      <span className="gantt-task-cell__title">{row.text}</span>
+      <button
+        className="gantt-task-cell__title"
+        data-task-details-id={row.id}
+        type="button"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation()
+          interactions.onTaskSelect?.(row.id)
+        }}
+      >{row.text}</button>
+      {row.source.resume_available && row.workspace && row.session_id ? (
+        <Button
+          aria-label={`在终端恢复“${row.text}”`}
+          className="gantt-task-cell__resume"
+          disabled={interactions.pendingTaskIds?.has(row.id)}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            interactions.onTaskResume?.(row.id)
+          }}
+        ><Terminal /></Button>
+      ) : null}
     </span>
   )
 }
@@ -49,31 +83,16 @@ function ActivityCell({ row: sourceRow }: CellProps) {
   return <span className="gantt-activity-cell">{relativeActivity(row.last_activity)}</span>
 }
 
-function StatusCell({ row: sourceRow }: CellProps) {
+function StatusCell({ row: sourceRow, interactions }: CellProps & { interactions: TaskColumnInteractions }) {
   const row = taskRow(sourceRow)
-  const label = STATUS_LABELS[row.status]
-  if (row.status_indicator === 'bar') {
-    return (
-      <span className="gantt-group-progress" aria-label={`${label} ${row.progress_count ?? ''}`.trim()}>
-        <span className="gantt-group-progress__track" aria-hidden="true">
-          <span style={{ width: `${row.progress ?? 0}%` }} />
-        </span>
-        <span>{row.progress_count ?? '—'}</span>
-      </span>
-    )
-  }
   return (
-    <span className="gantt-leaf-status" data-indicator={row.status_indicator} data-status={row.status}>
-      <span aria-hidden="true" />
-      <span>{label}</span>
-    </span>
+    <TaskStatusControl
+      row={row}
+      disabled={interactions.pendingTaskIds?.has(row.id)}
+      onArchive={interactions.onArchive}
+      onStatusChange={interactions.onStatusChange}
+    />
   )
-}
-
-function ContextCell({ value, label }: { value: string | null; label: string }) {
-  return value
-    ? <span className="gantt-context-cell" aria-label={`${label}：${value}`}>{value}</span>
-    : <span className="gantt-context-cell is-empty">—</span>
 }
 
 function WorkspaceCell({ row: sourceRow }: CellProps) {
@@ -104,11 +123,14 @@ export function resizeTaskColumn(
   }
 }
 
-export function createTaskColumns(widths: TaskColumnWidths): IColumnConfig[] {
+export function createTaskColumns(
+  widths: TaskColumnWidths,
+  interactions: TaskColumnInteractions = {},
+): IColumnConfig[] {
   return [
-    { id: 'text', header: '任务', width: widths.text, resize: true, cell: TaskCell },
+    { id: 'text', header: '任务', width: widths.text, resize: true, cell: (props: CellProps) => <TaskCell {...props} interactions={interactions} /> },
     { id: 'activity', header: '最近活跃', width: widths.activity, resize: true, align: 'right', cell: ActivityCell },
-    { id: 'status', header: '进度', width: widths.status, resize: true, align: 'center', cell: StatusCell },
+    { id: 'status', header: '进度', width: widths.status, resize: true, align: 'center', cell: (props: CellProps) => <StatusCell {...props} interactions={interactions} /> },
     { id: 'workspace', header: 'Workspace', width: widths.workspace, resize: true, cell: WorkspaceCell },
     { id: 'branch', header: 'Branch', width: widths.branch, resize: true, cell: BranchCell },
     { id: 'session_id', header: 'Session ID', width: widths.session_id, resize: true, cell: SessionCell },

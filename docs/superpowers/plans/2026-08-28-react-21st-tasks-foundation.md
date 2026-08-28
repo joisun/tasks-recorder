@@ -18,7 +18,8 @@
 | 1–4. Toolchain, dual entry, design system, typed data boundary | Complete | commit `ec20056`; offline build and typed REST/SSE tests green |
 | 5. App Shell | Complete | commit `f436cea`; 1440×900 and 1024×768 VDR clear |
 | 6. Tasks projection and SVAR timeline | Complete | 27 UI tests, 30 related Node tests, real-data VDR clear |
-| 7–10. Toolbar/mutations/details, Inboxes, artifact/docs, final acceptance | Pending | continue after the Task 6 phase checkpoint |
+| 7. Toolbar, mutations, context copy, and details inspector | Complete | 35 UI tests; check/build green; 1440×900 and 840×760 real-data VDR; fresh console 0 errors |
+| 8–10. Inboxes, artifact/docs, final acceptance | Pending | continue after the Task 7 phase checkpoint |
 
 The detailed checkboxes below remain the original execution recipe. This status table is the current progress record and avoids rewriting historical red/green implementation steps after the fact.
 
@@ -840,13 +841,13 @@ git commit -m "feat(ui): port task timeline to React"
 
 **Interfaces / invariants:**
 - Toolbar supports status scope, hierarchy expand/collapse, Today, scale, and search without duplicating global navigation.
-- Column order is Task, Last active, Progress/Status, Workspace, Branch, Session ID, Activity.
+- Column order is Task, Last active, Progress/Status, Workspace, Branch, Session ID. “Last active” is the Activity projection; it is not duplicated as a seventh column.
 - Last active uses relative `xm/xh/xd ago` for recent values and absolute local date for older values.
 - Workspace, Branch, and Session ID copy affordances use one Tooltip implementation and no native `title` attribute.
 - Workspace copy is the session context directory used for resume; branch is a separate field/column.
 - Leaf mutations use optimistic UI only when rollback and revision conflict are handled.
 
-- [ ] **Step 1: Write failing interaction tests**
+- [x] **Step 1: Write failing interaction tests**
 
 Cover:
 
@@ -868,21 +869,21 @@ npm run test:ui -- ui/react/features/tasks/tasks-view.test.tsx ui/react/features
 
 Expected: FAIL because Tasks interactions do not exist.
 
-- [ ] **Step 2: Build the compact toolbar and context cells**
+- [x] **Step 2: Build the compact toolbar and context cells**
 
 Use one 40px toolbar row on desktop and a wrapping two-row layout below 900px. Hide labels only when Tooltip and accessible name remain. Truncated content uses CSS ellipsis; the custom Tooltip owns full content. Never add `title`.
 
-- [ ] **Step 3: Add task mutations through Query hooks**
+- [x] **Step 3: Add task mutations through Query hooks**
 
 Create mutation hooks colocated under `features/tasks` for update/archive/restore/resume. Use `onMutate` to snapshot only the affected query, `onError` to restore it, and `onSettled` to invalidate canonical keys.
 
 Do not let a client-only parent status overwrite server data. The UI rollup is derived; explicit user mutation is the only write.
 
-- [ ] **Step 4: Implement the details Sheet**
+- [x] **Step 4: Implement the details Sheet**
 
 The Sheet shows title, status, description, next action, workspace, branch, session ID, activity timestamps, child summary, events, and resume/archive controls. It fetches task detail lazily on open and retains prior detail while refreshing.
 
-- [ ] **Step 5: Verify component behavior**
+- [x] **Step 5: Verify component behavior**
 
 Run:
 
@@ -894,6 +895,8 @@ node --test test/react-dashboard-build.test.mjs test/dashboard-build.test.mjs
 ```
 
 Expected: mutations, copy behavior, responsive toolbar, and dual builds pass.
+
+Implementation note: SVAR cells are independent renderer roots. Context cells therefore own their Tooltip provider, and the leaf status selector uses a native `select` so its open state cannot be lost when SVAR refreshes a cell. The details Sheet is a non-modal inspector so tree controls remain usable without clearing selection.
 
 - [ ] **Step 6: Prepare the phase commit**
 

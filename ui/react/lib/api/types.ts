@@ -144,6 +144,16 @@ export interface ExecutionFilters {
   unassigned?: boolean
 }
 
+export interface TaskEventRecord {
+  id: string
+  task_id?: string
+  event_type: string
+  before_json?: string | null
+  after_json?: string | null
+  actor?: string | null
+  created_at: string
+}
+
 export interface TaskPatch {
   title?: string
   description?: string | null

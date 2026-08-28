@@ -47,6 +47,14 @@ describe('DashboardApi', () => {
     }))
   })
 
+  test('reads task events from their dedicated endpoint', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ events: [{ id: 'event-a' }] }))
+    const api = createDashboardApi({ fetchImpl })
+
+    await expect(api.events('task/a')).resolves.toEqual([{ id: 'event-a' }])
+    expect(fetchImpl).toHaveBeenCalledWith('/api/v1/tasks/task%2Fa/events', expect.any(Object))
+  })
+
   test.each([
     {
       name: 'non-JSON response',
