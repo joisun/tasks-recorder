@@ -1,5 +1,5 @@
 #!/usr/bin/env node
 
-import { writeDashboard } from './compiler.mjs'
+import { writeDashboard, writeReactDashboard } from './compiler.mjs'
 
-await writeDashboard()
+await Promise.all([writeDashboard(), writeReactDashboard()])

@@ -108,10 +108,23 @@ export function createDashboardBuildLoop({
   }
 }
 
-export function watchDashboardSources({ sourceRoot, onChange, watchImpl = watch }) {
-  return watchImpl(sourceRoot, { recursive: true }, (_eventType, filename) => {
-    if (filename) onChange(filename)
-  })
+export function watchDashboardSources({ sourceRoot, sourceRoots, onChange, watchImpl = watch }) {
+  const roots = sourceRoots ?? [sourceRoot]
+  if (!Array.isArray(roots) || roots.length === 0 || roots.some((root) => !root)) {
+    throw new TypeError('sourceRoots must contain at least one path')
+  }
+  const watchers = roots.map((root) => watchImpl(
+    root,
+    { recursive: true },
+    (_eventType, filename) => {
+      if (filename) onChange(filename)
+    },
+  ))
+  return {
+    close() {
+      for (const watcher of watchers) watcher.close()
+    },
+  }
 }
 
 function boundedBuildError(error, projectRoot) {
@@ -126,6 +139,7 @@ export async function startDashboardDevRuntime({
   config,
   projectRoot = defaultProjectRoot,
   compile = () => compileDashboard({ sourceRoot: join(projectRoot, 'ui', 'src') }),
+  sourceRoots = [join(projectRoot, 'ui', 'src')],
   watchSources = watchDashboardSources,
   stderr = process.stderr,
   debounceMs = 75,
@@ -160,8 +174,10 @@ export async function startDashboardDevRuntime({
   try {
     gateway = createDashboardDevGateway({ ...config, getHtml: () => html })
     const address = await gateway.listen()
+    const normalizedSourceRoots = sourceRoots.map((sourceRoot) => resolve(sourceRoot))
     watcher = watchSources({
-      sourceRoot: join(normalizedProjectRoot, 'ui', 'src'),
+      sourceRoot: normalizedSourceRoots[0],
+      sourceRoots: normalizedSourceRoots,
       onChange: () => buildLoop.notifyChange(),
     })
     let closed = false
