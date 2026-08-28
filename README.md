@@ -1,29 +1,34 @@
 # Tasks Recorder
 
-Tasks Recorder 是面向 coding agent 的本机工作记录员。它先把 Codex 或 Claude Code 实际发生的工作记录到 SQLite，再把可验证的工作片段组织为 Project / Main Task / Subtask，并提供实时更新的 Tree + Timeline Dashboard。
+Tasks Recorder 是运行在本机的 coding-agent 工作记录与自动化控制台。它记录“发生了什么、正在做什么”，把分散在 session、turn、subagent、branch 和 worktree 中的工作整理为 Project / Main Task / Subtask，并通过实时 Dashboard 提供可追踪的 Tree、Timeline 与执行历史。
 
-- `taskd` 是唯一 SQLite writer，由 macOS `launchd` 常驻管理。
-- Dashboard 访问地址：<http://127.0.0.1:43127>。
-- Codex 与 Claude Code adapter 分别维护、分别安装，参考 Superpowers 的 multi-harness 做法。
-- 所有数据保存在本机，不需要 cloud account 或 auth token。
+它还支持由 Markdown 定义 Scheduled Task。到期后，常驻的 `taskd` 直接调用本机 code-agent CLI，并把 session、结果、文件变更和日志写入统一 Run ledger。
 
-## Requirements
+当前状态：
 
-- macOS
-- Node.js 24 或更高版本
-- `curl` 与系统自带的 `tar`、`shasum`
+- macOS service 与 Dashboard 可用；
+- Recorder adapter 支持 Codex 和 Claude Code；
+- Scheduled Task runtime 当前支持 Codex；
+- runtime registry 已按 multi-CLI contract 设计，后续 runtime 只增加 adapter，不增加第二套调度链路；
+- 所有数据都保存在本机，不需要 cloud account 或 auth token。
 
-普通安装不需要 Git、clone repository、`npm install` 或 `npm ci`。`npm ci` 只用于源码开发。
+## Quick start
 
-## Install the service
+要求 macOS、Node.js 24+、`curl`、`tar` 与 `shasum`。
 
-一行安装 latest GitHub Release：
+安装 latest GitHub Release：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.sh | bash
 ```
 
-`curl | bash` 方便但会直接执行远端脚本。更审慎的方式是固定版本、先查看 installer，再执行；installer 会在解包前使用 Release 中的 `SHA256SUMS` 校验 runtime artifact：
+安装完成后打开 <http://127.0.0.1:43127>，或检查服务：
+
+```bash
+tasks-recorder status
+```
+
+普通安装不需要 clone repository、`npm install` 或 `npm ci`。更谨慎的固定版本安装方式：
 
 ```bash
 version=v0.6.2
@@ -32,35 +37,31 @@ less install.sh
 bash install.sh --version "$version"
 ```
 
-安装完成后打开 <http://127.0.0.1:43127>。若 `~/.local/bin` 已在 `PATH` 中，也可以运行：
+installer 会在解包前验证 Release 中的 `SHA256SUMS`，但不会探测、登录或配置任何 agent CLI。CLI availability 由运行时 registry 统一解析。
 
-```bash
-tasks-recorder status
-tasks-recorder stop
-tasks-recorder start
-```
+## Connect an agent
 
-Service 可以独立运行；下一步只安装你实际使用的 agent adapter。
+Service 与 agent adapter 独立安装。只安装你实际使用的 adapter。
 
-## Install the Codex adapter
+### Codex
 
 ```bash
 codex plugin marketplace add joisun/tasks-recorder
 codex plugin add tasks-recorder@tasks-recorder
 ```
 
-安装或启用 plugin 不会自动信任 bundled hooks。首次使用时在 Codex 中运行 `/hooks`，确认 Tasks Recorder 的 `SessionStart`、`UserPromptSubmit`、`PostToolUse`、`SubagentStart`、`SubagentStop`、`SessionEnd` 和 `Stop` hooks 都显示为 trusted，然后新开一个 conversation 使 MCP 与 hooks 全部生效。只信任其中一部分时，Task 仍可通过 MCP 写入，但 execution lifecycle 会出现缺口。
+首次安装后在 Codex 中运行 `/hooks`，确认 Tasks Recorder hooks 已 trusted，再新开一个 conversation，使 MCP 与 hooks 全部生效。
 
-## Install the Claude Code adapter
+### Claude Code
 
 ```bash
 claude plugin marketplace add joisun/tasks-recorder
 claude plugin install tasks-recorder@tasks-recorder
 ```
 
-安装后重启 Claude Code，或按 Claude Code 当前版本的提示 reload plugins。若出现 MCP approval，请确认其 command 只启动安装在 plugin cache 内的 `dist/mcp-server.mjs`，并连接 `127.0.0.1` 上的 Tasks Recorder service。
+按 Claude Code 的提示 reload plugin；若出现 MCP approval，只批准 plugin cache 内的 `dist/mcp-server.mjs`。
 
-Codex 和 Claude Code 的 adapter 是两个独立 plugin root：
+两个 adapter 分别维护 manifest、hooks、MCP config 与 bundle，只共享 localhost HTTP contract：
 
 ```text
 adapters/
@@ -68,67 +69,129 @@ adapters/
 └── claude/tasks-recorder/
 ```
 
-它们各自维护 manifest、marketplace metadata、hooks、MCP config 与 MCP bundle；不会通过兼容层强行复用。两者只共享同一个 localhost HTTP API contract。
-
 ## How it works
 
+Tasks Recorder 只有一个长期运行的 service 和一个写入边界：
+
 ```text
-Codex hooks + MCP ──┐
-                    ├── HTTP 127.0.0.1 ──▶ taskd ──▶ SQLite
-Claude hooks + MCP ─┘                         │
-                                             ├── REST snapshot
-Browser Dashboard ◀──────────── SSE changed ─┘
+Recording
+Agent Hooks / MCP ──HTTP──▶ taskd ──▶ tasks.sqlite
+                              │
+                              └── snapshot + SSE ──▶ Dashboard
+
+Automation
+Schedule.md ──watch──▶ taskd Scheduler ──▶ Runtime Registry
+                          │                       │
+                          │                       └──▶ codex app-server
+                          │                                  │
+                          └──▶ scheduler.sqlite ◀── events / result / session
+                                      │
+                                      └── SSE ──▶ Dashboard
 ```
 
-Tasks Recorder 把事实记录与用户语义分开：
+macOS `launchd` 只负责让 `taskd` 常驻。每个 Schedule 不再创建 LaunchAgent，也没有独立 runner、Unix socket、claim、heartbeat 或 completion spool。
 
-- **事实层**：Observation、Source Session、Execution 与 Work Segment 记录宿主实际发生了什么，不把 prompt、reasoning、tool input/output 写入数据库。
-- **语义层**：Project、Main Task 与 Subtask 表示用户认可的工作结构。Task ID 跨 session、turn、branch 和 worktree 保持稳定；Segment Attribution 是事实与 Task 之间唯一可审计、可纠正的桥梁。
+### Recording model
 
-实时链路如下：
+- **事实层**：Observation、Source Session、Execution 与 Work Segment 记录宿主实际发生的 lifecycle，不保存 prompt、reasoning、tool input/output 或 transcript 正文。
+- **语义层**：Project、Main Task 与 Subtask 表示用户认可的工作结构。
+- **归属层**：Segment Attribution 是事实与 Task 之间可审计、可纠正的连接。
 
-1. Native adapter 把 `SessionStart`、`UserPromptSubmit`、`PostToolUse`、subagent lifecycle、`Stop` 与 `SessionEnd` 映射为 host-neutral Event Envelope，经短超时投递到 `POST /api/v1/events`；taskd 暂不可达时进入 bounded spool，Hook 始终 fail-open。taskd 启动 replay 时，临时 transport/storage 错误保留事件等待下次重试；确定不可重试的 Event contract/identity 冲突进入本机 `.invalid` 隔离文件，后续事件继续 replay，避免一个 poison event 永久阻塞队列。
-2. `UserPromptSubmit` 提供稳定的 `execution_id`。Agent 对 concrete work 先调用 `agent_work_context`；只有真实 focus 变化、里程碑或 Task 结构变化时才调用 `agent_work_focus`、`agent_work_checkpoint`、`agent_tasks_mutate` 或 `agent_tasks_sync_structure`。
-3. `PostToolUse` 只刷新 execution fact activity，不读取 context、不同步整棵 Task tree，也不保存 tool input/output。普通对话可以保持未归属，或在 Dashboard 标记为 `non_work`。
-4. child execution 只有在 spawn 前通过 `agent_work_intent` 声明了宿主可观测的 exact agent key 时才自动 Attribution；否则进入 Inbox，不按时间邻近、agent type 或 prompt 相似度猜测。
-5. `Stop` 只尽力提交 execution end fact，立即返回且永不要求 continuation；`SessionEnd` 收口该 source session 的执行事实。两者都不会自动完成 Task，宿主被直接关闭造成的状态缺口由 recovery 与 Dashboard correction 处理。
-6. `taskd` 是唯一 SQLite owner。写事务 commit 后发布轻量 SSE `changed` event；Dashboard 再读取 authoritative snapshot，因此页面不需要定时 polling，也不会生成一个带静态数据的 `dashboard.html`。
-7. Dashboard 的一级节点是 Project，下面依次是 Main Task 与 Subtask；Project 是只读 projection，不会伪装成可编辑 Task。Tree/Grid 与 Timeline 读取同一份 canonical v3 snapshot。UI 使用 MIT 许可的 SVAR React Gantt 作为 virtualized renderer，并维护筛选、SSE refresh、视图状态恢复、可访问的 splitter、当前时间 marker 与详情交互。默认 Grid 顺序为任务、最近活跃、状态/进度、Workspace、Branch、Session ID。Workspace 表示 source session 的 cwd，也就是 `codex resume` 应回到的上下文目录；底层旧数据缺少 `workfolder` 时才 fallback 到 `worktree`。Workspace、Branch 与 Session ID 都可分别复制完整值。各业务列可独立调整宽度，不会连带改变左侧 sibling column 或 Grid/Timeline panel 宽度。
-8. Timeline 把 Planned 与 Actual 分开表达：planned-only Task 使用细密 dash-dot outline，叶子 Task 保留 A → B → A 这样的真实 split Segment，Main Task 与 Project 使用覆盖全部 descendants 的 actual envelope，因此父级 scope 不会与子级交叉。默认 `Auto` 会按当前 Project 的 planned/actual extent 在 hour、day、week、quarter 之间自适应并保留水平留白；也可手动切换日、周、月粒度。
-9. 状态列按信息层级表达：Project 与有 children 的 Main Task 使用横向 progress bar，以半透明灰色 track 表达总量、彩色 fill 表达已完成量，并只显示 `completed/total`；叶子 Main Task 使用 circle，Subtask 使用更轻的 status dot 表达 lifecycle。一个 group 的所有有效 children 都完成时，Dashboard 立即把它投影为完成。完成不会立即等同于历史：用户可以手动提前归档；未手动处理的一级任务组或独立任务连续完成满 5 天后，由 taskd 在启动检查或每小时 sweep 中自动归档。Subtask 不单独自动归档，canceled Task 也不参与该策略。derived-complete Main Task 的完成起点取最后一个有效 Subtask 的 `completed_at`，归档时 taskd 在一次事务中完成 lifecycle normalization 与 archive。
-10. “Project Inbox”处理尚未确认属于哪个 Project 的 Source Session；“任务待归属”处理 Project 已知但 Task 未知的 Work Segment。两者分开呈现，分配必须由明确选择或确定性证据驱动，不按 branch、标题相似或时间邻近猜测。选中 Task 可打开 details Sheet，编辑 Summary、查看 Executions 与 Activity，并执行 archive、soft delete、restore 等操作；所有编辑使用 revision/compare-and-set，避免覆盖较新的 Agent 或浏览器更新。
-11. 有可验证本机 Codex transcript 的 Main Task、Subtask 或独立任务，会在任务名称末尾显示 Resume。浏览器只把 Task ID 发给 taskd；taskd 从 canonical Attribution 重新解析最新 Source Session、Workspace 与 Task name，再校验 `~/.codex/sessions` 中的 rollout metadata，最后通过设置中选定的 allowlisted terminal 执行 `codex resume <session-id>`。Otty adapter 使用立即返回的 `otty open` 创建持久化交互式 shell，通过创建前后的 window ID 差集锁定新窗口，再向其唯一 pane 发送严格 quoting 的 Resume 命令；最后显式设置 Task name 并调用 `window focus` 激活 Otty 到 macOS 前台。Codex 退出后回到 shell，window 不随 Session 关闭。旧数据库中的 `legacy` source 也必须通过同一 transcript 校验，不会仅凭标签获得启动权限。
+Hook 使用短超时、fail-open 投递。`taskd` 暂不可用时，事件写入 bounded local spool；service 恢复后重放。Dashboard 从 SQLite snapshot 读取状态，并通过 SSE revision/event 接收实时更新。
 
-这是一种本机 C/S 架构：plugin adapter 是 client，`taskd` 是 server，Dashboard 是另一个 browser client。adapter 没有 service 时会报告 `SERVICE_UNAVAILABLE`；service 没有 adapter 时仍可以运行并查看已有数据。
+### Scheduled Run model
 
-### Legacy compatibility window
+手动 `Run now` 与到期触发都进入同一个 `RunService.create()`：
 
-`agent_tasks_*` legacy MCP/API 仍在整个 `0.6.x` release line 中提供 compatibility wrapper，但返回 `deprecated: true`、replacement 和 lossy warning；单值 execution `task_id` 无法完整表达多个 Work Segment。新 adapter/skill 只使用 `agent_work_*`、`agent_tasks_mutate` 与 `agent_tasks_sync_structure`。legacy wrapper 最早在 `0.7.0` 移除；升级自定义 client 前应先按返回的 replacement 完成迁移。
+```text
+queued → running → succeeded | failed | timed_out | canceled | interrupted
+```
 
-## Files and data
+流程只有一条：
+
+1. 读取 Markdown definition，并生成 immutable execution snapshot；
+2. 先在 `scheduler.sqlite` 创建 durable `queued` Run；
+3. taskd 创建一个共享 Runtime Environment，从显式 override、process `PATH`、Homebrew、fnm/nvm/mise 等 user toolchain 与 platform candidates 中解析 executable；
+4. runtime status、model discovery 和 Run 都复用该环境；`taskd` 使用 argv array、`shell: false` 和同源 child `PATH` 直接启动 CLI；
+5. Codex active Run 使用独立的 `codex app-server --listen stdio://`；runtime adapter 把 protocol notification 转为统一、bounded event；
+6. `RunService` 在执行边界同时做 bounded、in-memory Workspace snapshot，与 runtime file-change evidence 合并；这样 nested tool 写文件但 app-server 未发 `fileChange` item 时也不会漏掉产出；
+7. Run ledger 保存 terminal state、session ID、final message、Workspace-relative file changes 与 bounded log path；
+8. Dashboard 通过 Run-specific SSE 更新；active Turn 可以追加指令或停止，terminal Run 可以从可信 snapshot 召回 session。
+
+一个 runtime 不可用不会让 Recorder 或其他 runtime 下线。登录或 provider 错误由实际 Run 记录为 typed failure，不会阻塞 service 启动与 runtime 列表加载。
+
+### Live Session control
+
+打开一个正在运行的 Codex Run，Run Review 会显示 Live Session：assistant message delta 与安全的 activity 摘要按发生顺序更新。输入追加指令后，Dashboard 只提交 Run ID、`expected_turn_revision` 和最多 16 KiB 的 text；`taskd` 使用私有 `turnId` 调用 `turn/steer`。Stop 同样只提交 Run ID 与 revision，并映射到 `turn/interrupt`。
+
+Live Session 只干预当前 active Turn，不在 Dashboard 内创建第二轮对话。Run 结束后，页面会重新读取 authoritative terminal Run，展示 final message、Session、文件变更与 logs；需要继续多轮对话时使用 Terminal Resume。
+
+实时 message、guidance、reasoning 与 tool payload 不写入 SQLite 或普通日志。Run ledger 只保留既有 terminal facts；browser 不接触 runtime `turnId`、executable、argv 或 shell command。Run SSE 是 bounded memory replay，缓冲过期时页面明确 reset，并仍可读取 terminal facts。
+
+## Scheduled Tasks
+
+Schedule definition 是 source of truth；SQLite 只记录 Run facts。默认目录为 `~/.config/tasks-recorder/schedules`。
+
+```markdown
+---
+type: tasks-recorder/schedule
+id: 8b4a8b25-3d1e-4e43-8f5f-9cbef95b9275
+title: Daily repository review
+enabled: true
+workspace: /Users/me/projects/example
+agent: codex
+schedule:
+  kind: daily
+  at: "09:30"
+sandbox: read-only
+model: null
+reasoning: null
+timeout: 2h
+---
+
+Review the repository health and summarize actionable risks.
+```
+
+支持 `once`、`hourly`、`daily`、`weekly` 与 `monthly` cadence。Dashboard 的 Create/Edit/Pause/Resume 会 atomic rewrite Markdown，并用 SHA-256 `etag` 做 compare-and-set；Delete 把 definition 移到 `.trash/`。
+
+filesystem watcher 提供低延迟刷新，周期性 rescan 保证最终收敛。修改 Definitions directory 时，现有 definitions 会在同一个操作中安全迁移并切换 watcher，不需要重启 `taskd`。
+
+Runtime 与 model 由以下 API 动态获取：
+
+```text
+GET  /api/v1/runtimes
+POST /api/v1/runtimes/refresh
+GET  /api/v1/runtimes/:id/models
+```
+
+当前 Codex adapter 使用同一个解析结果执行 `codex --version`、`codex debug models` 与真实 Run。model probe 失败时 Editor 显示 adapter-owned fallback，而不是无限 loading 或让 route 消失。
+
+## Data and configuration
 
 ```text
 ~/.local/share/tasks-recorder/
 ├── current -> releases/<version>
 └── releases/<version>/                 # immutable program files
 
-~/.local/bin/tasks-recorder             # service management and import CLI
+~/.local/bin/tasks-recorder             # management CLI
 
 ~/.config/tasks-recorder/
-├── config.json                         # user configuration
-├── tasks.sqlite                        # canonical data
-├── runtime/                            # terminals that require a 0700 one-shot launcher
-├── spool/                              # bounded Event Envelope；*.invalid 为不可重试事件隔离证据
-└── logs/
-    └── tasks-recorder.ndjson           # privacy-bounded structured events
+├── config.json
+├── tasks.sqlite                        # Recorder facts and task model
+├── scheduler.sqlite                    # unified Run ledger
+├── spool/                              # bounded Hook event fallback
+├── schedules/
+│   ├── *.md                            # Schedule source of truth
+│   ├── .trash/                         # recoverable delete/migration backup
+│   └── logs/                           # bounded per-Run stdout/stderr
+└── logs/tasks-recorder.ndjson           # privacy-bounded service log
 
 ~/Library/Logs/tasks-recorder/
 ├── taskd.stdout.log
 └── taskd.stderr.log
 ```
 
-`tasks.sqlite-wal` 与 `tasks.sqlite-shm` 可能在 service 运行时出现在数据库旁边，这是 SQLite WAL 的正常 sidecar。
-Canonical database 的完整路径是 `~/.config/tasks-recorder/tasks.sqlite`。
+Recorder canonical database 是 `~/.config/tasks-recorder/tasks.sqlite`；Scheduled Run ledger 是 `~/.config/tasks-recorder/scheduler.sqlite`。
 
 默认配置：
 
@@ -136,129 +199,100 @@ Canonical database 的完整路径是 `~/.config/tasks-recorder/tasks.sqlite`。
 {
   "output_dir": ".",
   "resume_terminal": "terminal",
+  "schedule_definitions_dir": "schedules",
   "server_host": "127.0.0.1",
   "server_port": 43127
 }
 ```
 
-`output_dir` 只用于兼容旧版 `Tasks.md` / `History.md` projection；Dashboard 不依赖这些 Markdown files。
+`codex_path` 是可选的用户 override，不是 capability flag。未配置时 registry 从 `CODEX_BIN`、process `PATH`、Homebrew、fnm/nvm/mise 等常见 user toolchain 和受支持的 platform candidates 中解析 executable；只有通过 executable validation 的候选才消耗 bounded version-probe budget。taskd 的单一 Runtime Environment 同时生成 resolver candidates 与 child `PATH`，避免 GUI/launchd 精简 PATH 下出现“能够探测但无法执行”。一次 unavailable 不会进入长期 cache，下一次读取可直接恢复；installer 不写入 `codex_path`。
 
-Dashboard 右上角的 Settings 可以选择 Session Resume 使用的 terminal。当前 macOS adapter 支持 `terminal`（Terminal.app）、`otty` 与 `ghostty`；未安装的选项会显示为不可用。设置由 taskd 原子写回 `config.json`，不会覆盖其他配置项。
-
-当前 runtime 使用 schema v3。空数据库会直接初始化为 v3；已有 schema v1/v2 数据库不会被静默升级，`taskd` 会以 `SCHEMA_MIGRATION_REQUIRED` 拒绝启动。旧 runtime 也不能打开 v3 数据库，因此升级现有安装时必须显式执行下述 migration。
+Settings 可以选择 Session Resume terminal，以及修改 Definitions directory。当前 terminal adapter 支持 Terminal.app、Otty 与 Ghostty；browser 永远不能提交 shell command。Resume 只提交可信的 Task ID 或 Run ID；Live Session 另可提交 bounded guidance text 与 public Turn revision。
 
 ## Migrate a schema v2 database
 
-先停止唯一的 SQLite writer，再运行 read-only preview：
+Recorder `tasks.sqlite` 当前使用 schema v3。升级 schema v2 数据库前，先停止唯一 writer 并预览：
 
 ```bash
 tasks-recorder stop
 tasks-recorder migrate --dry-run
 ```
 
-dry-run 只读打开 `~/.config/tasks-recorder/tasks.sqlite`，不会创建 backup、修改 `user_version` 或写入业务数据。JSON report 只包含 legacy counts、计划生成的 Project 数、ambiguity code 汇总，不回显 Task title、Session ID 或 repository path。ambiguity 不会被猜测合并；apply 后仍可在 Project Inbox 中显式处理。
-
-确认 report 后，选择一个**尚不存在**且不同于 source database 的 backup path，再显式 apply：
+确认 report 后，指定一个尚不存在且不同于 source database 的 backup path：
 
 ```bash
 tasks-recorder migrate --apply \
   --backup "$HOME/.config/tasks-recorder/backups/tasks-v2-before-v3.sqlite"
-```
-
-apply 会先 checkpoint WAL，创建权限为 `0600` 的 verified schema-v2 backup，校验 SHA-256 与 SQLite integrity，然后在一个 transaction 中迁移；任何 transform 或 invariant failure 都会 rollback source database。若 taskd 仍可访问、backup 已存在、source 不是 schema v2，或 backup 与 source 指向同一路径，命令会 fail closed。
-
-迁移成功后启动并检查 service：
-
-```bash
 tasks-recorder start
-tasks-recorder status
 ```
 
-需要演练非默认副本时，可对两个命令都加 `--database /absolute/path/to/tasks.sqlite`。这不会改变默认配置。
+dry-run 不写入数据库；apply 会先 checkpoint WAL、创建权限为 `0600` 的 verified backup，再在一个 transaction 中迁移。任一验证失败都会 rollback。不要让旧 runtime 打开 v3 database，也不要让新 runtime 写入恢复后的 v2 backup。
 
-若 migration 后需要 rollback：先 `tasks-recorder stop`，把当前 v3 database 及其 `-wal` / `-shm` sidecars 移到独立恢复目录，再把 verified backup 复制回 canonical path，并用 installer 的 `--version <previous-v2-tag>` 切回迁移前 runtime；不要让 v2 runtime 打开 v3 database，也不要让 v3 runtime 打开恢复后的 v2 backup。
+### Legacy API window
+
+`agent_tasks_*` MCP/API 在整个 `0.6.x` release line 中保留 compatibility wrapper，并返回 migration metadata。新 adapter 使用 `agent_work_*`、`agent_tasks_mutate` 与 `agent_tasks_sync_structure`。legacy wrapper 最早在 `0.7.0` 移除。
 
 ## Import historical Codex sessions
 
-历史记录不会在后台自动扫描或导入。先对一个精确 root Session ID 做 dry-run：
+先用 dry-run 查看某个 Codex Session 会产生哪些记录：
 
 ```bash
 tasks-recorder import codex --session <session-id> --dry-run
 ```
 
-CLI 会在 `~/.codex/sessions` 中用 exact ID 解析 root，读取各 transcript 的 bounded `session_meta` 以发现 direct child，然后只从该 root 与 direct child transcripts 投影 lifecycle metadata。输出包括 root turns、subagent executions、`would_create` / `would_update` / `skipped`、未绑定数量与 warnings；dry-run 对 SQLite 零写入。
-
-确认预览后，去掉 `--dry-run` 才会 apply：
+确认后再写入 Recorder database：
 
 ```bash
 tasks-recorder import codex --session <session-id>
 ```
 
-Apply 通过 localhost API 由 `taskd` 在一个事务中写入，并使用 immutable host IDs 生成的 external keys 保证重复执行幂等。Importer 不修改 Task title/status，也不会按时间范围把 execution 强制分给 Task；只有 existing session binding 能唯一证明归属时才绑定，其余进入对应的 Project Inbox 或任务待归属。
+导入只保留任务结构与 execution facts，不保存对话正文；相同 Session 重复导入是 idempotent。无法可靠归属到 Task 的 execution 会留在 inbox，等待后续分配。
 
-若使用非默认 Codex home，可显式传入：
+## Operations
 
 ```bash
-tasks-recorder import codex --session <session-id> --dry-run --codex-home /path/to/.codex
+tasks-recorder status
+tasks-recorder stop
+tasks-recorder start
+tasks-recorder scheduler status
 ```
 
-## Update and uninstall
-
-升级 latest version 只需重新运行 installer。它先验证新 artifact，再原子切换 `current` symlink，不覆盖 `config.json` 或数据库：
+更新 latest Release：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.sh | bash
 ```
 
-只卸载 LaunchAgent、保留已安装程序：
+只卸载 LaunchAgent、保留程序和数据：
 
 ```bash
 tasks-recorder uninstall
 ```
 
-卸载 LaunchAgent 与所有 program releases，同时保留数据库、配置和日志：
+完整卸载程序但保留 `~/.config/tasks-recorder` 数据：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.sh | bash -s -- --uninstall
 ```
 
-数据删除是独立的 destructive action；installer 不会自动删除 `~/.config/tasks-recorder`。
-
-Plugin adapter 通过对应宿主管理：
-
-```bash
-codex plugin remove tasks-recorder@tasks-recorder
-claude plugin uninstall tasks-recorder@tasks-recorder
-```
-
 ## Troubleshooting
 
-查看 service 状态与日志：
-
 ```bash
-tasks-recorder status
-tail -n 100 ~/Library/Logs/tasks-recorder/taskd.stderr.log
-tail -n 100 ~/.config/tasks-recorder/logs/tasks-recorder.ndjson
 curl -fsS http://127.0.0.1:43127/health/ready
 curl -fsS http://127.0.0.1:43127/api/v1/status
+curl -fsS http://127.0.0.1:43127/api/v1/runtimes
+tail -n 100 ~/Library/Logs/tasks-recorder/taskd.stderr.log
+tail -n 100 ~/.config/tasks-recorder/logs/tasks-recorder.ndjson
 ```
 
-常见情况：
-
-- `SERVICE_UNAVAILABLE`：先确认 service 已安装且 `health/ready` 返回成功。
-- Dashboard 无法打开：检查 `server_port` 是否被占用，以及 stderr log。
-- `health/ready` 可访问但状态为 degraded：查看 `/api/v1/status` 中的 schema、spool、logger 与 recovery 摘要；该接口不会返回 Event payload 或凭据。
-- `spool.last_replay_error` 为 `SPOOL_REPLAY_SEND_FAILED`：升级到最新 patch release 并重启 service；临时错误会保留重试，确定不可重试的 identity/contract conflict 会以 `0600` `.invalid` 文件隔离并继续 replay，不需要手动删除 active spool。
-- Dashboard 正常但没有自动记录：确认 adapter 已启用、重启宿主，并完成 hook trust/MCP approval。
-- Task 行没有 Resume：该 Task 必须存在 accepted Attribution、Workspace 仍可用，且 Session ID 能在本机 `~/.codex/sessions` 中唯一解析为真实 Codex rollout transcript；Project 行以及 Claude session 不显示该操作。
-- Resume 返回 `CODEX_SESSION_NOT_FOUND`：对应 transcript 已被移动、清理或不在默认 Codex sessions 目录；Tasks Recorder 不会仅凭数据库里的 Session ID 启动命令。
-- Resume 返回 `CODEX_UNAVAILABLE` 或 `TERMINAL_UNAVAILABLE`：确认 `codex` CLI 可从常见 executable path 找到，并在 Dashboard Settings 中选择当前已安装的 terminal。
-- 历史 import 返回 `CODEX_SESSION_NOT_FOUND`：确认使用完整、精确的 root Session ID；非默认 Codex 数据目录需要传 `--codex-home`。
-- 历史 import 后仍有未归属记录：这是无法唯一证明归属时的预期行为；先在 Project Inbox 确认 Project，再在“任务待归属”中分配 Task 或标记 `non_work`。
-- 历史 import route 不存在：service runtime 版本早于 importer，请先升级 service；只升级 adapter 不会更新 `taskd`。
-- Codex 仍显示 `Stop hook (blocked)`：当前 adapter 的 Stop 不会阻断或请求 continuation，这表示仍在使用旧 adapter。运行 `codex mcp get tasks-recorder`，正常配置应显示 `args: dist/mcp-server.mjs` 和 `cwd: .`；若仍显示 `${PLUGIN_ROOT}`，请升级或重新安装 adapter，并新开 conversation。
-- 更新 plugin 后旧 conversation 没变化：新开 conversation，避免复用已经建立的 MCP process。
-- `~/.local/bin/tasks-recorder: command not found`：把 `~/.local/bin` 加入 shell `PATH`，或直接在浏览器访问 Dashboard。
+- `SERVICE_UNAVAILABLE`：先检查 `tasks-recorder status` 与 `/health/ready`。
+- Dashboard 打不开：检查 `server_port` 是否被占用以及 `taskd.stderr.log`。
+- Runtime 为 `unavailable`：运行对应 CLI 的 `--version` 后重新打开 editor 或调用 `POST /api/v1/runtimes/refresh`；失败结果不会被长期缓存。registry 会自动补充 Homebrew、fnm/nvm/mise 等 GUI-missing toolchain directories，也可显式配置 `CODEX_BIN` / `codex_path`。
+- Model 使用 fallback：手动运行解析到的 `codex debug models`；fallback 不会阻止保存或 Run。
+- Run 失败：在 Run Sheet 查看 stable error code、bounded stderr 与 final result。
+- Schedule definition 不可用：按页面给出的 source path 修复 YAML、duplicate UUID、unknown field、cadence 或 symlink 问题；watcher 会自动重试。
+- Dashboard 正常但没有自动记录：确认 adapter 已启用，重新打开 agent conversation，并完成 hooks trust / MCP approval。
+- Resume 不可用：Run 必须有本机 session transcript 与有效 Workspace，并且对应 terminal / CLI 仍可用。
 
 ## Develop from source
 
@@ -268,23 +302,15 @@ cd tasks-recorder
 npm ci
 ```
 
-保持已安装的 taskd 在 <http://127.0.0.1:43127> 运行，然后启动源码 Dashboard：
+让已安装的 `taskd` 保持运行，再启动 source Dashboard：
 
 ```bash
 npm run dev:ui
 ```
 
-打开 <http://127.0.0.1:43128>。`ui/src` 构建成功后页面会自动刷新；实时 snapshot、任务变更 SSE 和 API 操作仍由 `43127` 的正式 taskd 提供，不需要发布 Release 或重新安装。
+打开 <http://127.0.0.1:43128>。`ui/src` 变化会自动 rebuild/refresh，API 与真实本机数据仍来自 `43127`；不需要发布或重新安装。该页面的 mutation 会修改真实数据。
 
-`43128` 页面中的编辑、归属和状态修改会写入当前真实本机数据库。只做视觉检查时不要触发 mutation；需要其他端口或 taskd upstream 时使用：
-
-```bash
-TASKS_RECORDER_DEV_PORT=44128 \
-TASKS_RECORDER_DEV_UPSTREAM=http://127.0.0.1:44127 \
-npm run dev:ui
-```
-
-dev gateway 只监听 loopback，不读取 SQLite，也不会写入已安装的 immutable release。正式交付前执行 production gates：
+发布前验证：
 
 ```bash
 npm run build
@@ -293,34 +319,29 @@ npm run check
 npm test
 ```
 
-本地安装 source checkout 的 service：
+本地安装 source service：
 
 ```bash
 npm run taskd -- install
 npm run taskd -- status
 ```
 
-构建 Release artifacts：
+构建 release artifacts：
 
 ```bash
 npm run package:release
 ```
 
-输出位于 `release/`：service runtime、Codex adapter 与 Claude Code adapter 各自一个 archive。GitHub Actions 在 pull request/push 上执行完整验证，在 `v*` tag 上校验 tag 与 `package.json` version 一致并创建带 `SHA256SUMS` 的 GitHub Release。
+## Security and privacy
 
-## Security
-
-- `taskd` 只监听 `127.0.0.1`，不会暴露给 LAN 或公网。
-- HTTP routes 校验 `Host`；browser request 带 `Origin` 时必须等于实际 loopback origin。
-- 设计信任同一 OS user 下运行的本机 process，因此不使用 auth token，也不隔离同一用户身份的其他程序。
-- 不要把 service 反向代理到 LAN/公网。
-- Hooks fail open：Tasks Recorder 故障不会阻断正常 tool call，但可能造成一次 activity/status 未记录。
-- SQLite 只保存 Task metadata、plan observation 和 lifecycle fields。Importer 不写入 prompt、reasoning、assistant message、tool output、token 或 transcript 正文；只保留本机 `transcript_path` 便于审计定位。
-- Installer 在解包或执行 runtime 前校验 SHA-256，并拒绝 archive path traversal。
-- Session Resume route 不接受 Session ID、Workspace 或任意 shell command。浏览器只能提交 Task ID；taskd 依据 canonical facts 解析目标、验证本机 Codex transcript，并只调用 Terminal.app、Otty 或 Ghostty adapter。Otty 只向本次新建 shell 的唯一 pane 发送由 taskd 构造并严格 quoting 的 allowlisted `codex resume` command，不产生中间文件；需要 `.command` bridge 的 adapter 使用 `0700` 一次性 launcher，并在启动时自删除。
+- `taskd` 只监听 `127.0.0.1`，并验证 `Host` 与 browser `Origin`；不要反向代理到 LAN 或公网。
+- 威胁模型信任同一 OS user 下的本机 process，因此不使用 auth token。
+- Runtime invocation 使用明确 executable、argv array、可信 Workspace 和 `shell: false`。
+- SQLite 不保存 prompt、reasoning、assistant message、tool output、token 或 transcript 正文。
+- Hooks fail open；Recorder 故障不会阻断 agent 工作，但可能少记一次 activity。
+- Installer 在执行 runtime 前验证 artifact checksum，并拒绝 archive path traversal。
+- Resume endpoint 不接受 browser 提交的 Session ID、Workspace 或任意 command。
 
 ## License
 
-Tasks Recorder 采用 [GPL-2.0-only](LICENSE)。你可以使用、修改、商用和再分发，但对外分发本项目或其修改版时，需要提供对应源码并继续按 GPL-2.0 授权。
-
-Dashboard bundle 使用 MIT 许可的 SVAR React Gantt、React 与 React DOM，详情见 [Third-Party Notices](ui/THIRD_PARTY_NOTICES.md)。这段说明不是法律意见。
+Tasks Recorder 采用 [GPL-2.0-only](LICENSE)。Dashboard bundle 使用 React、React DOM 与 SVAR React Gantt，第三方许可见 [ui/THIRD_PARTY_NOTICES.md](ui/THIRD_PARTY_NOTICES.md)；service bundle 见 [server/THIRD_PARTY_NOTICES.md](server/THIRD_PARTY_NOTICES.md)。
