@@ -79,25 +79,25 @@ Expected: PASS.
 - Consumes: `DashboardApi.schedules()` and `DashboardView = 'tasks' | 'scheduled'`.
 - Produces: live route switch and Schedule list actions for Run now, pause/resume, edit and review.
 
-- [ ] **Step 1: Extend app-shell tests for two routes**
+- [x] **Step 1: Extend app-shell tests for two routes**
 
 Assert Scheduled is enabled, route switching renders the correct workspace, and the view persists.
 
-- [ ] **Step 2: Verify Scheduled is currently disabled**
+- [x] **Step 2: Verify Scheduled is currently disabled**
 
 Run: `npm run test:ui -- ui/react/app/app-shell.test.tsx`
 
 Expected: FAIL on the disabled Scheduled control.
 
-- [ ] **Step 3: Implement controlled route state and Schedule list**
+- [x] **Step 3: Implement controlled route state and Schedule list**
 
 Lift `view` into `DashboardApp`, query only selected workspace data, port Legacy ordering/filter helpers into pure TypeScript, and use dotUI `Button`, `SearchField`, and `Select`.
 
-- [ ] **Step 4: Implement safe Run now and pause/resume mutations**
+- [x] **Step 4: Implement safe Run now and pause/resume mutations**
 
 Run now creates a unique idempotency key. Pause/resume preserves `etag` conflicts and keeps errors scoped to the affected Schedule.
 
-- [ ] **Step 5: Verify route and list**
+- [x] **Step 5: Verify route and list**
 
 Run: `npm run test:ui -- ui/react/app/app-shell.test.tsx && npm run check && npm run build`
 

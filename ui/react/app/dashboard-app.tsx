@@ -6,6 +6,7 @@ import {
   persistDashboardView,
   readDashboardView,
 } from '@/lib/preferences/dashboard-preferences'
+import { ScheduledView } from '@/features/scheduled/scheduled-view'
 import { TasksView } from '@/features/tasks/tasks-view'
 import { AppShell } from './app-shell'
 import { useDashboardApi, useDashboardConnection } from './app-providers'
@@ -13,9 +14,18 @@ import { useDashboardApi, useDashboardConnection } from './app-providers'
 export function DashboardApp() {
   const api = useDashboardApi()
   const connectionState = useDashboardConnection()
-  const [view] = useState(readDashboardView)
+  const [view, setView] = useState(readDashboardView)
   const meta = useQuery({ queryKey: queryKeys.meta, queryFn: () => api.meta() })
-  const snapshot = useQuery({ queryKey: queryKeys.snapshot, queryFn: () => api.snapshot() })
+  const snapshot = useQuery({
+    queryKey: queryKeys.snapshot,
+    queryFn: () => api.snapshot(),
+    enabled: view === 'tasks',
+  })
+  const schedules = useQuery({
+    queryKey: queryKeys.schedules,
+    queryFn: () => api.schedules(),
+    enabled: view === 'scheduled',
+  })
 
   useEffect(() => persistDashboardView(view), [view])
 
@@ -23,8 +33,18 @@ export function DashboardApp() {
     ? snapshot.data.tasks.filter(({ entity_type: entityType }) => entityType !== 'project').length
     : null
 
+  const countLabel = view === 'tasks'
+    ? (taskCount === null ? '— 个任务' : `${taskCount} 个任务`)
+    : (schedules.data ? `${schedules.data.jobs.length} 个计划` : '— 个计划')
+
   return (
-    <AppShell connectionState={connectionState} taskCount={taskCount} view={view}>
+    <AppShell
+      connectionState={connectionState}
+      countLabel={countLabel}
+      onViewChange={setView}
+      view={view}
+    >
+      {view === 'tasks' ? (
       <section
         className="tasks-workspace"
         aria-label="Tasks workspace"
@@ -39,6 +59,14 @@ export function DashboardApp() {
           </div>
         ) : null}
       </section>
+      ) : (
+        <ScheduledView
+          api={api}
+          data={schedules.data ?? null}
+          isPending={schedules.isPending}
+          error={schedules.error}
+        />
+      )}
     </AppShell>
   )
 }

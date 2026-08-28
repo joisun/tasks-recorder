@@ -1,9 +1,10 @@
 import { QueryClient } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import { createDashboardApi, type DashboardApi } from '@/lib/api/dashboard-api'
-import type { DashboardMeta, DashboardSnapshot, TaskRecord } from '@/lib/api/types'
+import type { DashboardMeta, DashboardSnapshot, ScheduleRecord, TaskRecord } from '@/lib/api/types'
 import { AppProviders } from './app-providers'
 import { DashboardApp } from './dashboard-app'
 
@@ -78,6 +79,17 @@ const snapshot: DashboardSnapshot = {
   unassigned_execution_count: 0,
 }
 
+const schedule: ScheduleRecord = {
+  id: 'schedule-a', title: 'Codex update report', workspace: '/Users/me/notes', agent: 'codex',
+  cadence: { kind: 'daily', hour: 9, minute: 0, timezone_mode: 'system' },
+  timezone_mode: 'system', thread_mode: 'new', sandbox_mode: 'read-only', model: 'gpt-5.6',
+  reasoning_effort: 'low', timeout_seconds: 7200, enabled: true, etag: 'a'.repeat(64),
+  source_path: '/Users/me/schedules/codex-update-report.md', schedule_generation: 1,
+  sync_state: 'synced', sync_error_code: null, next_run_at: '2026-08-29T01:00:00.000Z',
+  last_run_at: null, unread_run_count: 0, last_run: null, current_execution: null,
+  created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z',
+}
+
 function dashboardApi(): DashboardApi {
   return {
     ...createDashboardApi({
@@ -96,13 +108,19 @@ function dashboardApi(): DashboardApi {
     restoreTask: vi.fn(),
     updateExecutionAssignments: vi.fn(),
     assignSourceSessionProject: vi.fn(),
+    schedules: vi.fn(async () => ({
+      capability: { supported: true, backend: 'internal' }, jobs: [schedule], invalid: [],
+    })),
+    runScheduleNow: vi.fn(async () => ({ dispatched: true })),
+    pauseSchedule: vi.fn(async () => ({ job: { ...schedule, enabled: false } })),
+    resumeSchedule: vi.fn(async () => ({ job: { ...schedule, enabled: true } })),
   }
 }
 
-function renderApp() {
+function renderApp(api = dashboardApi()) {
   return render(
     <AppProviders
-      api={dashboardApi()}
+      api={api}
       queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       createEventSource={null}
     >
@@ -124,15 +142,31 @@ test('renders the real app identity, task count, and concise connection state', 
   expect(screen.queryByText(/loading|加载中/i)).not.toBeInTheDocument()
 })
 
-test('keeps Tasks URL-backed and exposes Scheduled as an honest migration state', async () => {
-  renderApp()
+test('switches between URL-backed Tasks and Scheduled workspaces', async () => {
+  const user = userEvent.setup()
+  const api = dashboardApi()
+  renderApp(api)
 
   const tasks = screen.getByRole('button', { name: 'Tasks' })
-  const scheduled = screen.getByRole('button', { name: 'Scheduled（迁移中）' })
+  const scheduled = screen.getByRole('button', { name: 'Scheduled' })
   expect(tasks).toHaveAttribute('aria-current', 'page')
   expect(tasks).toHaveAttribute('tabindex', '0')
-  expect(scheduled).toBeDisabled()
   await waitFor(() => expect(window.location.search).toBe('?view=tasks'))
+
+  await user.click(scheduled)
+  expect(await screen.findByRole('heading', { name: 'Scheduled' })).toBeInTheDocument()
+  expect(screen.getByText('Codex update report')).toBeInTheDocument()
+  expect(scheduled).toHaveAttribute('aria-current', 'page')
+  await waitFor(() => expect(window.location.search).toBe('?view=scheduled'))
+
+  await user.click(screen.getByRole('button', { name: '立即运行' }))
+  await waitFor(() => expect(api.runScheduleNow).toHaveBeenCalledWith('schedule-a', expect.any(String)))
+  await user.click(screen.getByRole('button', { name: '暂停 Schedule' }))
+  await waitFor(() => expect(api.pauseSchedule).toHaveBeenCalledWith('schedule-a', schedule.etag))
+
+  await user.click(tasks)
+  expect(await screen.findByTestId('task-gantt')).toBeInTheDocument()
+  expect(tasks).toHaveAttribute('aria-current', 'page')
 })
 
 test('global actions own a safe inset and never use edge-positioned inline styles', () => {

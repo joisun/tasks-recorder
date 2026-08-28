@@ -9,11 +9,13 @@ import { Navigation } from './navigation'
 export function AppShell({
   children,
   connectionState,
-  taskCount,
+  countLabel,
+  onViewChange,
   view,
 }: PropsWithChildren<{
   connectionState: DashboardConnectionState
-  taskCount: number | null
+  countLabel: string
+  onViewChange: (view: DashboardView) => void
   view: DashboardView
 }>) {
   return (
@@ -23,14 +25,14 @@ export function AppShell({
           <span className="app-shell__mark" aria-hidden="true"><Waypoints /></span>
           <h1>Tasks Recorder</h1>
         </div>
-        <Navigation view={view} />
+        <Navigation view={view} onViewChange={onViewChange} />
         <div
           className="app-shell__actions"
           data-testid="global-actions"
           data-safe-area="global-actions"
         >
           <span className="app-shell__task-count" aria-live="polite">
-            {taskCount === null ? '— 个任务' : `${taskCount} 个任务`}
+            {countLabel}
           </span>
           <ConnectionStatus state={connectionState} />
         </div>

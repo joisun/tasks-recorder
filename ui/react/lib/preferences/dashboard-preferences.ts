@@ -1,8 +1,8 @@
-export type DashboardView = 'tasks'
+export type DashboardView = 'tasks' | 'scheduled'
 
 export function readDashboardView(location = window.location): DashboardView {
   const view = new URLSearchParams(location.search).get('view')
-  return view === 'tasks' ? view : 'tasks'
+  return view === 'scheduled' ? view : 'tasks'
 }
 
 export function persistDashboardView(view: DashboardView, history = window.history) {
