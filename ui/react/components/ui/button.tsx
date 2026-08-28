@@ -1,60 +1,143 @@
-import * as React from 'react'
-import { cva, type VariantProps } from 'class-variance-authority'
-import { Slot } from 'radix-ui'
+"use client";
 
-import { cn } from '@/lib/cn'
+import type * as React from "react";
+import * as ButtonPrimitive from "react-aria-components/Button";
+import { composeRenderProps } from "react-aria-components/composeRenderProps";
+import * as LinkPrimitive from "react-aria-components/Link";
+import { type VariantProps, tv } from "tailwind-variants";
 
-const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-  {
-    variants: {
-      variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-        destructive: 'bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20',
-        outline: 'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline',
-      },
-      size: {
-        default: 'h-8 px-3 has-[>svg]:px-2.5',
-        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: 'h-7 gap-1.5 rounded-md px-2.5 has-[>svg]:px-2',
-        lg: 'h-9 rounded-md px-4 has-[>svg]:px-3',
-        icon: 'size-8',
-        'icon-xs': "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
-        'icon-sm': 'size-7',
-        'icon-lg': 'size-9',
-      },
+import { Loader } from "@/components/ui/loader";
+const buttonVariants = tv({
+  base: [
+    "group/button relative inline-flex shrink-0 cursor-interactive items-center justify-center rounded-md bg-clip-padding font-(--btn-font-weight) whitespace-nowrap shadow-[var(--shadow-control,none)] transition-[background-color,border-color,color,box-shadow] select-none",
+    "focus-reset focus-visible:focus-ring",
+    "**:[svg]:pointer-events-none **:[svg]:shrink-0",
+    "pending:cursor-default pending:border-border-disabled pending:bg-disabled pending:text-transparent pending:**:not-data-[slot=spinner]:not-in-data-[slot=spinner]:opacity-0 pending:**:data-[slot=spinner]:text-fg-muted",
+    "disabled:cursor-default disabled:border-border-disabled disabled:bg-disabled disabled:text-fg-disabled",
+    "text-sm *:[svg]:not-with-[size]:size-4",
+  ],
+  variants: {
+    variant: {
+      primary:
+        "bg-primary text-fg-on-primary [--color-disabled:var(--neutral-300)] hover:bg-primary-hover disabled:border-0 pending:border-0 pressed:bg-primary-active",
+      secondary:
+        "border bg-neutral text-fg-on-neutral hover:border-border-hover hover:bg-neutral-hover pressed:border-border-active pressed:bg-neutral-active",
+      quiet: "bg-transparent text-fg hover:bg-inverse/10 pressed:bg-inverse/20",
+      link: "text-fg underline-offset-4 hover:underline",
+      warning:
+        "bg-warning text-fg-on-warning hover:bg-warning-hover pressed:bg-warning-active",
+      danger:
+        "bg-danger text-fg-on-danger hover:bg-danger-hover pressed:bg-danger-active",
     },
-    defaultVariants: {
-      variant: 'default',
-      size: 'default',
+    size: {
+      xs: "h-6 gap-1 px-2 text-xs has-data-icon-end:pr-1.5 has-data-icon-start:pl-1.5 data-icon-only:size-6 **:[svg]:not-with-[size]:size-3",
+      sm: "h-7 gap-1 px-2.5 text-[0.8125rem] has-data-icon-end:pr-1.5 has-data-icon-start:pl-1.5 data-icon-only:size-7 **:[svg]:not-with-[size]:size-3.5",
+      md: "h-8 gap-1.5 px-2.5 has-data-icon-end:pr-2 has-data-icon-start:pl-2 data-icon-only:size-8 **:[svg]:not-with-[size]:size-3.5",
+      lg: "h-9 gap-1.5 px-2.5 has-data-icon-end:pr-2 has-data-icon-start:pl-2 data-icon-only:size-9 **:[svg]:not-with-[size]:size-4",
+    },
+    isIconOnly: {
+      true: "p-0",
     },
   },
-)
+  defaultVariants: {
+    variant: "secondary",
+    size: "md",
+  },
+});
 
-function Button({
-  className,
-  variant = 'default',
-  size = 'default',
-  asChild = false,
-  ...props
-}: React.ComponentProps<'button'> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
-  const Comp = asChild ? Slot.Root : 'button'
+export { buttonVariants as buttonStyles };
 
-  return (
-    <Comp
-      data-slot="button"
-      data-variant={variant}
-      data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
-    />
-  )
+type ButtonVariants = VariantProps<typeof buttonVariants>;
+
+interface ButtonProps
+  extends React.ComponentProps<typeof ButtonPrimitive.Button>, ButtonVariants {
+  isIconOnly?: boolean;
 }
 
-export { Button, buttonVariants }
+const Button = ({
+  variant,
+  size,
+  isIconOnly,
+  className,
+  children,
+  ...props
+}: ButtonProps) => {
+  const styles = buttonVariants;
+
+  const renderChildren = composeRenderProps(
+    children,
+    (children, { isPending }) => (
+      <>
+        {isPending && (
+          <Loader
+            data-slot="spinner"
+            aria-label="loading"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+          />
+        )}
+        {typeof children === "string" ? (
+          <span className="truncate">{children}</span>
+        ) : (
+          children
+        )}
+      </>
+    ),
+  );
+
+  return (
+    <ButtonPrimitive.Button
+      data-button=""
+      data-icon-only={isIconOnly ? "" : undefined}
+      className={composeRenderProps(className, (cn) =>
+        styles({ variant, size, isIconOnly, className: cn }),
+      )}
+      {...props}
+      // Only wrap provided children: passing a render function when `children`
+      // is undefined would override context-injected children (e.g. the
+      // ColorPicker trigger's default swatch) in RAC's context merge.
+      children={children === undefined ? undefined : renderChildren}
+    />
+  );
+};
+
+interface LinkButtonProps
+  extends
+    React.ComponentProps<typeof LinkPrimitive.Link>,
+    VariantProps<typeof buttonVariants> {
+  isIconOnly?: boolean;
+}
+
+const LinkButton = ({
+  variant,
+  size,
+  isIconOnly,
+  className,
+  children,
+  ...props
+}: LinkButtonProps) => {
+  const styles = buttonVariants;
+
+  return (
+    <LinkPrimitive.Link
+      data-button=""
+      data-icon-only={isIconOnly ? "" : undefined}
+      className={composeRenderProps(className, (cn) =>
+        styles({ variant, size, isIconOnly, className: cn }),
+      )}
+      {...props}
+    >
+      {composeRenderProps(children, (children) => (
+        <>
+          {typeof children === "string" ? (
+            <span className="truncate">{children}</span>
+          ) : (
+            children
+          )}
+        </>
+      ))}
+    </LinkPrimitive.Link>
+  );
+};
+
+export type { ButtonProps, LinkButtonProps };
+export { Button, LinkButton };

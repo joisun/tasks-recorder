@@ -1,3 +1,5 @@
+import type { ComponentType } from 'react'
+import type { IApi, ITask } from '@svar-ui/react-gantt'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 
@@ -61,4 +63,22 @@ test('column resizing changes only the requested column and never the pane width
   expect(resized.text).toBe(DEFAULT_TASK_COLUMN_WIDTHS.text)
   expect(resized.branch).toBe(DEFAULT_TASK_COLUMN_WIDTHS.branch)
   expect(gridWidth).toBe(640)
+})
+
+test('renders the task name inside a Timeline bar when the bar has room', () => {
+  render(<TaskGantt snapshot={snapshot} />)
+
+  const props = ganttProps.mock.lastCall?.[0]
+  const TaskTemplate = props.taskTemplate as ComponentType<{
+    data: ITask
+    api: IApi
+    onaction: (event: { action: string; data: Record<string, unknown> }) => void
+  }>
+  const data = { ...props.tasks[0], $x: 12, $w: 180 } as ITask
+  const api = { getState: () => ({ scrollLeft: 0, _chartWidth: 480 }) } as unknown as IApi
+  render(<TaskTemplate data={data} api={api} onaction={() => undefined} />)
+
+  const label = screen.getByText('Tasks Recorder')
+  expect(label).toHaveClass('gantt-task-bar__label')
+  expect(label.parentElement).toHaveClass('label-inside')
 })

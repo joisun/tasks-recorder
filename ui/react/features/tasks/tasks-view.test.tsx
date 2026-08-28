@@ -3,7 +3,6 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 
-import { TooltipProvider } from '@/components/ui/tooltip'
 import { DashboardApiError, type DashboardApi } from '@/lib/api/dashboard-api'
 import type { DashboardSnapshot, TaskRecord } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query/keys'
@@ -73,13 +72,16 @@ function renderView(api = apiMock()) {
   queryClient.setQueryData(queryKeys.snapshot, snapshot)
   render(
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider><TasksView api={api} snapshot={snapshot} /></TooltipProvider>
+      <TasksView api={api} snapshot={snapshot} />
     </QueryClientProvider>,
   )
   return { api, queryClient }
 }
 
-beforeEach(() => ganttProps.mockClear())
+beforeEach(() => {
+  ganttProps.mockClear()
+  window.localStorage.clear()
+})
 
 test('client filters keep ancestors and never mutate server state', async () => {
   const blocked = filterTaskSnapshot(snapshot, { query: 'server', status: 'blocked' })
@@ -126,7 +128,8 @@ test('status mutation is optimistic, revisioned, and rolls back on conflict', as
 
   await user.click(screen.getByRole('button', { name: 'Select main' }))
   await screen.findByRole('dialog', { name: 'React migration' })
-  await user.selectOptions(screen.getByRole('combobox', { name: '修改任务状态' }), 'done')
+  await user.click(screen.getByRole('button', { name: /修改任务状态/ }))
+  await user.click(await screen.findByRole('option', { name: '已完成' }))
 
   expect(api.updateTask).toHaveBeenCalledWith('main', 1, { status: 'done' })
   expect(queryClient.getQueryData<DashboardSnapshot>(queryKeys.snapshot)?.tasks.find(({ id }) => id === 'main')?.status).toBe('done')
@@ -146,4 +149,25 @@ test('resume is available only when the task has a session context', async () =>
   await user.click(await screen.findByRole('button', { name: '在终端恢复' }))
 
   expect(api.resumeTask).toHaveBeenCalledWith('main')
+})
+
+test('Timeline label control updates the renderer and persists the preference', async () => {
+  renderView()
+  const user = userEvent.setup()
+
+  expect(ganttProps.mock.lastCall?.[0].labelsVisible).toBe(true)
+  await user.click(screen.getByRole('button', { name: '隐藏 Timeline 标签' }))
+
+  expect(ganttProps.mock.lastCall?.[0].labelsVisible).toBe(false)
+  expect(window.localStorage.getItem('dashboard-show-timeline-labels')).toBe('false')
+  expect(screen.getByRole('button', { name: '显示 Timeline 标签' })).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('restores the saved Timeline label preference', () => {
+  window.localStorage.setItem('dashboard-show-timeline-labels', 'false')
+
+  renderView()
+
+  expect(ganttProps.mock.lastCall?.[0].labelsVisible).toBe(false)
+  expect(screen.getByRole('button', { name: '显示 Timeline 标签' })).toBeInTheDocument()
 })

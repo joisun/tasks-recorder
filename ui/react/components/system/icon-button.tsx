@@ -7,7 +7,7 @@ type IconButtonProps = Omit<React.ComponentProps<typeof Button>, 'aria-label' | 
 }
 
 function IconButton(props: IconButtonProps) {
-  return <Button size="icon" {...props} />
+  return <Button isIconOnly size="md" {...props} />
 }
 
 export { IconButton, type IconButtonProps }

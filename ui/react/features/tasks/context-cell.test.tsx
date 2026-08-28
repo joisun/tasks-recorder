@@ -2,18 +2,13 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
-import { TooltipProvider } from '@/components/ui/tooltip'
 import { ContextCell } from './context-cell'
 
 test('copies the exact context value and exposes one custom tooltip without a native title', async () => {
   const writeText = vi.fn(async () => undefined)
   const user = userEvent.setup()
 
-  render(
-    <TooltipProvider>
-      <ContextCell label="Workspace" value={'/Users/me/project\nfeature/react-dashboard'} writeText={writeText} />
-    </TooltipProvider>,
-  )
+  render(<ContextCell label="Workspace" value={'/Users/me/project\nfeature/react-dashboard'} writeText={writeText} />)
 
   expect(screen.queryByTitle(/Workspace/)).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '复制 Workspace' }))

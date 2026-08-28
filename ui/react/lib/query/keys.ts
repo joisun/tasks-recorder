@@ -11,4 +11,8 @@ export const queryKeys = {
   executionList: (filters: ExecutionFilters = {}) => (
     ['dashboard', 'executions', filters] as const
   ),
+  inboxExecutions: ['dashboard', 'inbox', 'executions'] as const,
+  inboxExecutionList: (count: number) => (
+    ['dashboard', 'inbox', 'executions', count] as const
+  ),
 }

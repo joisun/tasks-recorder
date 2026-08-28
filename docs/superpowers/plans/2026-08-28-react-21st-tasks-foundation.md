@@ -1,5 +1,7 @@
 # React + 21st Tasks Foundation Implementation Plan
 
+> **Superseded UI-system note (2026-08-28):** This document remains the historical implementation record for the React/TanStack Query/SVAR foundation. Its shadcn/Radix/21st.dev UI-system sections are superseded by `docs/superpowers/specs/2026-08-28-react-dotui-ui-migration-design.md` and `docs/superpowers/plans/2026-08-28-react-dotui-migration.md`. Current React UI primitives are checked-in dotUI/React Aria source using the pinned Vercel preset.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Use test-driven-development for each task. Before claiming completion, use verification-before-completion and visual-driven-review.
 
 **Goal:** 在不影响现有 Dashboard 的前提下，建立可独立预览、可打包、可测试的 React UI，并完成 App Shell 与 Tasks 主视图的首个纵向切片。
@@ -19,7 +21,8 @@
 | 5. App Shell | Complete | commit `f436cea`; 1440×900 and 1024×768 VDR clear |
 | 6. Tasks projection and SVAR timeline | Complete | 27 UI tests, 30 related Node tests, real-data VDR clear |
 | 7. Toolbar, mutations, context copy, and details inspector | Complete | 35 UI tests; check/build green; 1440×900 and 840×760 real-data VDR; fresh console 0 errors |
-| 8–10. Inboxes, artifact/docs, final acceptance | Pending | continue after the Task 7 phase checkpoint |
+| 8. Project and Execution Inbox parity | Complete | unified drawer, canonical counts, guarded assignment mutations; 1440×900 and 840×760 real-data VDR; Inbox request remains single-shot across SSE refreshes |
+| 9–10. Artifact/docs and final acceptance | Pending | continue after the Task 8 phase checkpoint |
 
 The detailed checkboxes below remain the original execution recipe. This status table is the current progress record and avoids rewriting historical red/green implementation steps after the fact.
 
@@ -911,6 +914,8 @@ git commit -m "feat(ui): complete React tasks workspace"
 ---
 
 ### Task 8: Port Project and Execution Inbox Parity
+
+> **2026-08-28 execution note:** 用户要求本阶段不再新增测试文件，因此保留原始 TDD recipe 作为历史计划，但实际交付采用 direct implementation、现有 check/build/test gate 与真实数据 Playwright VDR；未创建 `inbox.test.tsx`。
 
 **Files:**
 - Create: `ui/react/features/inbox/project-inbox.tsx`

@@ -4,6 +4,12 @@ The standalone Dashboard bundle includes these MIT-licensed packages:
 
 - SVAR React Gantt 2.7.1 — Copyright (c) 2025 XB Software Sp. z o.o.
 - React 19.2.8 and React DOM 19.2.8 — Copyright (c) Meta Platforms, Inc. and affiliates.
+- dotUI checked-in component source — Copyright (c) 2024 dotLabs.
+- Base UI React 1.7.0 — MUI Team.
+- tailwind-variants 3.3.1 — Junior Garcia.
+- tailwindcss-with 0.0.2.
+
+The React Dashboard also includes Apache-2.0-licensed React Aria packages from Adobe: React Aria 3.51.0, React Aria Components 1.20.0, React Stately 3.49.0, and tailwindcss-react-aria-components 2.2.0. Component provenance and local modifications are recorded in `ui/react/components/registry/README.md`.
 
 The MIT License text applicable to these packages follows:
 

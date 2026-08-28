@@ -123,10 +123,13 @@ export interface TaskDetailResponse {
 export interface ExecutionRecord {
   id: string
   task_id?: string | null
+  classification?: 'unknown' | 'work' | 'non_work'
   root_session_id?: string
   session_id?: string
   status?: string
   agent?: string | null
+  agent_type?: string | null
+  agent_path?: string | null
   workfolder?: string | null
   worktree?: string | null
   branch?: string | null
@@ -177,10 +180,13 @@ export interface TaskResumeResponse {
 }
 
 export interface ExecutionAssignmentPatch {
-  assignments: Array<{
-    execution_id: string
+  actor: 'user'
+  changes: Array<{
+    id: string
     task_id: string | null
-    expected_task_id?: string | null
+    expected_task_id: string | null
+    classification: 'work' | 'non_work'
+    expected_classification: 'unknown' | 'work' | 'non_work'
   }>
 }
 

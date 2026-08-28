@@ -1,8 +1,6 @@
 # Third-Party Notices
 
-The React Dashboard includes locally owned component source derived from shadcn/ui under the MIT License. Component source is reviewed and modified inside this repository; no shadcn or 21st.dev registry is contacted at runtime or during release packaging.
-
-Future source copied from 21st.dev must retain its component-level provenance and license in `ui/react/components/registry/README.md` before it is admitted to the product.
+The React Dashboard includes locally maintained component source derived from dotUI, copyright dotLabs, under the MIT License. Component source is reviewed and modified inside this repository; dotUI is not contacted at runtime, in CI, or during release packaging. Component-level provenance and local changes are recorded in `ui/react/components/registry/README.md`.
 
 The Tasks Recorder service bundles YAML 2.9.0 by Eemeli Aro under the ISC License:
 

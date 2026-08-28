@@ -1,6 +1,8 @@
-import { CalendarClock, ChevronsDownUp, ChevronsUpDown, Search } from 'lucide-react'
+import { CalendarClock, ChevronsDownUp, ChevronsUpDown, Inbox, Tags } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { SearchField } from '@/components/ui/search-field'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { TaskStatus } from '@/lib/api/types'
 import type { TimelineZoom } from './task-types'
 
@@ -15,7 +17,11 @@ export function TasksToolbar({
   onZoomChange,
   onExpandAll,
   onCollapseAll,
-  onToday,
+  onNow,
+  labelsVisible,
+  onToggleLabels,
+  inboxCount = 0,
+  onOpenInbox,
 }: {
   query: string
   status: TaskStatusScope
@@ -25,51 +31,79 @@ export function TasksToolbar({
   onZoomChange: (value: TimelineZoom) => void
   onExpandAll: () => void
   onCollapseAll: () => void
-  onToday: () => void
+  onNow: () => void
+  labelsVisible: boolean
+  onToggleLabels: () => void
+  inboxCount?: number
+  onOpenInbox?: () => void
 }) {
   return (
     <div className="tasks-toolbar" aria-label="任务视图工具栏">
-      <label className="tasks-toolbar__search">
-        <Search aria-hidden="true" />
-        <input
-          aria-label="搜索任务"
-          type="search"
-          value={query}
-          placeholder="搜索任务、Workspace、Branch 或 Session ID"
-          onChange={(event) => onQueryChange(event.target.value)}
-        />
-      </label>
-      <select
+      <SearchField
+        aria-label="搜索任务"
+        className="tasks-toolbar__search"
+        value={query}
+        size="sm"
+        placeholder="搜索任务、Workspace、Branch 或 Session ID"
+        onChange={onQueryChange}
+      />
+      <Select
         aria-label="任务状态"
         className="tasks-toolbar__select"
-        value={status}
-        onChange={(event) => onStatusChange(event.target.value as TaskStatusScope)}
+        selectedKey={status}
+        onSelectionChange={(key) => onStatusChange(String(key) as TaskStatusScope)}
       >
-        <option value="all">全部状态</option>
-        <option value="active">进行中</option>
-        <option value="planned">待安排</option>
-        <option value="waiting">等待中</option>
-        <option value="blocked">已阻塞</option>
-        <option value="done">已完成</option>
-        <option value="canceled">已取消</option>
-      </select>
+        <SelectTrigger size="sm"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem id="all">全部状态</SelectItem>
+          <SelectItem id="active">进行中</SelectItem>
+          <SelectItem id="planned">待安排</SelectItem>
+          <SelectItem id="waiting">等待中</SelectItem>
+          <SelectItem id="blocked">已阻塞</SelectItem>
+          <SelectItem id="done">已完成</SelectItem>
+          <SelectItem id="canceled">已取消</SelectItem>
+        </SelectContent>
+      </Select>
+      <Button className="tasks-toolbar__inbox" size="sm" variant="secondary" onPress={onOpenInbox}>
+        <Inbox />待处理{inboxCount > 0 ? <span>{inboxCount}</span> : null}
+      </Button>
       <div className="tasks-toolbar__group">
-        <Button aria-label="全部展开" size="icon-xs" variant="ghost" onClick={onExpandAll}><ChevronsUpDown /></Button>
-        <Button aria-label="全部折叠" size="icon-xs" variant="ghost" onClick={onCollapseAll}><ChevronsDownUp /></Button>
-        <Button size="xs" variant="ghost" onClick={onToday}><CalendarClock />今天</Button>
+        <Button aria-label="全部展开" isIconOnly size="xs" variant="quiet" onPress={onExpandAll}><ChevronsUpDown /></Button>
+        <Button aria-label="全部折叠" isIconOnly size="xs" variant="quiet" onPress={onCollapseAll}><ChevronsDownUp /></Button>
+        <Button
+          aria-label={labelsVisible ? '隐藏 Timeline 标签' : '显示 Timeline 标签'}
+          aria-pressed={labelsVisible}
+          size="xs"
+          variant={labelsVisible ? 'secondary' : 'quiet'}
+          onPress={onToggleLabels}
+        >
+          <Tags />标签
+        </Button>
+        <Button
+          aria-label="定位到当前时间"
+          className="tasks-toolbar__now"
+          size="xs"
+          variant="quiet"
+          onPress={onNow}
+        >
+          <CalendarClock />NOW
+        </Button>
       </div>
-      <select
+      <Select
         aria-label="Timeline scale"
         className="tasks-toolbar__select tasks-toolbar__scale"
-        value={zoom}
-        onChange={(event) => onZoomChange(event.target.value as TimelineZoom)}
+        selectedKey={zoom}
+        onSelectionChange={(key) => onZoomChange(String(key) as TimelineZoom)}
       >
-        <option value="auto">自适应</option>
-        <option value="hour">时</option>
-        <option value="day">日</option>
-        <option value="week">周</option>
-        <option value="month">月</option>
-      </select>
+        <SelectTrigger size="sm"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem id="auto">自适应</SelectItem>
+          <SelectItem id="hour">时</SelectItem>
+          <SelectItem id="day">日</SelectItem>
+          <SelectItem id="week">周</SelectItem>
+          <SelectItem id="month">月</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   )
 }

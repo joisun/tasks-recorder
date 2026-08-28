@@ -3,8 +3,6 @@ import { CircleAlert, LoaderCircle, Radio } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
 } from '@/components/ui/tooltip'
 import type { DashboardConnectionState } from '@/lib/events/dashboard-event-source'
 
@@ -38,10 +36,8 @@ export function ConnectionStatus({ state }: { state: DashboardConnectionState })
   const presentation = PRESENTATION[state]
   const Icon = presentation.icon
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
+    <Tooltip>
+      <span
             className="connection-status"
             data-state={state}
             role="status"
@@ -49,12 +45,10 @@ export function ConnectionStatus({ state }: { state: DashboardConnectionState })
           >
             <Icon aria-hidden="true" />
             <span>{presentation.shortLabel}</span>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" align="end">
-          {presentation.detail}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+      </span>
+      <TooltipContent placement="bottom end">
+        {presentation.detail}
+      </TooltipContent>
+    </Tooltip>
   )
 }

@@ -2,15 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Archive, Terminal } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Drawer } from '@/components/ui/drawer'
+import { Tab, TabList, TabPanel, Tabs } from '@/components/ui/tabs'
 import type { DashboardApi } from '@/lib/api/dashboard-api'
 import type { TaskRecord, TaskStatus } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query/keys'
@@ -88,47 +83,48 @@ export function TaskDetailsSheet({
   const canArchive = Boolean(task && !task.archived_at && ['done', 'canceled'].includes(archiveStatus ?? ''))
 
   return (
-    <Sheet modal={false} open={open} onOpenChange={onOpenChange}>
-      <SheetContent
+    <Drawer isDismissable={false} isOpen={open} modal={false} onOpenChange={onOpenChange} placement="right" swipeToDismiss={false} className="task-details-sheet">
+      <DialogContent
         aria-busy={busy || detail.isPending}
-        className="task-details-sheet"
-        showOverlay={false}
-        onInteractOutside={(event) => event.preventDefault()}
+        showCloseButton
       >
-        <SheetHeader>
-          <SheetTitle>{task?.title ?? '任务详情'}</SheetTitle>
-          <SheetDescription>
+        <DialogHeader>
+          <DialogTitle>{task?.title ?? '任务详情'}</DialogTitle>
+          <DialogDescription>
             {task ? `${task.entity_type === 'subtask' ? 'Subtask' : task.entity_type === 'project' ? 'Project' : 'Main Task'} · revision ${task.revision}` : '正在读取任务上下文'}
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
         {message || readError ? (
           <div className="task-details-sheet__message" role="status">
             {message || (readError as Error).message}
           </div>
         ) : null}
-        <Tabs className="task-details-sheet__tabs" defaultValue="summary">
-          <TabsList variant="line" aria-label="任务详情">
-            <TabsTrigger value="summary">概览</TabsTrigger>
-            <TabsTrigger value="executions">Executions</TabsTrigger>
-            <TabsTrigger value="activity">动态</TabsTrigger>
-          </TabsList>
-          <TabsContent className="task-details-sheet__panel" value="summary">
+        <Tabs className="task-details-sheet__tabs" defaultSelectedKey="summary">
+          <TabList variant="line" aria-label="任务详情">
+            <Tab id="summary">概览</Tab>
+            <Tab id="executions">Executions</Tab>
+            <Tab id="activity">动态</Tab>
+          </TabList>
+          <TabPanel className="task-details-sheet__panel" id="summary">
             {task ? (
               <div className="task-details-summary">
                 {task.entity_type !== 'project' ? (
-                  <label className="task-details-field">
+                  <div className="task-details-field">
                     <span>状态</span>
-                    <select
+                    <Select
                       aria-label="修改任务状态"
-                      disabled={busy}
-                      value={task.status}
-                      onChange={(event) => onStatusChange(task, event.target.value as TaskStatus)}
+                      isDisabled={busy}
+                      selectedKey={task.status}
+                      onSelectionChange={(key) => onStatusChange(task, String(key) as TaskStatus)}
                     >
+                      <SelectTrigger size="sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
                       {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((status) => (
-                        <option key={status} value={status}>{STATUS_LABELS[status]}</option>
+                        <SelectItem id={status} key={status}>{STATUS_LABELS[status]}</SelectItem>
                       ))}
-                    </select>
-                  </label>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 ) : null}
                 <div className="task-details-field task-details-field--wide"><span>描述</span><p>{task.description || '—'}</p></div>
                 <div className="task-details-field task-details-field--wide"><span>Next action</span><p>{task.next_action || '—'}</p></div>
@@ -143,8 +139,8 @@ export function TaskDetailsSheet({
                 </dl>
               </div>
             ) : null}
-          </TabsContent>
-          <TabsContent className="task-details-sheet__panel" value="executions">
+          </TabPanel>
+          <TabPanel className="task-details-sheet__panel" id="executions">
             <ol className="task-details-list">
               {(executions.data ?? []).map((execution) => (
                 <li key={execution.id}>
@@ -156,21 +152,21 @@ export function TaskDetailsSheet({
               ))}
               {!executions.isPending && executions.data?.length === 0 ? <li className="is-empty">尚无 Execution 记录</li> : null}
             </ol>
-          </TabsContent>
-          <TabsContent className="task-details-sheet__panel" value="activity">
+          </TabPanel>
+          <TabPanel className="task-details-sheet__panel" id="activity">
             <ol className="task-activity-list">
               {(events.data ?? []).map((event) => (
                 <li key={event.id}><span aria-hidden="true" /><div><strong>{eventLabel(event.event_type)}</strong><small>{localTime(event.created_at)}</small></div></li>
               ))}
               {!events.isPending && events.data?.length === 0 ? <li className="is-empty">尚无任务动态</li> : null}
             </ol>
-          </TabsContent>
+          </TabPanel>
         </Tabs>
-        <SheetFooter className="task-details-sheet__actions">
-          <Button disabled={!canResume || busy} variant="outline" onClick={() => task && onResume(task)}><Terminal />在终端恢复</Button>
-          {canArchive ? <Button disabled={busy} variant="ghost" onClick={() => task && onArchive(task)}><Archive />归档</Button> : null}
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        <DialogFooter className="task-details-sheet__actions">
+          <Button isDisabled={!canResume || busy} variant="secondary" onPress={() => task && onResume(task)}><Terminal />在终端恢复</Button>
+          {canArchive ? <Button isDisabled={busy} variant="quiet" onPress={() => task && onArchive(task)}><Archive />归档</Button> : null}
+        </DialogFooter>
+      </DialogContent>
+    </Drawer>
   )
 }

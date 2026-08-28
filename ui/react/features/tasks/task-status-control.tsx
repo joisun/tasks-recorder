@@ -1,3 +1,4 @@
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { TaskStatus } from '@/lib/api/types'
 import type { TaskGanttRow } from './task-types'
 
@@ -46,29 +47,34 @@ export function TaskStatusControl({
   const canArchive = !row.source.archived_at && ['done', 'canceled'].includes(row.status)
 
   return (
-    <label
+    <span
       className="gantt-native-status"
       data-indicator={row.status_indicator}
       data-status={row.status}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
     >
       <span aria-hidden="true" />
-      <select
+      <Select
         aria-label={`修改“${row.text}”状态，当前${STATUS_LABELS[row.status]}`}
-        disabled={disabled}
-        value={row.status}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-        onChange={(event) => {
-          event.stopPropagation()
-          if (event.target.value === 'archive') onArchive(row.id)
-          else onStatusChange(row.id, event.target.value as TaskStatus)
+        isDisabled={disabled}
+        selectedKey={row.status}
+        onSelectionChange={(key) => {
+          const value = String(key)
+          if (value === 'archive') onArchive(row.id)
+          else onStatusChange(row.id, value as TaskStatus)
         }}
       >
+        <SelectTrigger className="gantt-native-status__trigger" size="xs" variant="quiet">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
         {STATUS_ORDER.map((status) => (
-          <option key={status} value={status}>{STATUS_LABELS[status]}</option>
+          <SelectItem id={status} key={status}>{STATUS_LABELS[status]}</SelectItem>
         ))}
-        {canArchive ? <option value="archive">归档任务</option> : null}
-      </select>
-    </label>
+        {canArchive ? <SelectItem id="archive">归档任务</SelectItem> : null}
+        </SelectContent>
+      </Select>
+    </span>
   )
 }

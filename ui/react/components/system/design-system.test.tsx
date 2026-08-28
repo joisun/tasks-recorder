@@ -6,8 +6,8 @@ import { describe, expect, test } from 'vitest'
 
 import { IconButton } from './icon-button'
 import { Button } from '../ui/button'
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
+import { Tab, TabList, Tabs } from '../ui/tabs'
+import { Tooltip, TooltipContent } from '../ui/tooltip'
 
 describe('Dashboard design system', () => {
   test('uses compact controls without losing accessible names', () => {
@@ -19,20 +19,17 @@ describe('Dashboard design system', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Continue' })).toHaveClass('h-8')
-    expect(screen.getByRole('button', { name: 'Open settings' })).toHaveClass('size-8')
+    expect(screen.getByRole('button', { name: 'Open settings' })).toHaveAttribute('data-icon-only')
+    expect(screen.getByRole('button', { name: 'Open settings' })).toHaveClass('h-8', 'p-0')
   })
 
   test('makes tooltip content available from keyboard focus', async () => {
     const user = userEvent.setup()
     render(
-      <TooltipProvider delayDuration={0}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button>Inspect</Button>
-          </TooltipTrigger>
-          <TooltipContent>Inspect task details</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>,
+      <Tooltip delay={0}>
+        <Button>Inspect</Button>
+        <TooltipContent>Inspect task details</TooltipContent>
+      </Tooltip>,
     )
 
     await user.tab()
@@ -42,11 +39,11 @@ describe('Dashboard design system', () => {
   test('supports arrow-key navigation between tabs', async () => {
     const user = userEvent.setup()
     render(
-      <Tabs defaultValue="tasks">
-        <TabsList>
-          <TabsTrigger value="tasks">Tasks</TabsTrigger>
-          <TabsTrigger value="scheduled">Scheduled</TabsTrigger>
-        </TabsList>
+      <Tabs defaultSelectedKey="tasks">
+        <TabList>
+          <Tab id="tasks">Tasks</Tab>
+          <Tab id="scheduled">Scheduled</Tab>
+        </TabList>
       </Tabs>,
     )
     const tasks = screen.getByRole('tab', { name: 'Tasks' })

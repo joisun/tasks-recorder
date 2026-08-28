@@ -17,5 +17,8 @@
     "lib": "@/lib",
     "hooks": "@/hooks"
   },
-  "iconLibrary": "lucide"
+  "iconLibrary": "lucide",
+  "registries": {
+    "@dotui": "https://dotui.org/r/{name}?preset=rVBrS8MwFP0r5frFQaJZO9fRf3PzWFuXNSGP6Rj97-a2qIggCuZCuI9z7uPcwEN3A4m6N-QE1GOO0AHnq8uP2VqYGSh3PuOkCRTT1RY0NDCXQqIU53FA7V64u5hg8Vqqojr412q7Lx_flS_08l5UZI-VeBC7DStuTZWmJszhO2a_AfbZWmHQ_9aXLqLFL9DVDKIxOlKISpmpXAR325aszJ9MTgEt5dqGDAhvjUqjmygrRFsfn6ijRHqg8urTBrDCTpR8iRKGLVZRihnXeDSBW0CxR6tSYn0fJ_E4NnJEueRD0Rd5V9YPTHs2A_pZ2rMMllD-PmDvOr3Kzp6_5XrnV82-SO9vDc"
+  }
 }

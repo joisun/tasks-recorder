@@ -17,21 +17,50 @@ import type { TaskGanttRow, TimelineZoom } from './task-types'
 const ROW_HEIGHT = 30
 const SCALE_HEIGHT = 24
 
-function TaskBar({ data: sourceData }: {
+function estimatedTimelineLabelWidth(text: string) {
+  const width = Array.from(text).reduce(
+    (total, character) => total + (/[^\x00-\xff]/.test(character) ? 11 : 6.4),
+    0,
+  )
+  return Math.min(220, Math.max(80, Math.ceil(width + 18)))
+}
+
+function timelineLabelPlacement(data: TaskGanttRow, api: IApi) {
+  const state = api.getState()
+  const barLeft = Number.isFinite(data.$x) ? data.$x : 0
+  const barWidth = Number.isFinite(data.$w) ? data.$w : 0
+  const scrollLeft = typeof state.scrollLeft === 'number' && Number.isFinite(state.scrollLeft)
+    ? state.scrollLeft
+    : 0
+  const clientWidth = typeof state._chartWidth === 'number' && Number.isFinite(state._chartWidth)
+    ? state._chartWidth
+    : 0
+  const labelWidth = estimatedTimelineLabelWidth(data.text)
+  const visibleStart = Math.max(barLeft, scrollLeft)
+  const visibleEnd = Math.min(barLeft + barWidth, scrollLeft + clientWidth)
+  if (Math.max(0, visibleEnd - visibleStart) >= labelWidth) return 'inside'
+  return barLeft + barWidth + labelWidth + 12 > scrollLeft + clientWidth ? 'left' : 'right'
+}
+
+function TaskBar({ data: sourceData, api, labelsVisible }: {
   data: ITask
   api: IApi
   onaction: (event: { action: string; data: Record<string, unknown> }) => void
+  labelsVisible: boolean
 }) {
   const data = sourceData as TaskGanttRow
+  const placement = timelineLabelPlacement(data, api)
   return (
     <div
-      className="gantt-task-bar"
+      className={`gantt-task-bar label-${placement}`}
       data-entity-type={data.entity_type}
       data-task-id={data.id}
       data-task-kind={data.type}
       data-status={data.status}
       data-planned-pattern={data.planned_pattern ?? undefined}
-    />
+    >
+      {labelsVisible ? <span className="gantt-task-bar__label">{data.text}</span> : null}
+    </div>
   )
 }
 
@@ -47,7 +76,8 @@ export function TaskGantt({
   onOpenIdsChange = () => undefined,
   selectedTaskId = null,
   pendingTaskIds = new Set<string>(),
-  todayRequest = 0,
+  nowRequest = 0,
+  labelsVisible = true,
 }: {
   snapshot: DashboardSnapshot
   zoom?: TimelineZoom
@@ -60,12 +90,15 @@ export function TaskGantt({
   onOpenIdsChange?: (ids: Set<string>) => void
   selectedTaskId?: string | null
   pendingTaskIds?: ReadonlySet<string>
-  todayRequest?: number
+  nowRequest?: number
+  labelsVisible?: boolean
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const nowMarkerRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<IApi | null>(null)
   const eventTag = useRef(`tasks-recorder-react-${Math.random().toString(36).slice(2)}`)
   const [viewportWidth, setViewportWidth] = useState(900)
+  const [now, setNow] = useState(() => new Date())
   const [internalOpenIds, setInternalOpenIds] = useState<Set<string> | null>(null)
   const openIds = controlledOpenIds === undefined ? internalOpenIds : controlledOpenIds
   const [columnWidths, setColumnWidths] = useState<TaskColumnWidths>(DEFAULT_TASK_COLUMN_WIDTHS)
@@ -73,7 +106,8 @@ export function TaskGantt({
     viewportWidth,
     openIds,
     zoom,
-  }), [openIds, snapshot, viewportWidth, zoom])
+    now,
+  }), [now, openIds, snapshot, viewportWidth, zoom])
   const columns = useMemo(() => createTaskColumns(columnWidths, {
     pendingTaskIds,
     onTaskSelect,
@@ -93,19 +127,92 @@ export function TaskGantt({
     return () => observer.disconnect()
   }, [])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const updateNowMarker = useCallback(() => {
+    const host = hostRef.current
+    const marker = nowMarkerRef.current
+    const chart = host?.querySelector<HTMLElement>('.wx-chart')
+    const scale = chart?.querySelector<HTMLElement>('.wx-scale')
+    const state = apiRef.current?.getState()
+    const timeline = state?._scales
+    if (!host || !marker || !chart || !scale || !timeline) {
+      if (marker) marker.hidden = true
+      return
+    }
+
+    const start = timeline.start.getTime()
+    const end = timeline.end.getTime()
+    const ratio = (now.getTime() - start) / (end - start)
+    const contentX = ratio * timeline.width
+    const visibleX = contentX - chart.scrollLeft
+    const hostRect = host.getBoundingClientRect()
+    const chartRect = chart.getBoundingClientRect()
+    const scaleRect = scale.getBoundingClientRect()
+    const visible = Number.isFinite(visibleX)
+      && ratio >= 0
+      && ratio <= 1
+      && visibleX >= 0
+      && visibleX <= chart.clientWidth
+
+    marker.hidden = !visible
+    if (!visible) return
+    marker.style.left = `${Math.round(chartRect.left - hostRect.left + visibleX)}px`
+    marker.style.top = `${Math.round(scaleRect.bottom - hostRect.top)}px`
+    marker.style.height = `${Math.max(0, Math.round(chartRect.bottom - scaleRect.bottom))}px`
+  }, [now])
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return undefined
+    let frame = 0
+    const scheduleUpdate = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        updateNowMarker()
+      })
+    }
+    const observer = new ResizeObserver(scheduleUpdate)
+    const mutations = new MutationObserver(scheduleUpdate)
+    observer.observe(host)
+    const chart = host.querySelector<HTMLElement>('.wx-chart')
+    const area = chart?.querySelector<HTMLElement>('.wx-area')
+    if (chart) observer.observe(chart)
+    if (area) observer.observe(area)
+    mutations.observe(host, { childList: true, subtree: true })
+    host.addEventListener('scroll', scheduleUpdate, true)
+    scheduleUpdate()
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      observer.disconnect()
+      mutations.disconnect()
+      host.removeEventListener('scroll', scheduleUpdate, true)
+    }
+  }, [model.scale, updateNowMarker])
+
   useEffect(() => () => apiRef.current?.detach(eventTag.current), [])
 
   useEffect(() => {
-    if (!todayRequest || !apiRef.current) return
-    const unitMs = model.scale.lengthUnit === 'hour' ? 60 * 60_000 : 24 * 60 * 60_000
-    const offset = ((Date.now() - model.scale.start.getTime()) / unitMs) * model.scale.cellWidth
-    const chartWidth = Math.max(240, viewportWidth - gridWidth)
+    if (!nowRequest || !apiRef.current) return
+    const state = apiRef.current.getState()
+    const timeline = state._scales
+    if (!timeline) return
+    const ratio = (now.getTime() - timeline.start.getTime())
+      / (timeline.end.getTime() - timeline.start.getTime())
+    const offset = ratio * timeline.width
+    const chartWidth = state._chartWidth ?? Math.max(240, viewportWidth - gridWidth)
     void apiRef.current.exec('scroll-chart', { left: Math.max(0, offset - chartWidth / 2) })
-  }, [gridWidth, model.scale, todayRequest, viewportWidth])
+      .then(() => window.requestAnimationFrame(updateNowMarker))
+  }, [gridWidth, now, nowRequest, updateNowMarker, viewportWidth])
 
   const initialize = useCallback((api: IApi) => {
     apiRef.current?.detach(eventTag.current)
     apiRef.current = api
+    window.requestAnimationFrame(updateNowMarker)
     api.on('select-task', ({ id }: { id: string | number }) => onTaskSelect(String(id)), {
       tag: eventTag.current,
     })
@@ -124,7 +231,11 @@ export function TaskGantt({
       setColumnWidths((current) => resizeTaskColumn(current, id, width))
       onColumnResize(id, width)
     }, { tag: eventTag.current })
-  }, [controlledOpenIds, model.rows, onColumnResize, onOpenIdsChange, onTaskSelect])
+    const scheduleNowMarkerUpdate = () => window.requestAnimationFrame(updateNowMarker)
+    api.on('scroll-chart', scheduleNowMarkerUpdate, { tag: eventTag.current })
+    api.on('resize-chart', scheduleNowMarkerUpdate, { tag: eventTag.current })
+    api.on('resize-grid', scheduleNowMarkerUpdate, { tag: eventTag.current })
+  }, [controlledOpenIds, model.rows, onColumnResize, onOpenIdsChange, onTaskSelect, updateNowMarker])
 
   if (model.empty) {
     return (
@@ -149,7 +260,7 @@ export function TaskGantt({
           cellWidth={model.scale.cellWidth}
           cellHeight={ROW_HEIGHT}
           scaleHeight={SCALE_HEIGHT}
-          taskTemplate={TaskBar}
+          taskTemplate={(props) => <TaskBar {...props} labelsVisible={labelsVisible} />}
           readonly
           baselines
           splitTasks
@@ -158,6 +269,9 @@ export function TaskGantt({
           init={initialize}
           selected={selectedTaskId ? [selectedTaskId] : []}
         />
+      </div>
+      <div className="tasks-gantt__now-marker" ref={nowMarkerRef} aria-hidden="true" hidden>
+        <span>NOW</span>
       </div>
     </div>
   )

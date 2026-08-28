@@ -49,29 +49,28 @@ function TaskCell({ row: sourceRow, interactions }: CellProps & { interactions: 
   const row = taskRow(sourceRow)
   return (
     <span className="gantt-task-cell" data-entity-type={row.entity_type} data-task-id={row.id}>
-      <button
+      <Button
         className="gantt-task-cell__title"
         data-task-details-id={row.id}
         type="button"
+        size="xs"
+        variant="quiet"
         onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation()
-          interactions.onTaskSelect?.(row.id)
-        }}
-      >{row.text}</button>
+        onClick={(event) => event.stopPropagation()}
+        onPress={() => interactions.onTaskSelect?.(row.id)}
+      >{row.text}</Button>
       {row.source.resume_available && row.workspace && row.session_id ? (
         <Button
           aria-label={`在终端恢复“${row.text}”`}
           className="gantt-task-cell__resume"
-          disabled={interactions.pendingTaskIds?.has(row.id)}
-          size="icon-xs"
+          isDisabled={interactions.pendingTaskIds?.has(row.id)}
+          isIconOnly
+          size="xs"
           type="button"
-          variant="ghost"
+          variant="quiet"
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation()
-            interactions.onTaskResume?.(row.id)
-          }}
+          onClick={(event) => event.stopPropagation()}
+          onPress={() => interactions.onTaskResume?.(row.id)}
         ><Terminal /></Button>
       ) : null}
     </span>

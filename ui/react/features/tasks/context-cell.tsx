@@ -2,7 +2,7 @@ import { Check, Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent } from '@/components/ui/tooltip'
 
 export function ContextCell({
   label,
@@ -34,18 +34,16 @@ export function ContextCell({
       : `${label}：${value}`
 
   return (
-    <TooltipProvider>
-      <Tooltip open={feedback !== 'idle' || hoverOpen} onOpenChange={setHoverOpen}>
-        <TooltipTrigger asChild>
-          <Button
+    <Tooltip delay={0} isOpen={feedback !== 'idle' || hoverOpen} onOpenChange={setHoverOpen}>
+      <Button
             aria-label={`复制 ${label}`}
             className="gantt-context-cell"
             size="xs"
             type="button"
-            variant="ghost"
+            variant="quiet"
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={async (event) => {
-              event.stopPropagation()
+            onClick={(event) => event.stopPropagation()}
+            onPress={async () => {
               try {
                 await writeText(value)
                 setFeedback('copied')
@@ -56,10 +54,8 @@ export function ContextCell({
           >
             <span>{value}</span>
             {feedback === 'copied' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{feedbackText}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+      </Button>
+      <TooltipContent>{feedbackText}</TooltipContent>
+    </Tooltip>
   )
 }

@@ -126,7 +126,6 @@ test('keeps Tasks URL-backed and exposes Scheduled as an honest migration state'
   const scheduled = screen.getByRole('button', { name: 'Scheduled（迁移中）' })
   expect(tasks).toHaveAttribute('aria-current', 'page')
   expect(tasks).toHaveAttribute('tabindex', '0')
-  expect(scheduled).toHaveAttribute('aria-disabled', 'true')
   expect(scheduled).toBeDisabled()
   await waitFor(() => expect(window.location.search).toBe('?view=tasks'))
 })

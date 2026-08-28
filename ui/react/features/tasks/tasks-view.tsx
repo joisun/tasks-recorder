@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 
-import { TooltipProvider } from '@/components/ui/tooltip'
+import { InboxDrawer } from '@/features/inbox/inbox-drawer'
 import { DashboardApiError, type DashboardApi } from '@/lib/api/dashboard-api'
 import type { DashboardSnapshot, TaskRecord, TaskStatus } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query/keys'
@@ -9,6 +9,25 @@ import { TaskDetailsSheet } from './task-details-sheet'
 import { TaskGantt } from './task-gantt'
 import type { TimelineZoom } from './task-types'
 import { TasksToolbar, type TaskStatusScope } from './tasks-toolbar'
+
+const TIMELINE_LABEL_KEY = 'dashboard-show-timeline-labels'
+
+function readTimelineLabelPreference() {
+  try {
+    const stored = window.localStorage.getItem(TIMELINE_LABEL_KEY)
+    return stored === null ? true : stored === 'true'
+  } catch {
+    return true
+  }
+}
+
+function writeTimelineLabelPreference(value: boolean) {
+  try {
+    window.localStorage.setItem(TIMELINE_LABEL_KEY, String(value))
+  } catch {
+    // Preferences are optional when storage is unavailable.
+  }
+}
 
 function effectiveStatus(task: TaskRecord): TaskStatus {
   const status = task.rollup_state ?? task.lifecycle ?? task.status
@@ -67,8 +86,10 @@ export function TasksView({ api, snapshot }: { api: DashboardApi; snapshot: Dash
   const [zoom, setZoom] = useState<TimelineZoom>('auto')
   const [openIds, setOpenIds] = useState<Set<string> | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  const [todayRequest, setTodayRequest] = useState(0)
+  const [nowRequest, setNowRequest] = useState(0)
+  const [labelsVisible, setLabelsVisible] = useState(readTimelineLabelPreference)
   const [message, setMessage] = useState('')
+  const [inboxOpen, setInboxOpen] = useState(false)
   const filtered = useMemo(
     () => filterTaskSnapshot(snapshot, { query, status }),
     [query, snapshot, status],
@@ -161,17 +182,24 @@ export function TasksView({ api, snapshot }: { api: DashboardApi; snapshot: Dash
   }
 
   return (
-    <TooltipProvider>
-      <div className="tasks-view">
+    <div className="tasks-view">
         <TasksToolbar
           query={query}
           status={status}
           zoom={zoom}
+          inboxCount={snapshot.project_inbox_count + snapshot.unassigned_execution_count}
           onCollapseAll={() => setOpenIds(new Set())}
           onExpandAll={() => setOpenIds(new Set(groupIds))}
           onQueryChange={setQuery}
           onStatusChange={setStatus}
-          onToday={() => setTodayRequest((value) => value + 1)}
+          onNow={() => setNowRequest((value) => value + 1)}
+          labelsVisible={labelsVisible}
+          onToggleLabels={() => setLabelsVisible((current) => {
+            const next = !current
+            writeTimelineLabelPreference(next)
+            return next
+          })}
+          onOpenInbox={() => setInboxOpen(true)}
           onZoomChange={setZoom}
         />
         <TaskGantt
@@ -180,7 +208,8 @@ export function TasksView({ api, snapshot }: { api: DashboardApi; snapshot: Dash
           openIds={openIds}
           selectedTaskId={selectedTaskId}
           pendingTaskIds={pendingTaskIds}
-          todayRequest={todayRequest}
+          nowRequest={nowRequest}
+          labelsVisible={labelsVisible}
           onArchive={archive}
           onOpenIdsChange={setOpenIds}
           onStatusChange={mutateStatus}
@@ -199,7 +228,7 @@ export function TasksView({ api, snapshot }: { api: DashboardApi; snapshot: Dash
           onResume={(task) => resume(task.id)}
           onStatusChange={(task, nextStatus) => mutateStatus(task.id, nextStatus)}
         />
-      </div>
-    </TooltipProvider>
+        <InboxDrawer api={api} snapshot={snapshot} open={inboxOpen} onOpenChange={setInboxOpen} />
+    </div>
   )
 }
