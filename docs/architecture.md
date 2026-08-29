@@ -43,6 +43,7 @@ Registry 保存 immutable runtime definitions，不动态加载用户代码。�
   buildInvocation,
   parseEvent,
   createInteractiveSession,
+  readConversation,
 }
 ```
 
@@ -102,6 +103,27 @@ Dashboard ──POST steer/stop──────────▶ RunService
 - completed Run 不在 Dashboard 内继续 multi-turn；后续操作使用已有 Terminal Resume boundary。
 - protocol request、frame、Run timeout 与 process shutdown 都有上限；`SIGINT` 无效时升级为 `SIGKILL`。
 
+## Terminal conversation read
+
+Completed Run history does not create a Tasks Recorder transcript store:
+
+```text
+Dashboard ──GET /runs/:id/conversation──▶ RunService
+                                               │ trusted Run facts
+                                               ▼
+                                     Runtime adapter readConversation
+                                               │ thread/read
+                                               ▼
+                                      CLI-owned local session
+```
+
+- browser 只能提交 Run ID；`RunService` 从 ledger 取得 runtime ID、session ID 与 immutable Workspace snapshot；
+- Codex adapter 启动 bounded app-server client，并调用 `thread/read({ threadId, includeTurns: true })`；
+- response 只规范化 `userMessage` 与 `agentMessage`，丢弃 reasoning、command、MCP/tool payload 与其他内部 item；
+- normalized messages 仅存在于 request/React query memory，不写 SQLite、Run logs、localStorage 或 persistent cache；
+- 本机 CLI session 缺失或协议不可用时返回 typed unavailable，UI 可回退到已经存在的 bounded `final_message`；
+- 该路径只读历史；completed Run 的继续对话仍通过 Terminal Resume，不从 Dashboard 创建 follow-up Turn。
+
 ## Schedule clock
 
 `scheduler-clock` 在 `taskd` 内根据 wall clock 和 durable occurrence key 计算到期任务。filesystem watcher 负责低延迟 definition change，周期 rescan 提供最终一致性。sleep/wake 可产生 bounded catch-up，但同一个 occurrence key 不能创建两次 Run。
@@ -131,4 +153,4 @@ git diff --check
 - missing runtime/model catalog 返回 typed state，不返回 missing route；
 - release artifact 包含 registry、adapter、Run service 与 migration，且不包含 legacy scheduled runner；
 - source Dashboard 与 taskd API version/capability 不兼容时显式失败。
-- fake app-server E2E 必须覆盖 Run-specific SSE、mouse steer、Stop 与 terminal authoritative refresh；runtime `turnId` 和 guidance 不得进入 response 或 SQLite。
+- fake app-server E2E 必须覆盖 Run-specific SSE、mouse steer、Stop、terminal authoritative refresh 与 CLI-owned conversation read；runtime `turnId` 和 guidance 不得进入 Run response、SQLite 或 logs。

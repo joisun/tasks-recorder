@@ -10,9 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-28-react-scheduled-agent-elements-design.md`
 
+> **2026-08-29 amendment:** The user expanded terminal Run Review to show historical conversation. The implementation must not persist a second transcript: add a runtime-owned `readConversation` capability, resolve it only from canonical Run facts, call Codex `thread/read` on demand, and return only normalized user/assistant display messages. The same amendment restores the horizontal Task status navigation, merges expand/collapse into one stateful button, makes the Schedule identity area open Edit, makes every Run history row selectable, and keeps Stop available for active Runs.
+
 ## Global Constraints
 
-- Do not change taskd, SQLite, Runtime Registry, Schedule files, Run API/SSE, Terminal Resume, or privacy contracts.
+- Do not change SQLite, Schedule files, Terminal Resume, or privacy contracts. The 2026-08-29 amendment may extend the Runtime Registry and Run API only for read-only CLI-owned conversation projection.
 - Do not install shadcn generic primitives, `@ai-sdk/react`, AI Gateway, or `useChat`.
 - Keep dotUI/React Aria as the only generic control and overlay system.
 - Vendor only reviewed AI Elements conversation/message source and keep its license notice.

@@ -2,7 +2,7 @@
 
 Tasks Recorder 是运行在本机的 coding-agent 工作记录与自动化控制台。它记录“发生了什么、正在做什么”，把分散在 session、turn、subagent、branch 和 worktree 中的工作整理为 Project / Main Task / Subtask，并通过实时 Dashboard 提供可追踪的 Tree、Timeline 与执行历史。
 
-它还支持由 Markdown 定义 Scheduled Task。到期后，常驻的 `taskd` 直接调用本机 code-agent CLI，并把 session、结果、文件变更和日志写入统一 Run ledger。
+它还支持由 Markdown 定义 Scheduled Task。到期后，常驻的 `taskd` 直接调用本机 code-agent CLI，并把 session ID、结果、文件变更和日志引用写入统一 Run ledger；对话正文仍由本机 agent CLI 持有。
 
 当前状态：
 
@@ -116,7 +116,8 @@ queued → running → succeeded | failed | timed_out | canceled | interrupted
 5. Codex active Run 使用独立的 `codex app-server --listen stdio://`；runtime adapter 把 protocol notification 转为统一、bounded event；
 6. `RunService` 在执行边界同时做 bounded、in-memory Workspace snapshot，与 runtime file-change evidence 合并；这样 nested tool 写文件但 app-server 未发 `fileChange` item 时也不会漏掉产出；
 7. Run ledger 保存 terminal state、session ID、final message、Workspace-relative file changes 与 bounded log path；
-8. Dashboard 通过 Run-specific SSE 更新；active Turn 可以追加指令或停止，terminal Run 可以从可信 snapshot 召回 session。
+8. Dashboard 通过 Run-specific SSE 更新；active Turn 可以追加指令或停止；terminal Run 的历史对话由 runtime adapter 使用可信 Run ID 和 session ID 从 CLI-owned session 按需读取；
+9. 需要继续工作时，terminal Run 可以从可信 snapshot 召回 session。
 
 一个 runtime 不可用不会让 Recorder 或其他 runtime 下线。登录或 provider 错误由实际 Run 记录为 typed failure，不会阻塞 service 启动与 runtime 列表加载。
 
@@ -124,9 +125,9 @@ queued → running → succeeded | failed | timed_out | canceled | interrupted
 
 打开一个正在运行的 Codex Run，Run Review 会显示 Live Session：assistant message delta 与安全的 activity 摘要按发生顺序更新。输入追加指令后，Dashboard 只提交 Run ID、`expected_turn_revision` 和最多 16 KiB 的 text；`taskd` 使用私有 `turnId` 调用 `turn/steer`。Stop 同样只提交 Run ID 与 revision，并映射到 `turn/interrupt`。
 
-Live Session 只干预当前 active Turn，不在 Dashboard 内创建第二轮对话。Run 结束后，页面会重新读取 authoritative terminal Run，展示 final message、Session、文件变更与 logs；需要继续多轮对话时使用 Terminal Resume。
+Live Session 只干预当前 active Turn，不在 Dashboard 内创建第二轮对话。Run 结束后，页面会重新读取 authoritative terminal Run，并通过 Codex `thread/read` 从本机 Codex-owned session 临时取得 user/assistant messages；Tasks Recorder 不复制或持久化这份 transcript。需要继续多轮对话时使用 Terminal Resume。
 
-实时 message、guidance、reasoning 与 tool payload 不写入 SQLite 或普通日志。Run ledger 只保留既有 terminal facts；browser 不接触 runtime `turnId`、executable、argv 或 shell command。Run SSE 是 bounded memory replay，缓冲过期时页面明确 reset，并仍可读取 terminal facts。
+实时 message、guidance、reasoning 与 tool payload 不写入 SQLite 或普通日志。历史读取只向 loopback browser 返回可展示的 `userMessage` / `agentMessage`，不返回 reasoning、tool arguments/results 或 command output；本机 Codex session 被删除后，页面明确回退到 Run `final_message`。Run ledger 只保留既有 terminal facts；browser 不接触 runtime `turnId`、executable、argv 或 shell command。Run SSE 是 bounded memory replay，缓冲过期时页面明确 reset，并仍可读取 terminal facts。
 
 ## Scheduled Tasks
 
@@ -289,7 +290,8 @@ tail -n 100 ~/.config/tasks-recorder/logs/tasks-recorder.ndjson
 - Dashboard 打不开：检查 `server_port` 是否被占用以及 `taskd.stderr.log`。
 - Runtime 为 `unavailable`：运行对应 CLI 的 `--version` 后重新打开 editor 或调用 `POST /api/v1/runtimes/refresh`；失败结果不会被长期缓存。registry 会自动补充 Homebrew、fnm/nvm/mise 等 GUI-missing toolchain directories，也可显式配置 `CODEX_BIN` / `codex_path`。
 - Model 使用 fallback：手动运行解析到的 `codex debug models`；fallback 不会阻止保存或 Run。
-- Run 失败：在 Run Sheet 查看 stable error code、bounded stderr 与 final result。
+- Run 失败：在 Run Review 查看 stable error code、bounded stderr 与 final result。
+- 历史对话不可用：确认对应 `thread_id` 仍存在于本机 Codex session inventory；Tasks Recorder 不保存第二份 transcript，因此 session 被 Codex 清理后只显示 Run `final_message`。
 - Schedule definition 不可用：按页面给出的 source path 修复 YAML、duplicate UUID、unknown field、cadence 或 symlink 问题；watcher 会自动重试。
 - Dashboard 正常但没有自动记录：确认 adapter 已启用，重新打开 agent conversation，并完成 hooks trust / MCP approval。
 - Resume 不可用：Run 必须有本机 session transcript 与有效 Workspace，并且对应 terminal / CLI 仍可用。
@@ -305,7 +307,7 @@ npm ci
 让已安装的 `taskd` 保持运行，再启动 source Dashboard：
 
 ```bash
-npm run dev:ui
+npm run dev:ui:react
 ```
 
 打开 <http://127.0.0.1:43128>。`ui/src` 变化会自动 rebuild/refresh，API 与真实本机数据仍来自 `43127`；不需要发布或重新安装。该页面的 mutation 会修改真实数据。
@@ -337,7 +339,7 @@ npm run package:release
 - `taskd` 只监听 `127.0.0.1`，并验证 `Host` 与 browser `Origin`；不要反向代理到 LAN 或公网。
 - 威胁模型信任同一 OS user 下的本机 process，因此不使用 auth token。
 - Runtime invocation 使用明确 executable、argv array、可信 Workspace 和 `shell: false`。
-- SQLite 不保存 prompt、reasoning、assistant message、tool output、token 或 transcript 正文。
+- SQLite 与 Tasks Recorder logs 不保存 prompt、reasoning、assistant message、tool output、token 或 transcript 正文；历史对话只从 CLI-owned session 按需读取并在页面内存中展示。
 - Hooks fail open；Recorder 故障不会阻断 agent 工作，但可能少记一次 activity。
 - Installer 在执行 runtime 前验证 artifact checksum，并拒绝 archive path traversal。
 - Resume endpoint 不接受 browser 提交的 Session ID、Workspace 或任意 command。

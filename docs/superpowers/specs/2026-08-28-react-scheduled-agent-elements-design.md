@@ -40,6 +40,7 @@ Let the user move from a Schedule to its active Run, understand live Agent outpu
 - React navigation switches between Tasks and Scheduled and persists the view;
 - Scheduled supports search, active/paused filtering, Run now, pause/resume, create/edit, and Run Review;
 - Run Review displays chronological records, outputs, Session copy/Resume, final message, and bounded logs;
+- terminal Run Review reads user/assistant history on demand from the CLI-owned local session without creating a second transcript store;
 - an interactive Run renders streaming Markdown through AI Elements, preserves event order, reconnects from its cursor, and exposes steer/Stop with typed errors;
 - AI Elements does not replace dotUI primitives or introduce a parallel runtime;
 - desktop and narrow desktop Playwright flows pass with Critical 0, High 0 and console error 0;
@@ -53,6 +54,7 @@ flowchart LR
   SCHEDULED --> API[Existing taskd REST]
   SCHEDULED --> REVIEW[Run Review drawer]
   REVIEW --> LIVE[Live Run adapter]
+  REVIEW --> HISTORY[Runtime conversation reader]
   LIVE --> SSE[Existing Run SSE]
   LIVE --> API
   LIVE --> ELEMENTS[AI Elements presentation]
@@ -66,6 +68,7 @@ flowchart LR
 | `ScheduledView` | Schedule collection, filters, actions, editor/review selection | Run event parsing |
 | `RunReviewDrawer` | history/detail selection, logs and Resume | SSE protocol or runtime identity |
 | `useLiveRun` | EventSource lifecycle, cursor, reducer, steer/Stop state | rendering or durable transcript |
+| runtime conversation reader | on-demand user/assistant projection from the CLI-owned session | transcript persistence or tool/reasoning exposure |
 | AI Elements source | scrolling, message structure, streaming Markdown | network, model, persistence, generic overlays |
 | dotUI | buttons, inputs, selects, dialogs, drawers, tooltips | agent message semantics |
 
@@ -78,6 +81,7 @@ flowchart LR
 5. The reducer merges `assistant_delta` by `item_id`, upserts activity by `item_id`, tracks the public `turn_revision`, and reconciles terminal state through a fresh detail request.
 6. AI Elements renders messages and scrolling only. Product activity rows stay compact because public events intentionally omit raw tool input/output.
 7. The composer submits `{ expected_turn_revision, text }`; Stop submits `{ expected_turn_revision }`. Rejected guidance remains in the local draft.
+8. A terminal Run submits only its Run ID; taskd resolves canonical runtime/session facts and the adapter calls the CLI protocol `thread/read` on demand.
 
 ## AI Elements boundary
 
@@ -104,7 +108,7 @@ The composer is a Tasks Recorder component built from React Aria/dotUI. The offi
 - dotUI Drawer with compact history and selected detail;
 - active interactive Runs prioritize Live Session above terminal facts;
 - assistant text is primary; activity is lower contrast;
-- completed Runs show final message, outputs, logs, Session copy, and Terminal Resume;
+- completed Runs show CLI-owned conversation history when available, then outputs, logs, Session copy, and Terminal Resume;
 - closing restores focus to the invoking Schedule action.
 
 ### Live Session
@@ -135,6 +139,7 @@ The composer is a Tasks Recorder component built from React Aria/dotUI. The offi
 - the browser sends only semantic IDs, public Turn revision, and bounded guidance;
 - no live content is written to localStorage, persistent query cache, SQLite, logs, screenshots, or committed fixtures;
 - Run SSE content lives only in component memory and is discarded when the Run/drawer changes;
+- terminal history is projected from the CLI-owned local session into request/UI memory only; it is never copied into SQLite, Run logs, localStorage, or persistent query cache;
 - AI Elements receives normalized display text and cannot call a model or backend;
 - external links keep Streamdown safe defaults and no remote image prefix is added.
 
@@ -156,7 +161,7 @@ The composer is a Tasks Recorder component built from React Aria/dotUI. The offi
 
 ### Hidden area
 
-- durable conversation history would require a separate privacy/storage decision;
+- a Tasks Recorder-owned durable transcript or transcript search would still require a separate privacy/storage decision;
 - approval UI needs new protocol events and is outside this integration.
 
 ### Blind spots
@@ -180,4 +185,3 @@ The composer is a Tasks Recorder component built from React Aria/dotUI. The offi
 - reasoning/tool payload/approval rendering without public normalized events;
 - attachments, citations, branching, model picker, voice, or AI Gateway;
 - deleting Legacy Scheduled before parity evidence.
-
