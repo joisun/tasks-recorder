@@ -1,4 +1,5 @@
 import { cjk } from '@streamdown/cjk'
+import { code } from '@streamdown/code'
 import type { ComponentProps, HTMLAttributes } from 'react'
 import { memo } from 'react'
 import { Streamdown } from 'streamdown'
@@ -43,7 +44,7 @@ export function MessageContent({ children, className, ...props }: MessageContent
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>
 
-const streamdownPlugins = { cjk }
+const streamdownPlugins = { cjk, code }
 
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (

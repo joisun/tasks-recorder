@@ -28,11 +28,13 @@ test('vendors only the minimal AI Elements presentation contract', async () => {
 
   expect(packageJson.dependencies).toMatchObject({
     '@streamdown/cjk': '1.0.2',
+    '@streamdown/code': '1.1.0',
     streamdown: '2.4.0',
     'use-stick-to-bottom': '1.1.3',
   })
   expect(packageJson.dependencies).not.toHaveProperty('@ai-sdk/react')
   expect(conversation).toContain('use-stick-to-bottom')
   expect(message).toContain('streamdown')
+  expect(message).toContain('@streamdown/code')
   expect(`${conversation}\n${message}`).not.toMatch(/shadcn|@ai-sdk\/react|from ['"]ai['"]/)
 })

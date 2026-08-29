@@ -10,6 +10,7 @@
 @source "../**/*.{ts,tsx}";
 @source "../../../node_modules/streamdown/dist/*.js";
 @source "../../../node_modules/@streamdown/cjk/dist/*.js";
+@source "../../../node_modules/@streamdown/code/dist/*.js";
 
 @utility focus-reset {
   @apply ring-0 ring-transparent outline-none;
