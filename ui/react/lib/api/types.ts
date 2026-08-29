@@ -363,10 +363,10 @@ export interface RunResumeResponse {
 }
 
 export interface RunEvent {
-  seq: number
-  run_id: string
+  sequence: number
+  runId: string
   type: string
-  timestamp: string
+  observedAt: string
   payload: Record<string, unknown>
 }
 

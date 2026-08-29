@@ -12,6 +12,7 @@ import {
   runStatusLabel,
   triggerLabel,
 } from './schedule-format'
+import { LiveSession } from './live-session'
 
 const LOG_TAIL_BYTES = 32 * 1024
 
@@ -76,6 +77,18 @@ export function RunDetail({ api, run }: { api: DashboardApi; run: RunRecord }) {
           <div><dt>Runtime</dt><dd>{run.runtime_id}</dd></div>
         </dl>
       </div>
+
+      <LiveSession
+        api={api}
+        run={run}
+        onTerminal={() => {
+          void Promise.all([
+            queryClient.refetchQueries({ queryKey: queryKeys.run(run.id), exact: true }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.runs(run.job_id) }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.schedules }),
+          ])
+        }}
+      />
 
       <section className="run-detail__section">
         <div className="run-detail__section-heading">

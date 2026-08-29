@@ -10,7 +10,6 @@
 @source "../**/*.{ts,tsx}";
 @source "../../../node_modules/streamdown/dist/*.js";
 @source "../../../node_modules/@streamdown/cjk/dist/*.js";
-@source "../../../node_modules/@streamdown/code/dist/*.js";
 
 @utility focus-reset {
   @apply ring-0 ring-transparent outline-none;
@@ -1709,6 +1708,154 @@
   font: 500 9px ui-monospace, SFMono-Regular, Menlo, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.live-session {
+  display: grid;
+  min-height: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in oklab, var(--surface-0) 42%, var(--surface-1));
+}
+
+.live-session__header {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-inline: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.live-session__header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 610;
+}
+
+.live-session__header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 8.5px;
+}
+
+.live-session__header > span i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.live-session__header > span[data-connection="connected"] i {
+  background: var(--success);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--success) 14%, transparent);
+}
+
+.live-session__header > span[data-connection="connecting"] i,
+.live-session__header > span[data-connection="disconnected"] i {
+  background: var(--warning);
+}
+
+.live-session__conversation {
+  min-height: 220px;
+  max-height: 420px;
+  background: var(--surface-0);
+}
+
+.live-session__content {
+  gap: 10px;
+  padding: 14px 18px 18px;
+}
+
+.live-session__message {
+  color: var(--text-primary);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.live-session__message :where(p, ul, ol, pre, table, blockquote) {
+  margin-block: 7px;
+}
+
+.live-session__message :where(pre) {
+  border-color: var(--border-subtle);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--surface-1) 76%, var(--surface-0));
+}
+
+.live-session__activity {
+  display: inline-grid;
+  width: fit-content;
+  min-height: 24px;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.live-session__activity svg {
+  width: 11px;
+  height: 11px;
+  color: var(--success);
+}
+
+.live-session__activity[data-state="running"] svg { color: var(--warning); }
+.live-session__activity[data-state="failed"] svg,
+.live-session__activity[data-state="error"] svg { color: var(--danger); }
+
+.live-session__empty {
+  display: grid;
+  min-height: 180px;
+  place-content: center;
+  color: var(--text-muted);
+  font-size: 9.5px;
+}
+
+.live-session__notice,
+.live-session__error {
+  margin: 0;
+  padding: 7px 18px 0;
+  color: var(--text-muted);
+  font-size: 8.5px;
+  line-height: 1.45;
+}
+
+.live-session__error {
+  padding: 0;
+  color: var(--danger);
+}
+
+.live-session__composer {
+  display: grid;
+  gap: 7px;
+  padding: 10px 18px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+}
+
+.live-session__composer [data-textarea] {
+  min-height: 64px;
+  max-height: 150px;
+  resize: vertical;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.live-session__composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.live-session__composer-actions > span {
+  margin-right: auto;
+  color: var(--text-muted);
+  font: 450 8px ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .run-detail__section {

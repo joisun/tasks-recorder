@@ -187,7 +187,7 @@ Expected: no forbidden runtime/dependency match.
 **Files:**
 - Create: `ui/react/features/scheduled/live-run.ts`
 - Create: `ui/react/features/scheduled/live-session.tsx`
-- Create: `ui/react/components/ui/text-area.tsx`
+- Reuse: `TextArea` from `ui/react/components/ui/input.tsx`
 - Modify: `ui/react/features/scheduled/run-detail.tsx`
 - Modify: `ui/react/app/app-shell.test.tsx`
 - Modify: `ui/react/styles/app.css`
@@ -196,27 +196,29 @@ Expected: no forbidden runtime/dependency match.
 - Consumes: Run SSE and AI Elements components.
 - Produces: `useLiveRun({ run, api })` with connection, Turn revision, ordered entries, draft, steer and Stop behavior.
 
-- [ ] **Step 1: Extend integration tests with ordered live events**
+- [x] **Step 1: Extend integration tests with ordered live events**
 
 Feed Turn, two deltas for one item, activity start/completion, disconnect/reset and terminal status. Assert ordering, merged text, composer state, typed errors and authoritative terminal refresh.
 
-- [ ] **Step 2: Verify Live Session is absent**
+- [x] **Step 2: Verify Live Session is absent**
 
 Run: `npm run test:ui -- ui/react/app/app-shell.test.tsx`
 
 Expected: FAIL.
 
-- [ ] **Step 3: Port the proven EventSource reducer into an isolated hook**
+- [x] **Step 3: Port the proven EventSource reducer into an isolated hook**
 
 Keep sequence in memory, reconnect with `since`, merge by `item_id`, discard content when Run changes, and never persist content.
 
-- [ ] **Step 4: Render AI Elements plus dotUI composer**
+- [x] **Step 4: Render AI Elements plus dotUI composer**
 
 Map assistant entries to `MessageResponse`; render bounded activity summaries separately. Keyboard submit calls steer, failures retain draft, and no optimistic user bubble is created.
 
-- [ ] **Step 5: Reconcile Stop and terminal state**
+- [x] **Step 5: Reconcile Stop and terminal state**
 
 Stop submits public Turn revision only. Terminal SSE closes the stream and fetches authoritative Run detail.
+
+Implementation note: the optional `@streamdown/code` plugin was evaluated and removed after the production single-file bundle grew from roughly 1.3 MiB to 11.5 MiB. Its public configuration exposes themes but no language allowlist and imports Shiki's complete bundled-language registry. Streamdown, the CJK plugin, fenced code blocks and product-owned code styling remain; the verified production bundle is 1,853,407 bytes.
 
 - [ ] **Step 6: Verify Live Session**
 
