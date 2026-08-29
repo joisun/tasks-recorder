@@ -11,6 +11,8 @@ The standalone Dashboard bundle includes these MIT-licensed packages:
 
 The React Dashboard also includes Apache-2.0-licensed React Aria packages from Adobe: React Aria 3.51.0, React Aria Components 1.20.0, React Stately 3.49.0, and tailwindcss-react-aria-components 2.2.0. Component provenance and local modifications are recorded in `ui/react/components/registry/README.md`.
 
+The React Dashboard includes locally adapted Conversation and Message component source from Vercel AI Elements, copyright 2023 Vercel, Inc., under Apache-2.0. It also bundles Streamdown 2.4.0 and `@streamdown/cjk` 1.0.2 under Apache-2.0, plus `use-stick-to-bottom` 1.1.3 under MIT. Only presentation code is included; no AI SDK runtime, gateway, or hosted service is used.
+
 The MIT License text applicable to these packages follows:
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy

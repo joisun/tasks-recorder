@@ -8,6 +8,8 @@
 @custom-variant dark (&:is(.dark *, [data-mode='dark'] *):not([data-mode='light'] *));
 
 @source "../**/*.{ts,tsx}";
+@source "../../../node_modules/streamdown/dist/*.js";
+@source "../../../node_modules/@streamdown/cjk/dist/*.js";
 
 @utility focus-reset {
   @apply ring-0 ring-transparent outline-none;

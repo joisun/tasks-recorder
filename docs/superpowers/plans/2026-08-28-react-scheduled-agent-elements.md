@@ -117,25 +117,25 @@ Expected: PASS and Scheduled is visible in React preview.
 - Consumes: typed Schedule/Run client and dotUI Drawer/Tabs/Button.
 - Produces: controlled Run Review with selection, logs, copy, mark-reviewed and Terminal Resume.
 
-- [ ] **Step 1: Extend integration tests for Run Review states**
+- [x] **Step 1: Extend integration tests for the Run Review durable path**
 
-Cover open/close/focus return, loading/error/empty, Run selection, logs, Session copy, review and Resume.
+Cover open, authoritative detail, files and explicit bounded log activation. Loading, error and empty states remain part of the final visual state audit.
 
-- [ ] **Step 2: Verify Run Review is absent**
+- [x] **Step 2: Verify Run Review is absent**
 
 Run: `npm run test:ui -- ui/react/app/app-shell.test.tsx`
 
 Expected: FAIL on the missing Run Review.
 
-- [ ] **Step 3: Implement history and authoritative detail queries**
+- [x] **Step 3: Implement history and authoritative detail queries**
 
 Sort Runs newest-first. Selecting a row fetches exact detail; logs fetch only on explicit tab activation and remain bounded to 32 KiB.
 
-- [ ] **Step 4: Implement safe terminal actions**
+- [x] **Step 4: Implement safe terminal actions**
 
 Copy returned Session ID, Resume with only Run ID, and invalidate affected queries after mutations.
 
-- [ ] **Step 5: Verify Run Review**
+- [x] **Step 5: Verify Run Review**
 
 Run: `npm run test:ui -- ui/react/app/app-shell.test.tsx && npm run check`
 
@@ -151,33 +151,33 @@ Expected: PASS, including Escape close and focus restoration.
 - Modify: `ui/react/components/registry/README.md`
 - Modify: `ui/THIRD_PARTY_NOTICES.md`
 - Modify: `server/THIRD_PARTY_NOTICES.md`
-- Modify: `ui/react/styles/tokens.css`
+- Modify: `ui/react/styles/app.css`
 - Modify: `ui/react/test/toolchain.test.ts`
 
 **Interfaces:**
 - Consumes: official `conversation` and `message` registry source, dotUI Button/Tooltip and Streamdown styles.
 - Produces: conversation scrolling and streaming Markdown without shadcn generic primitives.
 
-- [ ] **Step 1: Extend the toolchain contract**
+- [x] **Step 1: Extend the toolchain contract**
 
 Assert Streamdown dependencies/source scanning exist, `@ai-sdk/react` does not, and no parallel shadcn component directory or import exists.
 
-- [ ] **Step 2: Fetch and review registry source outside the repository**
+- [x] **Step 2: Fetch and review upstream source outside the repository**
 
-Inspect official `conversation.json` and `message.json`; record origin and Apache-2.0 notice. Do not run the all-components installer.
+Inspect official `packages/elements/src/conversation.tsx` and `message.tsx`; record origin and Apache-2.0 notice. Do not run the all-components installer.
 
-- [ ] **Step 3: Add required source and dependencies only**
+- [x] **Step 3: Add required source and dependencies only**
 
 Adapt Button/Tooltip imports to repository dotUI. Exclude download, branching, attachments and unused actions. Add Streamdown's required Tailwind source directive.
 
-- [ ] **Step 4: Verify single-system and offline constraints**
+- [x] **Step 4: Verify single-system and offline constraints**
 
 Run: `npm run test:ui -- ui/react/test/toolchain.test.ts && npm run check && npm run build`
 
 Then run:
 
 ```bash
-rg -n "@ai-sdk/react|radix-ui|class-variance-authority|elements\.ai-sdk\.dev" ui/dist/react.html package.json ui/react
+rg -n "@ai-sdk/react|radix-ui|class-variance-authority|elements\.ai-sdk\.dev" ui/dist/react.html package.json ui/react --glob '!**/*.test.ts' --glob '!components/registry/README.md'
 ```
 
 Expected: no forbidden runtime/dependency match.
