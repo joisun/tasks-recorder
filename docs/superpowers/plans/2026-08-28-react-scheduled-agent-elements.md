@@ -220,7 +220,7 @@ Stop submits public Turn revision only. Terminal SSE closes the stream and fetch
 
 Implementation note: the optional `@streamdown/code` plugin was evaluated and removed after the production single-file bundle grew from roughly 1.3 MiB to 11.5 MiB. Its public configuration exposes themes but no language allowlist and imports Shiki's complete bundled-language registry. Streamdown, the CJK plugin, fenced code blocks and product-owned code styling remain; the verified production bundle is 1,853,407 bytes.
 
-- [ ] **Step 6: Verify Live Session**
+- [x] **Step 6: Verify Live Session**
 
 Run: `npm run test:ui -- ui/react/app/app-shell.test.tsx && npm run check && npm run build`
 
@@ -241,29 +241,31 @@ Expected: PASS.
 - Consumes: Runtime Registry/model catalog and Schedule create/update contracts.
 - Produces: create/edit flow with cadence, sandbox, model, reasoning, timeout and `etag` semantics.
 
-- [ ] **Step 1: Extend integration tests for editor behavior**
+- [x] **Step 1: Extend integration coverage for editor behavior**
 
 Cover create/edit, cadence fields, model catalog, danger confirmation, validation, conflict retention and focus restoration.
 
-- [ ] **Step 2: Verify editor actions are incomplete**
+- [x] **Step 2: Verify editor actions are incomplete**
 
 Run: `npm run test:ui -- ui/react/app/app-shell.test.tsx`
 
 Expected: FAIL on Create/Edit.
 
-- [ ] **Step 3: Port normalization and payload logic as pure TypeScript**
+- [x] **Step 3: Port normalization and payload logic as pure TypeScript**
 
 Preserve exact Legacy limits, cadence shape, catalog checks, timeout bounds and danger confirmation.
 
-- [ ] **Step 4: Build the editor from dotUI primitives**
+- [x] **Step 4: Build the editor from dotUI primitives**
 
 Use a controlled form, inline errors, saving state and `expected_etag`. Agent changes refresh the model catalog without taskd restart.
 
-- [ ] **Step 5: Verify editor parity**
+- [x] **Step 5: Verify editor parity**
 
 Run: `npm run test:ui -- ui/react/app/app-shell.test.tsx && npm run check`
 
 Expected: PASS.
+
+Verification evidence: TypeScript, 13 focused tests and production build passed. Playwright headless at 1440×900 and 390×844 loaded the real local Schedule and live Runtime Registry; seven models were visible, `gpt-5.6-sol` exposed `low` through `ultra`, the 8,698-character Markdown prompt and `gpt-5.6-sol / low` selection round-tripped into edit state, required and danger-confirmation validation blocked mutation, no horizontal overflow was present, focus restored to the originating Edit control, and a fresh page reported zero console errors or warnings. No real Schedule was saved or deleted during validation.
 
 ### Task 7: Visual verification, audit and documentation
 

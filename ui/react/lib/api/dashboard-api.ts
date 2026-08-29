@@ -10,6 +10,8 @@ import type {
   RunLogResponse,
   RunResponse,
   RunResumeResponse,
+  RuntimeListResponse,
+  RuntimeModelCatalogResponse,
   ScheduleListResponse,
   ScheduleMutationInput,
   ScheduleResponse,
@@ -69,6 +71,8 @@ export interface DashboardApi {
     projectId: string,
     expectedProjectId?: string | null,
   ): Promise<ProjectAssignmentResponse>
+  runtimes(): Promise<RuntimeListResponse>
+  runtimeModels(id: string): Promise<RuntimeModelCatalogResponse>
   schedules(): Promise<ScheduleListResponse>
   schedule(id: string): Promise<ScheduleResponse>
   createSchedule(input: ScheduleMutationInput): Promise<ScheduleResponse>
@@ -218,6 +222,8 @@ export function createDashboardApi({
         body: { project_id: projectId, expected_project_id: expectedProjectId },
       },
     ),
+    runtimes: () => request('/api/v1/runtimes'),
+    runtimeModels: (id) => request(`/api/v1/runtimes/${encodeURIComponent(id)}/models`),
     schedules: () => request('/api/v1/schedules'),
     schedule: (id) => request(`/api/v1/schedules/${encodeURIComponent(id)}`),
     createSchedule: (input) => request('/api/v1/schedules', { method: 'POST', body: input }),

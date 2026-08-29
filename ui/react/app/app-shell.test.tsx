@@ -146,6 +146,16 @@ function dashboardApi(runRecord: RunRecord = run): DashboardApi {
     restoreTask: vi.fn(),
     updateExecutionAssignments: vi.fn(),
     assignSourceSessionProject: vi.fn(),
+    runtimes: vi.fn(async () => ({
+      runtimes: [{ id: 'codex', display_name: 'Codex', state: 'ready' }],
+    })),
+    runtimeModels: vi.fn(async () => ({
+      source: 'live',
+      models: [{
+        id: 'gpt-5.6', displayName: 'GPT-5.6', description: 'Coding model',
+        reasoningLevels: ['low', 'medium', 'high'], defaultReasoningLevel: 'medium',
+      }],
+    })),
     schedules: vi.fn(async () => ({
       capability: { supported: true, backend: 'internal' }, jobs: [schedule], invalid: [],
     })),

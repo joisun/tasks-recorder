@@ -278,6 +278,37 @@ export interface ScheduleCapability {
   [key: string]: unknown
 }
 
+export interface RuntimeStatus {
+  id: string
+  display_name: string
+  state: 'ready' | 'unavailable' | string
+  models_source?: string
+  error_code?: string | null
+  capabilities?: Record<string, unknown>
+}
+
+export interface RuntimeListResponse {
+  runtimes: RuntimeStatus[]
+}
+
+export interface RuntimeModel {
+  id?: string
+  slug?: string
+  displayName?: string
+  display_name?: string
+  description?: string
+  reasoningLevels?: string[]
+  supported_reasoning_levels?: string[]
+  defaultReasoningLevel?: string
+  default_reasoning_level?: string
+}
+
+export interface RuntimeModelCatalogResponse {
+  source: string
+  models: RuntimeModel[]
+  error_code?: string | null
+}
+
 export interface InvalidScheduleDefinition {
   path?: string
   title?: string

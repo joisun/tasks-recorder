@@ -9,6 +9,7 @@ import type { DashboardApi } from '@/lib/api/dashboard-api'
 import type { ScheduleListResponse, ScheduleRecord } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query/keys'
 import { ScheduleCard, type ScheduleBusyAction } from './schedule-card'
+import { ScheduleEditorDialog } from './schedule-editor-dialog'
 import { filterSchedules, type ScheduleFilter } from './schedule-format'
 import { RunReviewDrawer } from './run-review-drawer'
 
@@ -40,6 +41,8 @@ export function ScheduledView({
   const [busy, setBusy] = useState<{ id: string; action: ScheduleBusyAction } | null>(null)
   const [mutationError, setMutationError] = useState('')
   const [reviewSchedule, setReviewSchedule] = useState<ScheduleRecord | null>(null)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorSchedule, setEditorSchedule] = useState<ScheduleRecord | null>(null)
   const jobs = data?.jobs ?? []
   const visible = useMemo(() => filterSchedules(jobs, { query, status }), [jobs, query, status])
   const activeCount = jobs.filter(({ enabled }) => enabled).length
@@ -98,7 +101,11 @@ export function ScheduledView({
             busyAction={busy?.id === schedule.id ? busy.action : null}
             onRunNow={(current) => void mutate(current, 'run')}
             onToggle={(current) => void mutate(current, current.enabled ? 'pause' : 'resume')}
-            onEdit={onEdit}
+            onEdit={(current) => {
+              setEditorSchedule(current)
+              setEditorOpen(true)
+              onEdit?.(current)
+            }}
             onReview={(current) => {
               setReviewSchedule(current)
               onReview?.(current)
@@ -117,7 +124,11 @@ export function ScheduledView({
           <h1 id="scheduled-title">Scheduled</h1>
           <p>{jobs.length} 个计划 · {activeCount} 个启用{unreadCount ? ` · ${unreadCount} 条未读` : ''}</p>
         </div>
-        <Button isDisabled={!onCreate || controlsDisabled} size="sm" onPress={onCreate}>
+        <Button isDisabled={controlsDisabled} size="sm" onPress={() => {
+          setEditorSchedule(null)
+          setEditorOpen(true)
+          onCreate?.()
+        }}>
           <Plus aria-hidden="true" />
           新建计划
         </Button>
@@ -164,6 +175,18 @@ export function ScheduledView({
         open={Boolean(reviewSchedule)}
         onOpenChange={(open) => {
           if (!open) setReviewSchedule(null)
+        }}
+      />
+      <ScheduleEditorDialog
+        api={api}
+        open={editorOpen}
+        schedule={editorSchedule}
+        onOpenChange={setEditorOpen}
+        onSaved={async () => {
+          await queryClient.invalidateQueries({ queryKey: queryKeys.schedules })
+          if (editorSchedule) {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.schedule(editorSchedule.id) })
+          }
         }}
       />
     </>
