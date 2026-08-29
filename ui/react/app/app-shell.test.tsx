@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import { createDashboardApi, type DashboardApi } from '@/lib/api/dashboard-api'
-import type { DashboardMeta, DashboardSnapshot, ScheduleRecord, TaskRecord } from '@/lib/api/types'
+import type { DashboardMeta, DashboardSnapshot, RunRecord, ScheduleRecord, TaskRecord } from '@/lib/api/types'
 import { AppProviders } from './app-providers'
 import { DashboardApp } from './dashboard-app'
 
@@ -90,6 +90,18 @@ const schedule: ScheduleRecord = {
   created_at: '2026-08-28T01:00:00.000Z', updated_at: '2026-08-28T01:00:00.000Z',
 }
 
+const run: RunRecord = {
+  id: 'run-a', job_id: schedule.id, definition_etag: schedule.etag, runtime_id: 'codex',
+  interactive: false, turn_revision: null, trigger: 'manual', status: 'succeeded',
+  thread_id: '019fcfae-8d5b-7640-aec8-83a114810589', scheduled_for: null,
+  claimed_at: '2026-08-28T02:00:00.000Z', started_at: '2026-08-28T02:00:01.000Z',
+  heartbeat_at: '2026-08-28T02:00:03.000Z', finished_at: '2026-08-28T02:01:00.000Z',
+  exit_code: 0, error_code: null, final_message: 'Report completed.',
+  file_changes: [{ path: 'report.md', kind: 'update' }], has_stdout_log: true,
+  has_stderr_log: false, reviewed_at: null, created_at: '2026-08-28T02:00:00.000Z',
+  updated_at: '2026-08-28T02:01:00.000Z',
+}
+
 function dashboardApi(): DashboardApi {
   return {
     ...createDashboardApi({
@@ -114,6 +126,14 @@ function dashboardApi(): DashboardApi {
     runScheduleNow: vi.fn(async () => ({ dispatched: true })),
     pauseSchedule: vi.fn(async () => ({ job: { ...schedule, enabled: false } })),
     resumeSchedule: vi.fn(async () => ({ job: { ...schedule, enabled: true } })),
+    schedule: vi.fn(async () => ({ job: { ...schedule, prompt: 'Create report.' } })),
+    scheduleRuns: vi.fn(async () => ({ runs: [run], dispatches: [] })),
+    scheduledRun: vi.fn(async () => ({ run })),
+    scheduledRunLog: vi.fn(async () => ({ stream: 'stdout' as const, content: 'completed\n' })),
+    markScheduledRunReviewed: vi.fn(async () => ({
+      run: { ...run, reviewed_at: '2026-08-28T03:00:00.000Z' }, changed: true,
+    })),
+    resumeScheduledRun: vi.fn(async () => ({ ok: true, run_id: run.id })),
   }
 }
 
@@ -176,4 +196,22 @@ test('global actions own a safe inset and never use edge-positioned inline style
   expect(actions).toHaveAttribute('data-safe-area', 'global-actions')
   expect(actions.style.position).toBe('')
   expect(actions.style.right).toBe('')
+})
+
+test('opens Run Review and reads durable Run facts and logs', async () => {
+  const user = userEvent.setup()
+  const api = dashboardApi()
+  renderApp(api)
+
+  await user.click(screen.getByRole('button', { name: 'Scheduled' }))
+  await user.click(await screen.findByRole('button', {
+    name: '查看 Codex update report 的执行记录',
+  }))
+
+  expect(await screen.findByRole('heading', { name: 'Codex update report' })).toBeInTheDocument()
+  expect(await screen.findByText('Report completed.')).toBeInTheDocument()
+  expect(screen.getByText('report.md')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'stdout' }))
+  expect(await screen.findByText('completed', { selector: '.run-detail__log code' })).toBeInTheDocument()
+  expect(api.scheduledRunLog).toHaveBeenCalledWith('run-a', { stream: 'stdout', tail: 32 * 1024 })
 })

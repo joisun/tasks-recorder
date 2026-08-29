@@ -10,6 +10,7 @@ import type { ScheduleListResponse, ScheduleRecord } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query/keys'
 import { ScheduleCard, type ScheduleBusyAction } from './schedule-card'
 import { filterSchedules, type ScheduleFilter } from './schedule-format'
+import { RunReviewDrawer } from './run-review-drawer'
 
 function idempotencyKey() {
   return globalThis.crypto?.randomUUID?.()
@@ -38,6 +39,7 @@ export function ScheduledView({
   const [status, setStatus] = useState<ScheduleFilter>('all')
   const [busy, setBusy] = useState<{ id: string; action: ScheduleBusyAction } | null>(null)
   const [mutationError, setMutationError] = useState('')
+  const [reviewSchedule, setReviewSchedule] = useState<ScheduleRecord | null>(null)
   const jobs = data?.jobs ?? []
   const visible = useMemo(() => filterSchedules(jobs, { query, status }), [jobs, query, status])
   const activeCount = jobs.filter(({ enabled }) => enabled).length
@@ -97,7 +99,10 @@ export function ScheduledView({
             onRunNow={(current) => void mutate(current, 'run')}
             onToggle={(current) => void mutate(current, current.enabled ? 'pause' : 'resume')}
             onEdit={onEdit}
-            onReview={onReview}
+            onReview={(current) => {
+              setReviewSchedule(current)
+              onReview?.(current)
+            }}
           />
         ))}
       </ol>
@@ -105,7 +110,8 @@ export function ScheduledView({
   }
 
   return (
-    <section className="scheduled-workspace" aria-labelledby="scheduled-title">
+    <>
+      <section className="scheduled-workspace" aria-labelledby="scheduled-title">
       <header className="scheduled-header">
         <div>
           <h1 id="scheduled-title">Scheduled</h1>
@@ -150,8 +156,16 @@ export function ScheduledView({
         </div>
       ) : null}
       {mutationError ? <div className="scheduled-mutation-error" role="alert">{mutationError}</div> : null}
-      <div className="scheduled-list-region">{content}</div>
-    </section>
+        <div className="scheduled-list-region">{content}</div>
+      </section>
+      <RunReviewDrawer
+        api={api}
+        schedule={reviewSchedule}
+        open={Boolean(reviewSchedule)}
+        onOpenChange={(open) => {
+          if (!open) setReviewSchedule(null)
+        }}
+      />
+    </>
   )
 }
-

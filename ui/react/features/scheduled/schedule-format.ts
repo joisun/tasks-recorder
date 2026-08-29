@@ -30,6 +30,45 @@ export function compactDateTime(value: string | null | undefined) {
   }).format(date)
 }
 
+export function fullDateTime(value: string | null | undefined) {
+  const date = new Date(value ?? '')
+  if (!Number.isFinite(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+export function runDuration(
+  startedAt: string | null | undefined,
+  finishedAt: string | null | undefined,
+) {
+  const started = Date.parse(startedAt ?? '')
+  const finished = Date.parse(finishedAt ?? '')
+  if (!Number.isFinite(started)) return '—'
+  const duration = Math.max(0, (Number.isFinite(finished) ? finished : Date.now()) - started)
+  if (duration < 1_000) return '<1s'
+  if (duration < 60_000) return `${Math.round(duration / 1_000)}s`
+  const minutes = Math.floor(duration / 60_000)
+  const seconds = Math.round((duration % 60_000) / 1_000)
+  if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`
+}
+
+export function triggerLabel(trigger: string | null | undefined) {
+  if (trigger === 'manual') return '手动'
+  if (trigger === 'scheduled') return '计划'
+  if (trigger === 'catchup') return '补跑'
+  return trigger || '未知'
+}
+
 export function relativeTime(value: string | null | undefined, now = Date.now()) {
   const timestamp = Date.parse(value ?? '')
   if (!Number.isFinite(timestamp)) return '—'
@@ -109,4 +148,3 @@ export function runStatusLabel(status: ScheduleExecutionStatus | RunStatus) {
 export function isActiveRun(schedule: ScheduleRecord) {
   return ['queued', 'claimed', 'running'].includes(schedule.current_execution?.status ?? '')
 }
-
