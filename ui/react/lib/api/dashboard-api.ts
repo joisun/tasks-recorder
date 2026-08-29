@@ -7,6 +7,7 @@ import type {
   ExecutionRecord,
   ProjectAssignmentResponse,
   RunControlResponse,
+  RunConversationResponse,
   RunLogResponse,
   RunResponse,
   RunResumeResponse,
@@ -91,6 +92,7 @@ export interface DashboardApi {
     id: string,
     options: { stream: 'stdout' | 'stderr'; tail: number },
   ): Promise<RunLogResponse>
+  scheduledRunConversation(id: string): Promise<RunConversationResponse>
   markScheduledRunReviewed(id: string): Promise<RunResponse>
   resumeScheduledRun(id: string): Promise<RunResumeResponse>
   steerRun(
@@ -98,6 +100,7 @@ export interface DashboardApi {
     input: { expected_turn_revision: number; text: string },
   ): Promise<RunControlResponse>
   stopRun(id: string, input: { expected_turn_revision: number }): Promise<RunControlResponse>
+  cancelRun(id: string): Promise<RunResponse>
 }
 
 type FetchImplementation = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -252,6 +255,9 @@ export function createDashboardApi({
     scheduledRunLog: (id, { stream, tail }) => request(
       `/api/v1/scheduled-runs/${encodeURIComponent(id)}/log${queryString({ stream, tail })}`,
     ),
+    scheduledRunConversation: (id) => request(
+      `/api/v1/runs/${encodeURIComponent(id)}/conversation`,
+    ),
     markScheduledRunReviewed: (id) => request(
       `/api/v1/scheduled-runs/${encodeURIComponent(id)}/review`,
       { method: 'POST', body: {} },
@@ -267,6 +273,10 @@ export function createDashboardApi({
     stopRun: (id, { expected_turn_revision }) => request(
       `/api/v1/runs/${encodeURIComponent(id)}/stop`,
       { method: 'POST', body: { expected_turn_revision } },
+    ),
+    cancelRun: (id) => request(
+      `/api/v1/runs/${encodeURIComponent(id)}/cancel`,
+      { method: 'POST', body: {} },
     ),
   }
 }

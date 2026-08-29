@@ -16,7 +16,7 @@ import { TextArea } from '@/components/ui/input'
 import { Loader } from '@/components/ui/loader'
 import type { DashboardApi } from '@/lib/api/dashboard-api'
 import type { RunRecord, RunStatus } from '@/lib/api/types'
-import { useLiveRun } from './live-run'
+import { type LiveEntry, useLiveRun } from './live-run'
 
 const CONNECTION_LABELS = {
   idle: '等待连接',
@@ -31,6 +31,40 @@ function activityIcon(state: string) {
   if (state === 'running') return <Loader aria-label="运行中" />
   if (['failed', 'error', 'canceled'].includes(state)) return <CircleX aria-hidden="true" />
   return <CircleCheck aria-hidden="true" />
+}
+
+export function SessionConversation({
+  entries,
+  emptyText,
+  isAnimating = false,
+}: {
+  entries: LiveEntry[]
+  emptyText: string
+  isAnimating?: boolean
+}) {
+  return (
+    <Conversation className="live-session__conversation">
+      <ConversationContent className="live-session__content">
+        {entries.length ? entries.map((entry) => entry.kind === 'message' ? (
+          <Message from={entry.role} key={`message-${entry.itemId}`}>
+            <MessageContent>
+              <MessageResponse className="live-session__message" isAnimating={isAnimating}>
+                {entry.text}
+              </MessageResponse>
+            </MessageContent>
+          </Message>
+        ) : (
+          <div className="live-session__activity" data-state={entry.state} key={`activity-${entry.itemId}`}>
+            {activityIcon(entry.state)}
+            <span>{entry.label}</span>
+          </div>
+        )) : (
+          <div className="live-session__empty">{emptyText}</div>
+        )}
+      </ConversationContent>
+      <ConversationScrollButton />
+    </Conversation>
+  )
 }
 
 export function LiveSession({
@@ -61,27 +95,11 @@ export function LiveSession({
         </span>
       </header>
 
-      <Conversation className="live-session__conversation">
-        <ConversationContent className="live-session__content">
-          {live.entries.length ? live.entries.map((entry) => entry.kind === 'message' ? (
-            <Message from="assistant" key={`message-${entry.itemId}`}>
-              <MessageContent>
-                <MessageResponse className="live-session__message" isAnimating={live.connection === 'connected'}>
-                  {entry.text}
-                </MessageResponse>
-              </MessageContent>
-            </Message>
-          ) : (
-            <div className="live-session__activity" data-state={entry.state} key={`activity-${entry.itemId}`}>
-              {activityIcon(entry.state)}
-              <span>{entry.label}</span>
-            </div>
-          )) : (
-            <div className="live-session__empty">等待 Agent 消息…</div>
-          )}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
+      <SessionConversation
+        entries={live.entries}
+        emptyText="等待 Agent 消息…"
+        isAnimating={live.connection === 'connected'}
+      />
 
       {live.resetNotice ? <p className="live-session__notice">{live.resetNotice}</p> : null}
       <div className="live-session__composer">

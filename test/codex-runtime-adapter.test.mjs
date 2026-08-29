@@ -138,3 +138,51 @@ test('Codex definition exposes one interactive session factory without changing 
   assert.deepEqual(created, [{ run: { id: 'run-1' } }])
   assert.equal(typeof definition.buildInvocation, 'function')
 })
+
+test('Codex definition reads display messages from the CLI-owned Thread without exposing tool payloads', async () => {
+  const requests = []
+  let closed = false
+  const definition = createCodexRuntimeDefinition({
+    createAppServerClient(options) {
+      assert.equal(options.executable, '/opt/tasks/bin/codex')
+      assert.equal(options.cwd, '/workspace/project')
+      return {
+        started: Promise.resolve({ pid: 7401 }),
+        async request(method, params) {
+          requests.push({ method, params })
+          if (method === 'initialize') return {}
+          return {
+            thread: {
+              id: 'thread-1',
+              turns: [{
+                items: [
+                  { type: 'userMessage', id: 'user-1', content: [{ type: 'text', text: 'Review it.' }] },
+                  { type: 'commandExecution', id: 'tool-1', command: 'private command' },
+                  { type: 'agentMessage', id: 'agent-1', text: 'Review complete.' },
+                ],
+              }],
+            },
+          }
+        },
+        close() { closed = true },
+      }
+    },
+  })
+
+  assert.deepEqual(await definition.readConversation({
+    launch: { executable: '/opt/tasks/bin/codex' },
+    run: { session_id: 'thread-1', snapshot: { workspace: '/workspace/project' } },
+  }), {
+    session_id: 'thread-1',
+    messages: [
+      { id: 'user-1', role: 'user', text: 'Review it.' },
+      { id: 'agent-1', role: 'assistant', text: 'Review complete.' },
+    ],
+    truncated: false,
+  })
+  assert.deepEqual(requests.at(-1), {
+    method: 'thread/read',
+    params: { threadId: 'thread-1', includeTurns: true },
+  })
+  assert.equal(closed, true)
+})

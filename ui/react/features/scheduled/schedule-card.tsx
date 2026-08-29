@@ -47,14 +47,22 @@ export function ScheduleCard({
 
   return (
     <li className="schedule-row" data-enabled={schedule.enabled} data-schedule-id={schedule.id}>
-      <div className="schedule-row__identity">
+      <button
+        type="button"
+        className="schedule-row__identity"
+        aria-label={`编辑 ${schedule.title || 'Untitled schedule'}`}
+        disabled={!onEdit || busyAction !== null}
+        onClick={() => onEdit?.(schedule)}
+      >
         <div className="schedule-row__title">
-          <h2>{schedule.title || 'Untitled schedule'}</h2>
+          <span className="schedule-row__heading" role="heading" aria-level={2}>
+            {schedule.title || 'Untitled schedule'}
+          </span>
+          <span className="schedule-row__cadence">{cadenceSummary(schedule.cadence)}</span>
           {!schedule.enabled ? <span>已暂停</span> : null}
         </div>
-        <p>{cadenceSummary(schedule.cadence)}</p>
         <code>{schedule.workspace || 'Workspace 未知'}</code>
-      </div>
+      </button>
 
       <Button
         className="schedule-row__execution"
@@ -132,4 +140,3 @@ export function ScheduleCard({
     </li>
   )
 }
-

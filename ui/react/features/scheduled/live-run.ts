@@ -18,7 +18,7 @@ const MAXIMUM_MESSAGE_CHARACTERS = 64 * 1024
 export type LiveConnection = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'unavailable' | 'closed'
 
 export type LiveEntry =
-  | { kind: 'message'; itemId: string; text: string }
+  | { kind: 'message'; itemId: string; role: 'assistant' | 'user'; text: string }
   | { kind: 'activity'; itemId: string; label: string; state: string }
 
 export interface LiveRunState {
@@ -69,6 +69,19 @@ export function applyLiveRunEvent(state: LiveRunState, event: RunEvent): LiveRun
     const sessionId = stringPayload(payload, 'session_id')
     return sessionId ? { ...state, sessionId } : state
   }
+  if (event.type === 'user_message') {
+    const text = stringPayload(payload, 'text')
+    if (!text) return state
+    return {
+      ...state,
+      entries: [...state.entries, {
+        kind: 'message',
+        itemId: `user-${event.sequence}`,
+        role: 'user',
+        text: text.slice(-MAXIMUM_MESSAGE_CHARACTERS),
+      }],
+    }
+  }
   if (event.type === 'assistant_delta') {
     const itemId = stringPayload(payload, 'item_id')
     const delta = stringPayload(payload, 'delta')
@@ -80,6 +93,7 @@ export function applyLiveRunEvent(state: LiveRunState, event: RunEvent): LiveRun
         entries: [...state.entries, {
           kind: 'message',
           itemId,
+          role: 'assistant',
           text: delta.slice(-MAXIMUM_MESSAGE_CHARACTERS),
         }],
       }
@@ -110,7 +124,21 @@ export function applyLiveRunEvent(state: LiveRunState, event: RunEvent): LiveRun
     entries[index] = { ...current, label, state: nextState }
     return { ...state, entries }
   }
-  if (event.type === 'intervention_accepted') return { ...state, controlError: '' }
+  if (event.type === 'intervention_accepted') {
+    const text = stringPayload(payload, 'text')
+    return {
+      ...state,
+      controlError: '',
+      ...(text ? {
+        entries: [...state.entries, {
+          kind: 'message' as const,
+          itemId: `intervention-${event.sequence}`,
+          role: 'user' as const,
+          text: text.slice(-MAXIMUM_MESSAGE_CHARACTERS),
+        }],
+      } : {}),
+    }
+  }
   return state
 }
 

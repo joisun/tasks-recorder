@@ -134,6 +134,10 @@ function createSession({
         throw sessionError('RUNTIME_PROTOCOL_INVALID')
       }
       safeEmit(emit, { type: 'session', payload: { session_id: threadId } })
+      safeEmit(emit, {
+        type: 'user_message',
+        payload: { kind: 'prompt', text: run.prompt },
+      })
       const startedTurn = await client.request('turn/start', compact({
         threadId,
         input: [{ type: 'text', text: run.prompt }],
@@ -168,7 +172,7 @@ function createSession({
     })
     safeEmit(emit, {
       type: 'intervention_accepted',
-      payload: { turn_revision: turnRevision },
+      payload: { turn_revision: turnRevision, text: text.trim() },
     })
     return { accepted: true, turnRevision }
   }

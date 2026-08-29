@@ -4,7 +4,12 @@ import { buildCodexInvocation } from '../../scheduler/codex-run-spec.mjs'
 import { createCodexModelCatalog } from '../../scheduler/codex-model-catalog.mjs'
 import { createCodexAppServerClient } from '../codex-app-server-client.mjs'
 import { parseCodexJsonLine } from '../parsers/codex-jsonl.mjs'
+import { runtimeError } from '../runtime-errors.mjs'
 import { createCodexInteractiveSessionFactory } from './codex-interactive-session.mjs'
+
+const CONVERSATION_PROTOCOL_BYTES = 4 * 1024 * 1024
+const MAX_CONVERSATION_CHARACTERS = 1024 * 1024
+const MAX_CONVERSATION_MESSAGES = 2_048
 
 const FALLBACK_MODELS = Object.freeze([
   Object.freeze({
@@ -63,8 +68,39 @@ export function createCodexRuntimeDefinition({
       sessionResume: true,
       sandbox: true,
       interactiveSession: true,
+      conversationHistory: true,
     }),
     createInteractiveSession: (input) => sessions.create(input),
+    async readConversation({ launch, run }) {
+      const threadId = run?.session_id
+      const workspace = run?.snapshot?.workspace
+      if (typeof threadId !== 'string' || threadId.length === 0
+        || typeof workspace !== 'string' || workspace.length === 0) {
+        throw runtimeError(
+          'RUNTIME_CONVERSATION_UNAVAILABLE',
+          'The Run does not have a readable Codex session.',
+        )
+      }
+      const client = createAppServerClient({
+        executable: launch.executable,
+        cwd: workspace,
+        runtimeEnvironment,
+        maximumLineBytes: CONVERSATION_PROTOCOL_BYTES,
+      })
+      try {
+        await client.started
+        await client.request('initialize', {
+          clientInfo: { name: 'tasks-recorder', title: 'Tasks Recorder', version: 'source' },
+        })
+        const response = await client.request('thread/read', {
+          threadId,
+          includeTurns: true,
+        })
+        return normalizeConversation(response?.thread, threadId)
+      } finally {
+        client.close()
+      }
+    },
     async fetchModels({ launch }) {
       try {
         const models = await modelCatalog(launch.executable).list()
@@ -86,6 +122,54 @@ export function createCodexRuntimeDefinition({
       })
     },
   })
+}
+
+function normalizeConversation(thread, expectedThreadId) {
+  if (thread?.id !== expectedThreadId || !Array.isArray(thread.turns)) {
+    throw runtimeError(
+      'RUNTIME_CONVERSATION_UNAVAILABLE',
+      'Codex did not return the requested session.',
+    )
+  }
+  const messages = []
+  let characters = 0
+  let truncated = false
+  for (const turn of thread.turns) {
+    if (!Array.isArray(turn?.items)) continue
+    for (const item of turn.items) {
+      const message = conversationMessage(item)
+      if (!message) continue
+      messages.push(message)
+      characters += message.text.length
+      while (messages.length > MAX_CONVERSATION_MESSAGES
+        || characters > MAX_CONVERSATION_CHARACTERS) {
+        const removed = messages.shift()
+        characters -= removed?.text.length ?? 0
+        truncated = true
+      }
+    }
+  }
+  return {
+    session_id: expectedThreadId,
+    messages,
+    truncated,
+  }
+}
+
+function conversationMessage(item) {
+  if (item?.type === 'userMessage' && Array.isArray(item.content)) {
+    const text = item.content
+      .filter((input) => input?.type === 'text' && typeof input.text === 'string')
+      .map(({ text: value }) => value.trim())
+      .filter(Boolean)
+      .join('\n')
+    return text ? { id: item.id, role: 'user', text } : null
+  }
+  if (item?.type === 'agentMessage' && typeof item.text === 'string') {
+    const text = item.text.trim()
+    return text ? { id: item.id, role: 'assistant', text } : null
+  }
+  return null
 }
 
 function invocationSnapshot(run) {

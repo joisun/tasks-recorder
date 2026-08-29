@@ -10,6 +10,7 @@ const EVENT_TYPES = new Set([
   'error',
   'done',
   'turn_started',
+  'user_message',
   'assistant_delta',
   'activity_started',
   'activity_completed',

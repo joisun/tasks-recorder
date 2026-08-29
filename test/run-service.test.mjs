@@ -148,6 +148,51 @@ test('RunService returns a queued Run before runtime resolution settles', async 
   ])
 })
 
+test('RunService reads conversation through the owning runtime without persisting transcript content', async (t) => {
+  const reads = []
+  const current = await fixture(t, {
+    registry: {
+      resolve: async () => RESOLVED_CODEX,
+      get: () => ({
+        id: 'codex',
+        buildInvocation: async ({ run }) => ({
+          command: RESOLVED_CODEX.executable,
+          args: ['exec', '--json', '-'],
+          cwd: run.workspace,
+          stdin: run.prompt,
+          timeout_ms: 60_000,
+        }),
+        parseEvent: () => [],
+        async readConversation(input) {
+          reads.push(input)
+          return {
+            session_id: input.run.session_id,
+            messages: [{ id: 'message-1', role: 'assistant', text: 'From Codex.' }],
+            truncated: false,
+          }
+        },
+      }),
+    },
+  })
+  const { run } = await current.service.create({
+    schedule: SCHEDULE,
+    origin: 'manual',
+    occurrence_key: null,
+    scheduled_for: null,
+    idempotency_key: 'conversation-source',
+  })
+  await current.service.whenIdle()
+
+  assert.deepEqual(await current.service.conversation(run.id), {
+    run_id: run.id,
+    session_id: 'session-1',
+    messages: [{ id: 'message-1', role: 'assistant', text: 'From Codex.' }],
+    truncated: false,
+  })
+  assert.equal(reads[0].run.snapshot.prompt, SCHEDULE.prompt)
+  assert.doesNotMatch(JSON.stringify(current.runStore.get(run.id)), /From Codex/)
+})
+
 test('RunService records workspace file changes when the runtime omits fileChange events', async (t) => {
   const completion = deferred()
   const current = await fixture(t, {

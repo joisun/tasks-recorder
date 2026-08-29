@@ -235,6 +235,20 @@ export function createRunService({
     return { accepted: true, run_id: runId, turn_revision: revision }
   }
 
+  async function conversation(runId) {
+    const run = runStore.get(runId)
+    const definition = registry.get(run.runtime_id)
+    if (typeof definition.readConversation !== 'function') {
+      throw serviceError(
+        'RUNTIME_CONVERSATION_UNSUPPORTED',
+        'This runtime does not expose local conversation history.',
+      )
+    }
+    const launchTarget = await registry.resolve(run.runtime_id)
+    const result = await definition.readConversation({ launch: launchTarget, run })
+    return { run_id: run.id, ...result }
+  }
+
   function currentInteractiveTurn(runId, input) {
     const run = runStore.get(runId)
     if (run.status !== 'running') throw serviceError('RUN_NOT_ACTIVE', 'Run is not active')
@@ -281,6 +295,7 @@ export function createRunService({
     cancel,
     steer,
     stop,
+    conversation,
     markReviewed: (id) => publicRun(runStore.markReviewed(id)),
     resumeTarget(id) {
       const run = runStore.get(id)

@@ -6,7 +6,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { createDashboardApi, DashboardApiError, type DashboardApi } from '@/lib/api/dashboard-api'
 import type { DashboardSnapshot, TaskRecord } from '@/lib/api/types'
 import { queryKeys } from '@/lib/query/keys'
-import { TasksView, filterTaskSnapshot } from './tasks-view'
+import { TasksView, filterTaskSnapshot, taskStatusCounts } from './tasks-view'
 
 const ganttProps = vi.hoisted(() => vi.fn())
 
@@ -101,6 +101,21 @@ test('client filters keep ancestors and never mutate server state', async () => 
   expect(latest.tasks.map(({ id }) => id)).toEqual(['project:recorder', 'other'])
   expect(api.updateTask).not.toHaveBeenCalled()
   expect(api.archiveTask).not.toHaveBeenCalled()
+})
+
+test('current status counts exclude completed work and history groups terminal states', () => {
+  expect(taskStatusCounts(snapshot)).toEqual({
+    all: 2,
+    blocked: 1,
+    active: 1,
+    waiting: 0,
+    planned: 0,
+    history: 1,
+  })
+  expect(filterTaskSnapshot(snapshot, { status: 'all' }).tasks.map(({ id }) => id))
+    .toEqual(['project:recorder', 'main', 'child', 'other'])
+  expect(filterTaskSnapshot(snapshot, { status: 'history' }).tasks.map(({ id }) => id))
+    .toEqual(['project:recorder', 'main', 'child'])
 })
 
 test('collapse and expand controls preserve the selected task details', async () => {

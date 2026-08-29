@@ -7,7 +7,8 @@ import {
   readDashboardView,
 } from '@/lib/preferences/dashboard-preferences'
 import { ScheduledView } from '@/features/scheduled/scheduled-view'
-import { TasksView } from '@/features/tasks/tasks-view'
+import { TaskStatusNavigation, type TaskStatusScope } from '@/features/tasks/tasks-toolbar'
+import { taskStatusCounts, TasksView } from '@/features/tasks/tasks-view'
 import { AppShell } from './app-shell'
 import { useDashboardApi, useDashboardConnection } from './app-providers'
 
@@ -15,6 +16,7 @@ export function DashboardApp() {
   const api = useDashboardApi()
   const connectionState = useDashboardConnection()
   const [view, setView] = useState(readDashboardView)
+  const [taskStatus, setTaskStatus] = useState<TaskStatusScope>('all')
   const meta = useQuery({ queryKey: queryKeys.meta, queryFn: () => api.meta() })
   const snapshot = useQuery({
     queryKey: queryKeys.snapshot,
@@ -41,6 +43,13 @@ export function DashboardApp() {
     <AppShell
       connectionState={connectionState}
       countLabel={countLabel}
+      navigationAddon={view === 'tasks' && snapshot.data ? (
+        <TaskStatusNavigation
+          counts={taskStatusCounts(snapshot.data)}
+          status={taskStatus}
+          onStatusChange={setTaskStatus}
+        />
+      ) : null}
       onViewChange={setView}
       view={view}
     >
@@ -51,7 +60,13 @@ export function DashboardApp() {
         aria-busy={snapshot.isPending || meta.isPending}
         data-service-version={meta.data?.service_version}
       >
-        {snapshot.data ? <TasksView api={api} snapshot={snapshot.data} /> : null}
+        {snapshot.data ? (
+          <TasksView
+            api={api}
+            snapshot={snapshot.data}
+            status={taskStatus}
+          />
+        ) : null}
         {snapshot.isError && !snapshot.data ? (
           <div className="tasks-workspace__unavailable" role="alert">
             <strong>无法读取任务数据</strong>

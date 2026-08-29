@@ -8,7 +8,7 @@ import { queryKeys } from '@/lib/query/keys'
 import { TaskDetailsSheet } from './task-details-sheet'
 import { TaskGantt } from './task-gantt'
 import type { TimelineZoom } from './task-types'
-import { TasksToolbar, type TaskStatusScope } from './tasks-toolbar'
+import { TasksToolbar, type TaskStatusCounts, type TaskStatusScope } from './tasks-toolbar'
 
 const TIMELINE_LABEL_KEY = 'dashboard-show-timeline-labels'
 
@@ -34,6 +34,34 @@ function effectiveStatus(task: TaskRecord): TaskStatus {
   return status === 'in_progress' ? 'active' : status
 }
 
+function isHistoryTask(task: TaskRecord) {
+  return Boolean(task.archived_at) || ['done', 'canceled'].includes(effectiveStatus(task))
+}
+
+export function taskStatusCounts(snapshot: DashboardSnapshot): TaskStatusCounts {
+  const counts: TaskStatusCounts = {
+    all: 0,
+    blocked: 0,
+    active: 0,
+    waiting: 0,
+    planned: 0,
+    history: 0,
+  }
+  for (const task of snapshot.tasks) {
+    if (task.entity_type === 'project') continue
+    if (isHistoryTask(task)) {
+      counts.history += 1
+      continue
+    }
+    counts.all += 1
+    const status = effectiveStatus(task)
+    if (status === 'blocked' || status === 'active' || status === 'waiting' || status === 'planned') {
+      counts[status] += 1
+    }
+  }
+  return counts
+}
+
 export function filterTaskSnapshot(
   snapshot: DashboardSnapshot,
   { query = '', status = 'all' }: { query?: string; status?: TaskStatusScope },
@@ -48,7 +76,12 @@ export function filterTaskSnapshot(
   }
   const included = new Set<string>()
   const matches = (task: TaskRecord) => {
-    const statusMatch = status === 'all' || effectiveStatus(task) === status
+    const history = isHistoryTask(task)
+    const statusMatch = status === 'history'
+      ? history
+      : status === 'all'
+        ? !history
+        : !history && effectiveStatus(task) === status
     const haystack = [task.title, task.description, task.workspace, task.workfolder, task.branch, task.session_id]
       .filter(Boolean).join('\n').toLocaleLowerCase()
     return statusMatch && (!needle || haystack.includes(needle))
@@ -79,10 +112,17 @@ function mutationMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败，已恢复修改前的数据。'
 }
 
-export function TasksView({ api, snapshot }: { api: DashboardApi; snapshot: DashboardSnapshot }) {
+export function TasksView({
+  api,
+  snapshot,
+  status = 'all',
+}: {
+  api: DashboardApi
+  snapshot: DashboardSnapshot
+  status?: TaskStatusScope
+}) {
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
-  const [status, setStatus] = useState<TaskStatusScope>('all')
   const [zoom, setZoom] = useState<TimelineZoom>('auto')
   const [openIds, setOpenIds] = useState<Set<string> | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
@@ -167,6 +207,7 @@ export function TasksView({ api, snapshot }: { api: DashboardApi; snapshot: Dash
   const groupIds = snapshot.tasks
     .filter((task) => task.entity_type === 'project' || snapshot.tasks.some(({ parent_id: parentId }) => parentId === task.id))
     .map(({ id }) => id)
+  const allExpanded = openIds === null || groupIds.every((id) => openIds.has(id))
 
   const mutateStatus = (taskId: string, nextStatus: TaskStatus) => {
     const task = snapshot.tasks.find(({ id }) => id === taskId)
@@ -185,13 +226,11 @@ export function TasksView({ api, snapshot }: { api: DashboardApi; snapshot: Dash
     <div className="tasks-view">
         <TasksToolbar
           query={query}
-          status={status}
           zoom={zoom}
           inboxCount={snapshot.project_inbox_count + snapshot.unassigned_execution_count}
-          onCollapseAll={() => setOpenIds(new Set())}
-          onExpandAll={() => setOpenIds(new Set(groupIds))}
+          allExpanded={allExpanded}
+          onToggleExpansion={() => setOpenIds(allExpanded ? new Set() : new Set(groupIds))}
           onQueryChange={setQuery}
-          onStatusChange={setStatus}
           onNow={() => setNowRequest((value) => value + 1)}
           labelsVisible={labelsVisible}
           onToggleLabels={() => setLabelsVisible((current) => {

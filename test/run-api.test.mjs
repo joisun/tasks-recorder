@@ -50,6 +50,15 @@ async function fixture() {
       calls.push(['stop', id, input])
       return { accepted: true, run_id: id, turn_revision: input.expected_turn_revision }
     },
+    conversation: async (id) => {
+      calls.push(['conversation', id])
+      return {
+        run_id: id,
+        session_id: 'thread-1',
+        messages: [{ id: 'message-1', role: 'assistant', text: 'Stored by Codex.' }],
+        truncated: false,
+      }
+    },
     markReviewed: () => ({ ...run, status: 'succeeded', reviewed_at: 'now' }),
     events: (id, listener, options) => {
       calls.push(['events', id, options])
@@ -215,6 +224,19 @@ test('Scheduled Run compatibility detail preserves ephemeral Live Session capabi
     assert.equal(detail.status, 200)
     assert.equal(detail.body.run.interactive, true)
     assert.equal(detail.body.run.turn_revision, 2)
+  } finally {
+    await current.close()
+  }
+})
+
+test('Run conversation is read on demand from the runtime-owned Session', async () => {
+  const current = await fixture()
+  try {
+    const result = await json(current.url, `/api/v1/runs/${RUN_ID}/conversation`)
+    assert.equal(result.status, 200)
+    assert.equal(result.body.session_id, 'thread-1')
+    assert.equal(result.body.messages[0].text, 'Stored by Codex.')
+    assert.deepEqual(current.calls.at(-1), ['conversation', RUN_ID])
   } finally {
     await current.close()
   }

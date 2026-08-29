@@ -70,6 +70,10 @@ test('Codex interactive session streams a private Turn and steers it through a p
   await Promise.resolve()
 
   assert.deepEqual(spawns, [{ pid: 7401 }])
+  assert.deepEqual(events.slice(0, 2), [
+    { type: 'session', payload: { session_id: 'private-thread' } },
+    { type: 'user_message', payload: { kind: 'prompt', text: 'Review the migration.' } },
+  ])
   assert.deepEqual(client.requests.slice(0, 3), [
     {
       method: 'initialize',
@@ -127,6 +131,10 @@ test('Codex interactive session streams a private Turn and steers it through a p
       threadId: 'private-thread', expectedTurnId: 'private-turn',
       input: [{ type: 'text', text: 'Check rollback too.' }],
     },
+  })
+  assert.deepEqual(events.at(-1), {
+    type: 'intervention_accepted',
+    payload: { turn_revision: 1, text: 'Check rollback too.' },
   })
 
   client.emit('turn/completed', {

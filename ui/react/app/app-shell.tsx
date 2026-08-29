@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from 'react'
+import type { PropsWithChildren, ReactNode } from 'react'
 import { Waypoints } from 'lucide-react'
 
 import type { DashboardConnectionState } from '@/lib/events/dashboard-event-source'
@@ -10,11 +10,13 @@ export function AppShell({
   children,
   connectionState,
   countLabel,
+  navigationAddon,
   onViewChange,
   view,
 }: PropsWithChildren<{
   connectionState: DashboardConnectionState
   countLabel: string
+  navigationAddon?: ReactNode
   onViewChange: (view: DashboardView) => void
   view: DashboardView
 }>) {
@@ -25,7 +27,10 @@ export function AppShell({
           <span className="app-shell__mark" aria-hidden="true"><Waypoints /></span>
           <h1>Tasks Recorder</h1>
         </div>
-        <Navigation view={view} onViewChange={onViewChange} />
+        <div className="app-shell__navigation-zone">
+          <Navigation view={view} onViewChange={onViewChange} />
+          {navigationAddon}
+        </div>
         <div
           className="app-shell__actions"
           data-testid="global-actions"

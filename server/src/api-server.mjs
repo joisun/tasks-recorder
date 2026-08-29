@@ -75,6 +75,8 @@ function statusFor(error) {
     || error.code === 'TURN_CHANGED'
     || error.code === 'TURN_NOT_STEERABLE'
     || error.code === 'RUNTIME_NOT_INTERACTIVE'
+    || error.code === 'RUNTIME_CONVERSATION_UNAVAILABLE'
+    || error.code === 'RUNTIME_CONVERSATION_UNSUPPORTED'
   ) return 409
   if (typeof error.code === 'string' && (
     error.code.startsWith('SCHEDULE_')
@@ -549,6 +551,12 @@ export function createApiServer({
           )
         }, { afterSequence })
         request.once('close', unsubscribe)
+        return
+      }
+      const runConversation = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/conversation$/)
+      if (request.method === 'GET' && runConversation && runService?.conversation) {
+        const runId = safeSegment(runConversation[1])
+        sendJson(response, 200, await runService.conversation(runId))
         return
       }
       const runLog = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/log$/)

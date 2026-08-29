@@ -76,6 +76,8 @@ describe('DashboardApi', () => {
     await api.runScheduleNow(scheduleId, 'request-1')
     await api.steerRun(runId, { expected_turn_revision: 2, text: 'Check rollback.' })
     await api.stopRun(runId, { expected_turn_revision: 2 })
+    await api.cancelRun(runId)
+    await api.scheduledRunConversation(runId)
     await api.scheduledRunLog(runId, { stream: 'stderr', tail: 4096 })
     await api.markScheduledRunReviewed(runId)
     await api.resumeScheduledRun(runId)
@@ -97,6 +99,8 @@ describe('DashboardApi', () => {
         url: '/api/v1/runs/run%2Fid%20%3F/stop', method: 'POST',
         body: { expected_turn_revision: 2 },
       },
+      { url: '/api/v1/runs/run%2Fid%20%3F/cancel', method: 'POST', body: {} },
+      { url: '/api/v1/runs/run%2Fid%20%3F/conversation', method: 'GET', body: null },
       {
         url: '/api/v1/scheduled-runs/run%2Fid%20%3F/log?stream=stderr&tail=4096',
         method: 'GET', body: null,

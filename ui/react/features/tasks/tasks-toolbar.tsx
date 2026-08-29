@@ -3,20 +3,63 @@ import { CalendarClock, ChevronsDownUp, ChevronsUpDown, Inbox, Tags } from 'luci
 import { Button } from '@/components/ui/button'
 import { SearchField } from '@/components/ui/search-field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { TaskStatus } from '@/lib/api/types'
 import type { TimelineZoom } from './task-types'
 
-export type TaskStatusScope = 'all' | TaskStatus
+export type TaskStatusScope = 'all' | 'blocked' | 'active' | 'waiting' | 'planned' | 'history'
+
+export interface TaskStatusCounts {
+  all: number
+  blocked: number
+  active: number
+  waiting: number
+  planned: number
+  history: number
+}
+
+const STATUS_ITEMS: Array<{ id: TaskStatusScope; label: string }> = [
+  { id: 'all', label: '全部' },
+  { id: 'blocked', label: '已阻塞' },
+  { id: 'active', label: '进行中' },
+  { id: 'waiting', label: '等待中' },
+  { id: 'planned', label: '待安排' },
+  { id: 'history', label: '历史' },
+]
+
+export function TaskStatusNavigation({
+  counts,
+  status,
+  onStatusChange,
+}: {
+  counts: TaskStatusCounts
+  status: TaskStatusScope
+  onStatusChange: (status: TaskStatusScope) => void
+}) {
+  return (
+    <div className="app-task-status-nav" aria-label="任务状态视图">
+      {STATUS_ITEMS.map((item) => (
+        <Button
+          key={item.id}
+          className="app-task-status-nav__item"
+          aria-pressed={status === item.id}
+          data-active={status === item.id || undefined}
+          size="xs"
+          variant="quiet"
+          onPress={() => onStatusChange(item.id)}
+        >
+          {item.label}<span>{counts[item.id]}</span>
+        </Button>
+      ))}
+    </div>
+  )
+}
 
 export function TasksToolbar({
   query,
-  status,
   zoom,
   onQueryChange,
-  onStatusChange,
   onZoomChange,
-  onExpandAll,
-  onCollapseAll,
+  allExpanded,
+  onToggleExpansion,
   onNow,
   labelsVisible,
   onToggleLabels,
@@ -24,13 +67,11 @@ export function TasksToolbar({
   onOpenInbox,
 }: {
   query: string
-  status: TaskStatusScope
   zoom: TimelineZoom
   onQueryChange: (value: string) => void
-  onStatusChange: (value: TaskStatusScope) => void
   onZoomChange: (value: TimelineZoom) => void
-  onExpandAll: () => void
-  onCollapseAll: () => void
+  allExpanded: boolean
+  onToggleExpansion: () => void
   onNow: () => void
   labelsVisible: boolean
   onToggleLabels: () => void
@@ -47,29 +88,19 @@ export function TasksToolbar({
         placeholder="搜索任务、Workspace、Branch 或 Session ID"
         onChange={onQueryChange}
       />
-      <Select
-        aria-label="任务状态"
-        className="tasks-toolbar__select"
-        selectedKey={status}
-        onSelectionChange={(key) => onStatusChange(String(key) as TaskStatusScope)}
-      >
-        <SelectTrigger size="sm"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem id="all">全部状态</SelectItem>
-          <SelectItem id="active">进行中</SelectItem>
-          <SelectItem id="planned">待安排</SelectItem>
-          <SelectItem id="waiting">等待中</SelectItem>
-          <SelectItem id="blocked">已阻塞</SelectItem>
-          <SelectItem id="done">已完成</SelectItem>
-          <SelectItem id="canceled">已取消</SelectItem>
-        </SelectContent>
-      </Select>
       <Button className="tasks-toolbar__inbox" size="sm" variant="secondary" onPress={onOpenInbox}>
         <Inbox />待处理{inboxCount > 0 ? <span>{inboxCount}</span> : null}
       </Button>
       <div className="tasks-toolbar__group">
-        <Button aria-label="全部展开" isIconOnly size="xs" variant="quiet" onPress={onExpandAll}><ChevronsUpDown /></Button>
-        <Button aria-label="全部折叠" isIconOnly size="xs" variant="quiet" onPress={onCollapseAll}><ChevronsDownUp /></Button>
+        <Button
+          aria-label={allExpanded ? '全部折叠' : '全部展开'}
+          isIconOnly
+          size="xs"
+          variant="quiet"
+          onPress={onToggleExpansion}
+        >
+          {allExpanded ? <ChevronsDownUp /> : <ChevronsUpDown />}
+        </Button>
         <Button
           aria-label={labelsVisible ? '隐藏 Timeline 标签' : '显示 Timeline 标签'}
           aria-pressed={labelsVisible}

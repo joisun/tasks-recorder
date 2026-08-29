@@ -401,6 +401,19 @@ export interface RunEvent {
   payload: Record<string, unknown>
 }
 
+export interface RunConversationMessage {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+}
+
+export interface RunConversationResponse {
+  run_id: string
+  session_id: string
+  messages: RunConversationMessage[]
+  truncated: boolean
+}
+
 export interface ScheduleMutationInput {
   title: string
   prompt: string

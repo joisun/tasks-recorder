@@ -39,8 +39,8 @@ export function RunHistory({
   }
 
   return (
-    <div className="run-history" aria-label="执行历史">
-      <table>
+    <div className="run-history">
+      <table role="grid" aria-label="执行历史">
         <thead>
           <tr>
             <th>状态</th>
@@ -69,15 +69,25 @@ export function RunHistory({
 
             const { run } = row
             return (
-              <tr key={run.id} data-selected={run.id === selectedRunId || undefined}>
+              <tr
+                key={run.id}
+                aria-label={`${runStatusLabel(run.status)}，${compactDateTime(run.started_at ?? run.created_at)}，${runDuration(run.started_at, run.finished_at)}`}
+                aria-selected={run.id === selectedRunId}
+                data-selected={run.id === selectedRunId || undefined}
+                tabIndex={0}
+                onClick={() => onSelect(run.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  onSelect(run.id)
+                }}
+              >
                 <td>
-                  <button type="button" onClick={() => onSelect(run.id)}>
-                    <span className="run-history__status">
-                      <i data-status={run.status} aria-hidden="true" />
-                      {runStatusLabel(run.status)}
-                    </span>
-                    <small>{triggerLabel(run.trigger)}{run.reviewed_at ? '' : ' · 未读'}</small>
-                  </button>
+                  <span className="run-history__status">
+                    <i data-status={run.status} aria-hidden="true" />
+                    {runStatusLabel(run.status)}
+                  </span>
+                  <small>{triggerLabel(run.trigger)}{run.reviewed_at ? '' : ' · 未读'}</small>
                 </td>
                 <td>{compactDateTime(run.started_at ?? run.created_at)}</td>
                 <td>{runDuration(run.started_at, run.finished_at)}</td>

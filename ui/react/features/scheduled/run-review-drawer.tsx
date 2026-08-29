@@ -9,6 +9,8 @@ import { queryKeys } from '@/lib/query/keys'
 import { RunDetail } from './run-detail'
 import { RunHistory } from './run-history'
 
+const ACTIVE_RUN_STATUSES = new Set(['queued', 'claimed', 'running'])
+
 export function RunReviewDrawer({
   api,
   schedule,
@@ -51,6 +53,9 @@ export function RunReviewDrawer({
     queryKey: queryKeys.run(selectedRunId ?? ''),
     queryFn: () => api.scheduledRun(selectedRunId ?? ''),
     enabled: open && Boolean(selectedRunId),
+    refetchInterval: (query) => ACTIVE_RUN_STATUSES.has(query.state.data?.run.status ?? '')
+      ? 2_000
+      : false,
   })
   const currentSchedule = scheduleDetail.data?.job ?? schedule
 
