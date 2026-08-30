@@ -1,6 +1,6 @@
 {
   "name": "tasks-recorder",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Record Codex work in a local task service with a real-time dashboard.",
   "author": {
     "name": "Joi Sun",

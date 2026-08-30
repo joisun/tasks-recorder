@@ -12,8 +12,10 @@ const LABEL = `com.joi.tasks-recorder.schedule.${JOB_ID}`
 function legacyPlist({ label = LABEL, jobId = JOB_ID } = {}) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-<key>Label</key><string>${label}</string>
-<key>ProgramArguments</key><array>
+<key>Label</key>
+<string>${label}</string>
+<key>ProgramArguments</key>
+<array>
 <string>/usr/local/bin/node</string>
 <string>/opt/tasks-recorder/server/scheduled-runner.mjs</string>
 <string>${jobId}</string>

@@ -90,10 +90,20 @@ async function readPrivatePlist(path, currentUid) {
 
 function isLegacySchedulePlist(source, { label, jobId }) {
   if (typeof source !== 'string' || Buffer.byteLength(source) > MAX_PLIST_BYTES) return false
-  return source.includes(`<key>Label</key><string>${label}</string>`)
-    && source.includes('<key>ProgramArguments</key>')
+  return plistPair(source, 'Label', label)
+    && /<key>\s*ProgramArguments\s*<\/key>/.test(source)
     && /<string>[^<]*\/server\/scheduled-runner\.mjs<\/string>/.test(source)
-    && source.includes(`<string>${jobId}</string>`)
+    && new RegExp(`<string>\\s*${escapeRegExp(jobId)}\\s*<\\/string>`).test(source)
+}
+
+function plistPair(source, key, value) {
+  return new RegExp(
+    `<key>\\s*${escapeRegExp(key)}\\s*<\\/key>\\s*<string>\\s*${escapeRegExp(value)}\\s*<\\/string>`,
+  ).test(source)
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function notLoaded(result) {
