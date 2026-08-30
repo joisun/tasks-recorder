@@ -14,7 +14,7 @@ vi.mock('@/features/tasks/task-gantt', () => ({
 
 const meta: DashboardMeta = {
   service: 'tasks-recorder',
-  service_version: '0.7.1',
+  service_version: '0.7.2',
   api_version: 'v1',
   capabilities: {
     runtime_registry: true,

@@ -49,6 +49,9 @@ test('cleanup removes only a private legacy Schedule LaunchAgent and is idempote
   })
   assert.deepEqual(calls, [[
     'launchctl',
+    ['print', `gui/${process.getuid()}/${LABEL}`],
+  ], [
+    'launchctl',
     ['bootout', `gui/${process.getuid()}`, owned],
   ]])
   assert.deepEqual(await cleanupLegacyScheduleLaunchAgents({
@@ -83,4 +86,36 @@ test('cleanup reports unsafe matching files without touching them', async (t) =>
     'LEGACY_LAUNCHD_PLIST_UNSAFE',
   ])
   await chmod(target, 0o600)
+})
+
+test('cleanup removes an owned plist when its legacy job is already unloaded', async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'tasks-recorder-launchd-cleanup-'))
+  t.after(() => rm(home, { recursive: true, force: true }))
+  const directory = join(home, 'Library', 'LaunchAgents')
+  await mkdir(directory, { recursive: true })
+  const owned = join(directory, `${LABEL}.plist`)
+  await writeFile(owned, legacyPlist(), { mode: 0o600 })
+
+  const calls = []
+  const result = await cleanupLegacyScheduleLaunchAgents({
+    homeDirectory: home,
+    uid: process.getuid(),
+    commandRunner: async (command, args) => {
+      calls.push([command, args])
+      return {
+        code: 113,
+        stdout: '',
+        stderr: `Could not find service "${LABEL}" in domain for user gui`,
+      }
+    },
+  })
+
+  assert.deepEqual(result, {
+    removed: [{ job_id: JOB_ID, label: LABEL }],
+    skipped: [],
+  })
+  assert.deepEqual(calls, [[
+    'launchctl',
+    ['print', `gui/${process.getuid()}/${LABEL}`],
+  ]])
 })

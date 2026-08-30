@@ -43,13 +43,17 @@ export async function cleanupLegacyScheduleLaunchAgents({
       if (!isLegacySchedulePlist(source, { label, jobId })) {
         throw cleanupError('LEGACY_LAUNCHD_PLIST_NOT_OWNED')
       }
-      const result = await commandRunner(
-        'launchctl',
-        ['bootout', `gui/${uid}`, path],
-        { allowFailure: true },
-      )
-      if (result?.code !== 0 && !notLoaded(result)) {
-        throw cleanupError('LEGACY_LAUNCHD_BOOTOUT_FAILED')
+      const target = `gui/${uid}/${label}`
+      const loaded = await commandRunner('launchctl', ['print', target], { allowFailure: true })
+      if (loaded?.code === 0) {
+        const result = await commandRunner(
+          'launchctl',
+          ['bootout', `gui/${uid}`, path],
+          { allowFailure: true },
+        )
+        if (result?.code !== 0) throw cleanupError('LEGACY_LAUNCHD_BOOTOUT_FAILED')
+      } else if (!notLoaded(loaded)) {
+        throw cleanupError('LEGACY_LAUNCHD_STATUS_FAILED')
       }
       await rm(path, { force: false })
       removed.push({ job_id: jobId, label })
