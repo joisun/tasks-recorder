@@ -6,7 +6,7 @@ Tasks Recorder 是运行在本机的 coding-agent 工作记录与自动化控制
 
 当前状态：
 
-- macOS service 与 Dashboard 可用；
+- macOS service 与 React Dashboard 可用；Legacy bundle 仅作为回滚资产保留，不是 production entry；
 - Recorder adapter 支持 Codex 和 Claude Code；
 - Scheduled Task runtime 当前支持 Codex；
 - runtime registry 已按 multi-CLI contract 设计，后续 runtime 只增加 adapter，不增加第二套调度链路；
@@ -31,7 +31,7 @@ tasks-recorder status
 普通安装不需要 clone repository、`npm install` 或 `npm ci`。更谨慎的固定版本安装方式：
 
 ```bash
-version=v0.7.3
+version=v0.8.0
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -231,7 +231,7 @@ dry-run 不写入数据库；apply 会先 checkpoint WAL、创建权限为 `0600
 
 ### Legacy API window
 
-`agent_tasks_*` MCP/API 在整个 `0.7.x` release line 中继续保留 compatibility wrapper，并返回 migration metadata。新 adapter 使用 `agent_work_*`、`agent_tasks_mutate` 与 `agent_tasks_sync_structure`。legacy wrapper 最早在 `0.8.0` 移除。
+`agent_tasks_*` MCP/API 在整个 `0.8.x` release line 中继续保留 compatibility wrapper，并返回 migration metadata。新 adapter 使用 `agent_work_*`、`agent_tasks_mutate` 与 `agent_tasks_sync_structure`。legacy wrapper 最早在 `0.9.0` 移除。
 
 ## Import historical Codex sessions
 

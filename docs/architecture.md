@@ -132,6 +132,8 @@ Definitions directory 切换是一个受控迁移：验证目标、迁移/合并
 
 ## Dashboard Tree / Timeline rendering
 
+Production `taskd` 明确读取自包含的 `ui/dist/react.html`。`ui/dist/index.html` 继续随 release 打包，仅用于回滚和迁移对照，不参与默认路由；source preview 与 installed runtime 因此使用同一 React entry 和同一 API contract。
+
 Tasks 视图仍由 SVAR React Gantt 统一拥有 Tree、Grid、Timeline 的行几何与横向时间窗口。React adapter 通过 SVAR 的 typed `render-data` interceptor 和 embedded Grid API 关闭两层纵向 row recycling，使当前 projection 的每一行在滚动期间保持稳定 DOM identity；这是为避免 Tree 与 Timeline 在 30px 行边界发生可见替换和抖动的明确取舍，而不是 CSS 或 DOM monkey patch。横向 Timeline virtualization 保持启用。
 
 Dashboard snapshot、状态筛选与默认折叠共同约束实际挂载行数。若未来数据规模使完整纵向 projection 超出可接受的 render/scroll budget，应先以真实数据测量并更换支持 stable-row virtualization 的 renderer；不得重新启用当前双层 recycling 并接受视觉抖动。

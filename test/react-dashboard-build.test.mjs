@@ -4,7 +4,7 @@ import test from 'node:test'
 
 import { compileDashboard, compileReactDashboard } from '../ui/compiler.mjs'
 
-test('React preview compiles to an offline single-file document', async () => {
+test('React production Dashboard compiles to an offline single-file document', async () => {
   const html = await compileReactDashboard()
   assert.match(html, /id="root"/)
   assert.match(html, /Tasks Recorder/)
@@ -20,7 +20,7 @@ test('adding the React compiler does not change legacy compilation', async () =>
   assert.match(html, /\/api\/v1\/snapshot/)
 })
 
-test('build command writes both legacy and React artifacts', async () => {
+test('build command writes both the rollback Legacy artifact and React production artifact', async () => {
   const html = await readFile(new URL('../ui/dist/react.html', import.meta.url), 'utf8')
   assert.match(html, /id="root"/)
 })

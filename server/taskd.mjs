@@ -8,7 +8,7 @@ import { resolveAppConfig } from '../mcp/src/config.mjs'
 import { startTaskd } from './src/taskd-runtime.mjs'
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
-const dashboardPath = join(projectRoot, 'ui', 'dist', 'index.html')
+const dashboardPath = join(projectRoot, 'ui', 'dist', 'react.html')
 
 try {
   const config = await resolveAppConfig({ projectRoot })

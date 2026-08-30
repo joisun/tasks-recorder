@@ -87,7 +87,7 @@ export function createInstallBuildStep({
   run = runCommand,
 }) {
   if (env.TASKS_RECORDER_PREBUILT === '1') {
-    const dashboardPath = join(projectRoot, 'ui', 'dist', 'index.html')
+    const dashboardPath = join(projectRoot, 'ui', 'dist', 'react.html')
     return async () => {
       try {
         await access(dashboardPath)

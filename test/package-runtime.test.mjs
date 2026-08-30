@@ -234,7 +234,7 @@ test('packaged runtime, importer, and adapter bundles execute outside the source
     await waitForReady(baseUrl, taskd, () => taskdStderr)
     const dashboard = await fetch(baseUrl)
     assert.equal(dashboard.status, 200)
-    assert.match(await dashboard.text(), /<title>Agent Control<\/title>/)
+    assert.match(await dashboard.text(), /<title>Tasks Recorder<\/title>/)
     assert.match(await readReadyEvent(baseUrl), /event: ready/)
 
     await postJson(baseUrl, '/api/v1/lifecycle/session-start', {

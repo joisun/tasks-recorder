@@ -154,7 +154,7 @@ test('release install validates the prebuilt dashboard without invoking the sour
 
     const dashboardDirectory = join(projectRoot, 'ui', 'dist')
     await mkdir(dashboardDirectory, { recursive: true })
-    await writeFile(join(dashboardDirectory, 'index.html'), '<!doctype html>')
+    await writeFile(join(dashboardDirectory, 'react.html'), '<!doctype html>')
     await build()
     assert.deepEqual(calls, [])
   } finally {
