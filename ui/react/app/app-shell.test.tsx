@@ -176,6 +176,7 @@ function dashboardApi(runRecord: RunRecord = run): DashboardApi {
     stopRun: vi.fn(async (_id, input) => ({
       accepted: true, run_id: runRecord.id, turn_revision: input.expected_turn_revision,
     })),
+    cancelRun: vi.fn(async () => ({ run: { ...runRecord, status: 'canceled' as const } })),
   }
 }
 
@@ -232,6 +233,34 @@ test('switches between URL-backed Tasks and Scheduled workspaces', async () => {
   await user.click(tasks)
   expect(await screen.findByTestId('task-gantt')).toBeInTheDocument()
   expect(tasks).toHaveAttribute('aria-current', 'page')
+})
+
+test('uses distinct Schedule lifecycle affordance and stops an active one-shot Run from the row', async () => {
+  const user = userEvent.setup()
+  const activeSchedule = {
+    ...schedule,
+    enabled: false,
+    current_execution: {
+      kind: 'run' as const,
+      id: 'run-active',
+      status: 'running' as const,
+      started_at: '2026-08-30T10:00:00.000Z',
+    },
+  }
+  const api = dashboardApi()
+  api.schedules = vi.fn(async () => ({
+    capability: { supported: true, backend: 'internal' }, jobs: [activeSchedule], invalid: [],
+  }))
+  renderApp(api)
+
+  await user.click(screen.getByRole('button', { name: 'Scheduled' }))
+  const stop = await screen.findByRole('button', { name: '停止当前 Run' })
+  const enable = screen.getByRole('button', { name: '启用 Schedule' })
+  expect(stop.querySelector('svg')).not.toHaveClass('lucide-play')
+  expect(enable.querySelector('svg')).not.toHaveClass('lucide-play')
+
+  await user.click(stop)
+  await waitFor(() => expect(api.cancelRun).toHaveBeenCalledWith('run-active'))
 })
 
 test('global actions own a safe inset and never use edge-positioned inline styles', () => {

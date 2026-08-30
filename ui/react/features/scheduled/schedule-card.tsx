@@ -1,9 +1,11 @@
 import {
+  CalendarCheck2,
   CalendarClock,
+  CalendarOff,
   History,
-  Pause,
   Pencil,
   Play,
+  Square,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -16,12 +18,13 @@ import {
   runStatusLabel,
 } from './schedule-format'
 
-export type ScheduleBusyAction = 'run' | 'pause' | 'resume' | null
+export type ScheduleBusyAction = 'run' | 'stop' | 'pause' | 'resume' | null
 
 export function ScheduleCard({
   schedule,
   busyAction = null,
   onRunNow,
+  onStopRun,
   onToggle,
   onEdit,
   onReview,
@@ -29,12 +32,14 @@ export function ScheduleCard({
   schedule: ScheduleRecord
   busyAction?: ScheduleBusyAction
   onRunNow: (schedule: ScheduleRecord) => void
+  onStopRun: (schedule: ScheduleRecord) => void
   onToggle: (schedule: ScheduleRecord) => void
   onEdit?: (schedule: ScheduleRecord) => void
   onReview?: (schedule: ScheduleRecord) => void
 }) {
   const execution = schedule.current_execution
   const runActive = isActiveRun(schedule)
+  const runStoppable = runActive && execution?.kind === 'run'
   const unread = Math.max(0, schedule.unread_run_count ?? 0)
   const executionTime = execution?.finished_at
     ?? execution?.started_at
@@ -104,15 +109,17 @@ export function ScheduleCard({
           <Pencil aria-hidden="true" />
         </Button>
         <Button
-          aria-label={runActive ? '已有 Run 正在执行' : '立即运行'}
-          isDisabled={runActive || busyAction !== null}
+          className="schedule-row__run-action"
+          data-running={runActive || undefined}
+          aria-label={runActive ? (runStoppable ? '停止当前 Run' : 'Run 正在调度') : '立即运行'}
+          isDisabled={(runActive && !runStoppable) || busyAction !== null}
           isIconOnly
-          isPending={busyAction === 'run'}
+          isPending={busyAction === 'run' || busyAction === 'stop'}
           size="sm"
           variant="quiet"
-          onPress={() => onRunNow(schedule)}
+          onPress={() => (runActive ? onStopRun(schedule) : onRunNow(schedule))}
         >
-          <Play aria-hidden="true" />
+          {runActive ? <Square aria-hidden="true" /> : <Play aria-hidden="true" />}
         </Button>
         <Button
           aria-label={schedule.enabled ? '暂停 Schedule' : '启用 Schedule'}
@@ -123,7 +130,7 @@ export function ScheduleCard({
           variant="quiet"
           onPress={() => onToggle(schedule)}
         >
-          {schedule.enabled ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+          {schedule.enabled ? <CalendarOff aria-hidden="true" /> : <CalendarCheck2 aria-hidden="true" />}
         </Button>
         <Button
           className="schedule-row__history-action"

@@ -49,7 +49,7 @@ Registry 保存 immutable runtime definitions，不动态加载用户代码。�
 
 Shared infrastructure 负责 executable candidate ordering、canonicalization、version probe、cache、child PATH repair、process supervision、timeout/cancel、Run persistence 和 SSE。只有已 canonicalize 为 executable file 的候选才消耗 bounded probe budget；不存在的 PATH entry 不得遮蔽后面的健康 CLI。Runtime Environment 动态枚举 process PATH、Homebrew、fnm/nvm/mise 等已安装 toolchain，并同时为 resolver 与 child process 生成一致路径。成功解析可 bounded cache；失败解析立即失效，以允许 CLI 安装或环境恢复后的下一次请求自愈。Adapter 不得导入 HTTP、SQLite、cadence 或 UI 模块。
 
-Run store 的 one-active-per-Schedule 约束是 UI action availability 的事实来源：`queued`、`claimed` 或 `running` execution 必须同时在 renderer 与 click boundary 禁用 Run now；409 只保留为并发安全网，不能成为正常交互反馈。
+Run store 的 one-active-per-Schedule 约束是 UI action availability 的事实来源：空闲时行级 action 提供一次性 Run now；已有 `running` Run 时同一位置切换为 Stop，并与负责周期调度的 Schedule pause/resume action 使用不同图标和语义。`queued`、`claimed` 等尚不能安全停止的阶段会禁用 Run now；409 只保留为并发安全网，不能成为正常交互反馈。
 
 当前只注册 `codex`。增加 runtime 的最小范围应是：
 
@@ -129,6 +129,12 @@ Dashboard ──GET /runs/:id/conversation──▶ RunService
 `scheduler-clock` 在 `taskd` 内根据 wall clock 和 durable occurrence key 计算到期任务。filesystem watcher 负责低延迟 definition change，周期 rescan 提供最终一致性。sleep/wake 可产生 bounded catch-up，但同一个 occurrence key 不能创建两次 Run。
 
 Definitions directory 切换是一个受控迁移：验证目标、迁移/合并、切换 repository、替换 watcher、持久化 config；任一步失败都恢复旧 repository 和 watcher。
+
+## Dashboard Tree / Timeline rendering
+
+Tasks 视图仍由 SVAR React Gantt 统一拥有 Tree、Grid、Timeline 的行几何与横向时间窗口。React adapter 通过 SVAR 的 typed `render-data` interceptor 和 embedded Grid API 关闭两层纵向 row recycling，使当前 projection 的每一行在滚动期间保持稳定 DOM identity；这是为避免 Tree 与 Timeline 在 30px 行边界发生可见替换和抖动的明确取舍，而不是 CSS 或 DOM monkey patch。横向 Timeline virtualization 保持启用。
+
+Dashboard snapshot、状态筛选与默认折叠共同约束实际挂载行数。若未来数据规模使完整纵向 projection 超出可接受的 render/scroll budget，应先以真实数据测量并更换支持 stable-row virtualization 的 renderer；不得重新启用当前双层 recycling 并接受视觉抖动。
 
 ## Compatibility and migrations
 

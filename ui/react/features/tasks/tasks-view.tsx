@@ -200,10 +200,20 @@ export function TasksView({
     onError: (error) => setMessage(mutationMessage(error)),
   })
 
-  const pendingTaskIds = new Set<string>()
-  if (statusMutation.isPending) pendingTaskIds.add(statusMutation.variables.task.id)
-  if (archiveMutation.isPending) pendingTaskIds.add(archiveMutation.variables.id)
-  if (resumeMutation.isPending) pendingTaskIds.add(resumeMutation.variables.id)
+  const pendingTaskIds = useMemo(() => {
+    const ids = new Set<string>()
+    if (statusMutation.isPending) ids.add(statusMutation.variables.task.id)
+    if (archiveMutation.isPending) ids.add(archiveMutation.variables.id)
+    if (resumeMutation.isPending) ids.add(resumeMutation.variables.id)
+    return ids
+  }, [
+    statusMutation.isPending,
+    statusMutation.variables,
+    archiveMutation.isPending,
+    archiveMutation.variables,
+    resumeMutation.isPending,
+    resumeMutation.variables,
+  ])
   const groupIds = snapshot.tasks
     .filter((task) => task.entity_type === 'project' || snapshot.tasks.some(({ parent_id: parentId }) => parentId === task.id))
     .map(({ id }) => id)

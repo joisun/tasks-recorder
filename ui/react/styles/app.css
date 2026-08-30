@@ -441,7 +441,7 @@
 
 .tasks-gantt {
   position: relative;
-  --wx-background: var(--surface-1);
+  --wx-background: var(--surface-0);
   --wx-color-font: var(--text-primary);
   --wx-font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --wx-border: 1px solid var(--border-subtle);
@@ -462,36 +462,72 @@
   --wx-gantt-holiday-background: color-mix(in oklab, var(--surface-2) 52%, var(--surface-1));
 }
 
+.tasks-gantt .tasks-gantt__theme {
+  --wx-background: var(--surface-0);
+}
+
 .tasks-gantt .wx-gantt,
 .tasks-gantt .wx-layout,
 .tasks-gantt .wx-table-container,
 .tasks-gantt .wx-chart,
 .tasks-gantt .wx-scale {
-  background: var(--surface-1);
+  background: var(--surface-0);
   color: var(--text-primary);
   font-family: var(--wx-font-family);
 }
 
 .tasks-gantt .wx-header {
   border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in oklab, var(--surface-1) 88%, var(--surface-2));
+  background: color-mix(in oklab, var(--surface-0) 90%, var(--surface-2));
 }
 
 .tasks-gantt .wx-header .wx-cell {
+  background: var(--surface-2);
   color: var(--text-muted);
   letter-spacing: 0.005em;
 }
 
 .tasks-gantt .wx-row {
-  background: var(--surface-1);
+  background: var(--surface-0);
 }
 
 .tasks-gantt .wx-row:hover .wx-cell {
-  background: color-mix(in oklab, var(--surface-2) 62%, var(--surface-1));
+  background: color-mix(in oklab, var(--surface-2) 58%, var(--surface-0));
 }
 
 .tasks-gantt .wx-cell {
   border-color: var(--border-subtle);
+}
+
+.tasks-gantt .wx-resizer {
+  background: transparent;
+}
+
+.tasks-gantt .wx-resizer::before,
+.tasks-gantt .wx-resizer::after {
+  display: none;
+}
+
+.tasks-gantt .wx-resizer .wx-button-expand-box {
+  display: none;
+}
+
+.tasks-gantt .wx-resizer .wx-resizer-line {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  display: block;
+  width: 1px;
+  height: auto;
+  background: var(--border-subtle);
+  transform: translateX(-50%);
+  transition: width 120ms ease, background-color 120ms ease;
+}
+
+.tasks-gantt .wx-resizer:hover .wx-resizer-line,
+.tasks-gantt .wx-resizer:active .wx-resizer-line {
+  width: 2px;
+  background: color-mix(in oklab, var(--accent-strong) 72%, var(--border-subtle));
 }
 
 .tasks-gantt__now-marker {
@@ -514,7 +550,7 @@
   padding: 2px 5px;
   border-radius: 3px 0 0 3px;
   color: color-mix(in oklab, var(--accent-strong) 86%, white 14%);
-  background: color-mix(in oklab, var(--accent) 20%, var(--surface-1));
+  background: color-mix(in oklab, var(--accent) 20%, var(--surface-0));
   font: 650 9px ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.05em;
 }
@@ -532,6 +568,22 @@
   place-items: center;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.tasks-gantt .wx-toggle-icon::before {
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: "" !important;
+}
+
+.tasks-gantt .wx-toggle-icon.wxi-menu-right::before {
+  transform: rotate(-45deg);
+}
+
+.tasks-gantt .wx-toggle-icon.wxi-menu-down::before {
+  transform: rotate(45deg);
 }
 
 .gantt-task-cell,
@@ -566,7 +618,7 @@
 
 .gantt-task-cell__resume {
   margin-left: 4px;
-  opacity: 0;
+  opacity: 0.58;
   transition: opacity 120ms ease;
 }
 
@@ -642,6 +694,12 @@
   background: var(--accent-strong);
 }
 
+.gantt-group-progress > span:last-child {
+  width: 5ch;
+  flex: 0 0 5ch;
+  text-align: left;
+}
+
 .gantt-leaf-status {
   justify-content: center;
   gap: 7px;
@@ -684,8 +742,57 @@
 .gantt-native-status__trigger {
   width: auto;
   max-width: 72px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text-muted);
+  font: inherit;
   font-size: 10.5px;
+  cursor: pointer;
+}
+
+.gantt-native-status__trigger:focus-visible {
+  outline: 1px solid var(--accent-strong);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.gantt-native-status__menu {
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--surface-1) 96%, var(--surface-2));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%), 0 0 0 1px rgb(0 0 0 / 25%);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.gantt-native-status__menu [role="option"] {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  outline: none;
+}
+
+.gantt-native-status__menu [role="option"]:hover {
+  background: color-mix(in oklab, var(--surface-2) 78%, transparent);
+  color: var(--text-primary);
+}
+
+.gantt-native-status__menu [role="option"]:focus-visible,
+.gantt-native-status__menu [role="option"]:focus {
+  background: color-mix(in oklab, var(--accent) 22%, var(--surface-2));
+  color: var(--text-primary);
+}
+
+.gantt-native-status__menu [role="option"][aria-selected="true"] {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .gantt-leaf-status > span:first-child {
@@ -1564,6 +1671,10 @@
   gap: 2px;
 }
 
+.schedule-row__run-action[data-running="true"] {
+  color: var(--danger);
+}
+
 .scheduled-state {
   display: grid;
   min-height: 260px;
@@ -1839,6 +1950,9 @@
   width: min(980px, 96vw) !important;
   height: calc(100% - 24px) !important;
   margin: 12px;
+  overflow: hidden;
+  border-right: 1px solid var(--border-subtle) !important;
+  border-radius: 12px !important;
   background: var(--surface-1);
 }
 

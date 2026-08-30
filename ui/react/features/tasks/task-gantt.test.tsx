@@ -8,7 +8,7 @@ import {
   DEFAULT_TASK_COLUMN_WIDTHS,
   resizeTaskColumn,
 } from './task-columns'
-import { TaskGantt } from './task-gantt'
+import { disableVerticalRowVirtualization, TaskGantt } from './task-gantt'
 
 const ganttProps = vi.hoisted(() => vi.fn())
 
@@ -52,7 +52,9 @@ test('renders SVAR directly from the typed React projection', () => {
   expect(props.cellHeight).toBe(30)
   expect(props.scaleHeight).toBe(24)
   expect(props.readonly).toBe(true)
-  expect(props.gridWidth).toBeGreaterThanOrEqual(480)
+  expect(props.gridWidth).toBe(500)
+  expect(props.columns[0].width).toBe(300)
+  expect(props.columns.find(({ id }: { id: string }) => id === 'workspace').flexgrow).toBe(1)
 })
 
 test('column resizing changes only the requested column and never the pane width', () => {
@@ -63,6 +65,36 @@ test('column resizing changes only the requested column and never the pane width
   expect(resized.text).toBe(DEFAULT_TASK_COLUMN_WIDTHS.text)
   expect(resized.branch).toBe(DEFAULT_TASK_COLUMN_WIDTHS.branch)
   expect(gridWidth).toBe(640)
+})
+
+test('pins the Gantt render area and table to all rows instead of recycling vertical slices', async () => {
+  const state = {
+    _tasks: Array.from({ length: 360 }, (_, index) => ({ id: `task-${index}` })),
+    area: { from: 0, start: 0, end: 0 },
+  }
+  let renderData: ((area: { from: number; start: number; end: number }) => boolean | void) | undefined
+  const setTableState = vi.fn()
+  const api = {
+    getState: () => state,
+    intercept: vi.fn((name, handler) => {
+      if (name === 'render-data') renderData = handler
+    }),
+    exec: vi.fn((_name, area) => {
+      if (renderData?.(area) !== false) state.area = { ...area }
+      return Promise.resolve(area)
+    }),
+    getTable: vi.fn(() => ({
+      getStores: () => ({ data: { setState: setTableState } }),
+    })),
+  } as unknown as IApi
+
+  disableVerticalRowVirtualization(api, 'test-render-all')
+  await Promise.resolve()
+
+  expect(state.area).toEqual({ from: 0, start: 0, end: 360 })
+  expect(setTableState).toHaveBeenCalledWith({ dynamic: { rowCount: 360 } })
+  expect(renderData?.({ from: 30, start: 1, end: 34 })).toBe(false)
+  expect(state.area).toEqual({ from: 0, start: 0, end: 360 })
 })
 
 test('renders the task name inside a Timeline bar when the bar has room', () => {

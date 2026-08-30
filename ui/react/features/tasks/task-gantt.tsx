@@ -12,10 +12,40 @@ import {
   type TaskColumnWidths,
 } from './task-columns'
 import { projectTaskSnapshot } from './task-projection'
+import { TaskStatusMenuProvider } from './task-status-control'
 import type { TaskGanttRow, TimelineZoom } from './task-types'
 
 const ROW_HEIGHT = 30
 const SCALE_HEIGHT = 24
+const DEFAULT_TIMELINE_WIDTH = 400
+const MIN_GRID_WIDTH = 320
+type VerticalRenderArea = { from: number; start: number; end: number; to?: number }
+
+export function disableVerticalRowVirtualization(api: IApi, tag: string) {
+  const syncTable = (rowCount: number) => {
+    void Promise.resolve(api.getTable(true)).then((table) => {
+      table?.getStores().data.setState({ dynamic: { rowCount } })
+    })
+  }
+  const fullArea = (): VerticalRenderArea => ({
+    from: 0,
+    start: 0,
+    end: api.getState()._tasks.length,
+  })
+
+  api.intercept('render-data', (area) => {
+    const target = fullArea()
+    const current = api.getState().area
+    if (current.from === target.from && current.start === target.start && current.end === target.end) {
+      return false
+    }
+    Object.assign(area, target)
+    syncTable(target.end)
+  }, { tag })
+  const initialArea = fullArea()
+  void api.exec('render-data', initialArea)
+  syncTable(initialArea.end)
+}
 
 function estimatedTimelineLabelWidth(text: string) {
   const width = Array.from(text).reduce(
@@ -115,7 +145,14 @@ export function TaskGantt({
     onStatusChange,
     onArchive,
   }), [columnWidths, onArchive, onStatusChange, onTaskResume, onTaskSelect, pendingTaskIds])
-  const gridWidth = Math.round(Math.min(720, Math.max(480, viewportWidth * 0.48)))
+  const gridWidth = Math.round(Math.max(MIN_GRID_WIDTH, viewportWidth - DEFAULT_TIMELINE_WIDTH))
+  const selected = useMemo(() => (selectedTaskId ? [selectedTaskId] : []), [selectedTaskId])
+  const taskTemplate = useCallback(
+    (props: { data: ITask; api: IApi; onaction: (event: { action: string; data: Record<string, unknown> }) => void }) => (
+      <TaskBar {...props} labelsVisible={labelsVisible} />
+    ),
+    [labelsVisible],
+  )
 
   useLayoutEffect(() => {
     const host = hostRef.current
@@ -212,6 +249,7 @@ export function TaskGantt({
   const initialize = useCallback((api: IApi) => {
     apiRef.current?.detach(eventTag.current)
     apiRef.current = api
+    disableVerticalRowVirtualization(api, eventTag.current)
     window.requestAnimationFrame(updateNowMarker)
     api.on('select-task', ({ id }: { id: string | number }) => onTaskSelect(String(id)), {
       tag: eventTag.current,
@@ -247,32 +285,34 @@ export function TaskGantt({
   }
 
   return (
-    <div className="tasks-gantt" ref={hostRef} data-scale={model.scale.id}>
-      <div className="wx-willow-dark-theme tasks-gantt__theme">
-        <Gantt
-          tasks={model.rows}
-          links={model.links}
-          columns={columns}
-          scales={model.scale.scales}
-          start={model.scale.start}
-          end={model.scale.end}
-          lengthUnit={model.scale.lengthUnit}
-          cellWidth={model.scale.cellWidth}
-          cellHeight={ROW_HEIGHT}
-          scaleHeight={SCALE_HEIGHT}
-          taskTemplate={(props) => <TaskBar {...props} labelsVisible={labelsVisible} />}
-          readonly
-          baselines
-          splitTasks
-          displayMode="all"
-          gridWidth={gridWidth}
-          init={initialize}
-          selected={selectedTaskId ? [selectedTaskId] : []}
-        />
+    <TaskStatusMenuProvider>
+      <div className="tasks-gantt" ref={hostRef} data-scale={model.scale.id}>
+        <div className="wx-willow-dark-theme tasks-gantt__theme">
+          <Gantt
+            tasks={model.rows}
+            links={model.links}
+            columns={columns}
+            scales={model.scale.scales}
+            start={model.scale.start}
+            end={model.scale.end}
+            lengthUnit={model.scale.lengthUnit}
+            cellWidth={model.scale.cellWidth}
+            cellHeight={ROW_HEIGHT}
+            scaleHeight={SCALE_HEIGHT}
+            taskTemplate={taskTemplate}
+            readonly
+            baselines
+            splitTasks
+            displayMode="all"
+            gridWidth={gridWidth}
+            init={initialize}
+            selected={selected}
+          />
+        </div>
+        <div className="tasks-gantt__now-marker" ref={nowMarkerRef} aria-hidden="true" hidden>
+          <span>NOW</span>
+        </div>
       </div>
-      <div className="tasks-gantt__now-marker" ref={nowMarkerRef} aria-hidden="true" hidden>
-        <span>NOW</span>
-      </div>
-    </div>
+    </TaskStatusMenuProvider>
   )
 }

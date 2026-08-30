@@ -51,13 +51,24 @@ export function ScheduledView({
 
   async function mutate(schedule: ScheduleRecord, action: Exclude<ScheduleBusyAction, null>) {
     if (busy) return
+    const activeRunId = action === 'stop' && schedule.current_execution?.kind === 'run'
+      ? schedule.current_execution.id
+      : null
+    if (action === 'stop' && !activeRunId) return
     setBusy({ id: schedule.id, action })
     setMutationError('')
     try {
       if (action === 'run') await api.runScheduleNow(schedule.id, idempotencyKey())
+      else if (action === 'stop' && activeRunId) await api.cancelRun(activeRunId)
       else if (action === 'pause') await api.pauseSchedule(schedule.id, schedule.etag)
       else await api.resumeSchedule(schedule.id, schedule.etag)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.schedules })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.schedules }),
+        ...(action === 'stop' && activeRunId ? [
+          queryClient.invalidateQueries({ queryKey: queryKeys.runs(schedule.id) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.run(activeRunId) }),
+        ] : []),
+      ])
     } catch (caught) {
       setMutationError(caught instanceof Error ? caught.message : 'Schedule 更新失败')
     } finally {
@@ -100,6 +111,7 @@ export function ScheduledView({
             schedule={schedule}
             busyAction={busy?.id === schedule.id ? busy.action : null}
             onRunNow={(current) => void mutate(current, 'run')}
+            onStopRun={(current) => void mutate(current, 'stop')}
             onToggle={(current) => void mutate(current, current.enabled ? 'pause' : 'resume')}
             onEdit={(current) => {
               setEditorSchedule(current)

@@ -17,7 +17,7 @@ export type TaskColumnId = 'text' | 'activity' | 'status' | 'workspace' | 'branc
 export type TaskColumnWidths = Record<TaskColumnId, number>
 
 export const DEFAULT_TASK_COLUMN_WIDTHS: TaskColumnWidths = {
-  text: 240,
+  text: 300,
   activity: 96,
   status: 104,
   workspace: 176,
@@ -130,7 +130,7 @@ export function createTaskColumns(
     { id: 'text', header: '任务', width: widths.text, resize: true, cell: (props: CellProps) => <TaskCell {...props} interactions={interactions} /> },
     { id: 'activity', header: '最近活跃', width: widths.activity, resize: true, align: 'right', cell: ActivityCell },
     { id: 'status', header: '进度', width: widths.status, resize: true, align: 'center', cell: (props: CellProps) => <StatusCell {...props} interactions={interactions} /> },
-    { id: 'workspace', header: 'Workspace', width: widths.workspace, resize: true, cell: WorkspaceCell },
+    { id: 'workspace', header: 'Workspace', width: widths.workspace, flexgrow: 1, resize: true, cell: WorkspaceCell },
     { id: 'branch', header: 'Branch', width: widths.branch, resize: true, cell: BranchCell },
     { id: 'session_id', header: 'Session ID', width: widths.session_id, resize: true, cell: SessionCell },
   ]
