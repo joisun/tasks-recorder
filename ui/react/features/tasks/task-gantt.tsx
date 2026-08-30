@@ -127,17 +127,18 @@ export function TaskGantt({
   const nowMarkerRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<IApi | null>(null)
   const eventTag = useRef(`tasks-recorder-react-${Math.random().toString(36).slice(2)}`)
-  const [viewportWidth, setViewportWidth] = useState(900)
+  const [viewportWidth, setViewportWidth] = useState<number | null>(null)
+  const effectiveViewportWidth = viewportWidth ?? 900
   const [now, setNow] = useState(() => new Date())
   const [internalOpenIds, setInternalOpenIds] = useState<Set<string> | null>(null)
   const openIds = controlledOpenIds === undefined ? internalOpenIds : controlledOpenIds
   const [columnWidths, setColumnWidths] = useState<TaskColumnWidths>(DEFAULT_TASK_COLUMN_WIDTHS)
   const model = useMemo(() => projectTaskSnapshot(snapshot, {
-    viewportWidth,
+    viewportWidth: effectiveViewportWidth,
     openIds,
     zoom,
     now,
-  }), [now, openIds, snapshot, viewportWidth, zoom])
+  }), [effectiveViewportWidth, now, openIds, snapshot, zoom])
   const columns = useMemo(() => createTaskColumns(columnWidths, {
     pendingTaskIds,
     onTaskSelect,
@@ -145,7 +146,7 @@ export function TaskGantt({
     onStatusChange,
     onArchive,
   }), [columnWidths, onArchive, onStatusChange, onTaskResume, onTaskSelect, pendingTaskIds])
-  const gridWidth = Math.round(Math.max(MIN_GRID_WIDTH, viewportWidth - DEFAULT_TIMELINE_WIDTH))
+  const gridWidth = Math.round(Math.max(MIN_GRID_WIDTH, effectiveViewportWidth - DEFAULT_TIMELINE_WIDTH))
   const selected = useMemo(() => (selectedTaskId ? [selectedTaskId] : []), [selectedTaskId])
   const taskTemplate = useCallback(
     (props: { data: ITask; api: IApi; onaction: (event: { action: string; data: Record<string, unknown> }) => void }) => (
@@ -241,10 +242,10 @@ export function TaskGantt({
     const ratio = (now.getTime() - timeline.start.getTime())
       / (timeline.end.getTime() - timeline.start.getTime())
     const offset = ratio * timeline.width
-    const chartWidth = state._chartWidth ?? Math.max(240, viewportWidth - gridWidth)
+    const chartWidth = state._chartWidth ?? Math.max(240, effectiveViewportWidth - gridWidth)
     void apiRef.current.exec('scroll-chart', { left: Math.max(0, offset - chartWidth / 2) })
       .then(() => window.requestAnimationFrame(updateNowMarker))
-  }, [gridWidth, now, nowRequest, updateNowMarker, viewportWidth])
+  }, [effectiveViewportWidth, gridWidth, now, nowRequest, updateNowMarker])
 
   const initialize = useCallback((api: IApi) => {
     apiRef.current?.detach(eventTag.current)
@@ -288,7 +289,7 @@ export function TaskGantt({
     <TaskStatusMenuProvider>
       <div className="tasks-gantt" ref={hostRef} data-scale={model.scale.id}>
         <div className="wx-willow-dark-theme tasks-gantt__theme">
-          <Gantt
+          {viewportWidth === null ? null : <Gantt
             tasks={model.rows}
             links={model.links}
             columns={columns}
@@ -307,7 +308,7 @@ export function TaskGantt({
             gridWidth={gridWidth}
             init={initialize}
             selected={selected}
-          />
+          />}
         </div>
         <div className="tasks-gantt__now-marker" ref={nowMarkerRef} aria-hidden="true" hidden>
           <span>NOW</span>

@@ -89,7 +89,7 @@ test('runtime package keeps production dependencies and excludes build-only depe
       '-C', extractDirectory,
     ])
     const packageSource = await readFile(
-      join(extractDirectory, 'tasks-recorder-0.7.2', 'package.json'),
+      join(extractDirectory, 'tasks-recorder-0.7.3', 'package.json'),
       'utf8',
     )
     const manifest = JSON.parse(packageSource)

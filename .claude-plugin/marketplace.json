@@ -8,7 +8,7 @@
     {
       "name": "tasks-recorder",
       "description": "Record coding-agent tasks in a local service with a real-time dashboard",
-      "version": "0.7.2",
+      "version": "0.7.3",
       "source": "./adapters/claude/tasks-recorder",
       "author": {
         "name": "Joi Sun"
