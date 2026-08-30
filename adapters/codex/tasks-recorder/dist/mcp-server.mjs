@@ -31120,7 +31120,7 @@ function handle(operation) {
 }
 var client = createClient(await resolveBaseUrl());
 var server = new McpServer(
-  { name: "tasks-recorder", version: "0.6.2" },
+  { name: "tasks-recorder", version: "0.7.0" },
   { instructions: "Use this local Project Journalist for concrete work. Start with agent_work_context(execution_id); use semantic commands only for real focus, checkpoint, or Task changes. Before spawning a child for a Task, call agent_work_intent with its exact host agent key. Heartbeat and Stop are mechanical events and never require full-tree synchronization. Legacy agent_tasks_* tools are deprecated compatibility projections. Never edit SQLite directly." }
 );
 server.registerTool("agent_work_context", { description: "Read compact same-Project semantic context for one execution without creating or binding Tasks.", inputSchema: { execution_id: external_exports.string().min(1) }, outputSchema, annotations: readAnnotations }, handle(client.workContext));

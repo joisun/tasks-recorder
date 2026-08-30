@@ -31,7 +31,7 @@ tasks-recorder status
 普通安装不需要 clone repository、`npm install` 或 `npm ci`。更谨慎的固定版本安装方式：
 
 ```bash
-version=v0.6.2
+version=v0.7.0
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -231,7 +231,7 @@ dry-run 不写入数据库；apply 会先 checkpoint WAL、创建权限为 `0600
 
 ### Legacy API window
 
-`agent_tasks_*` MCP/API 在整个 `0.6.x` release line 中保留 compatibility wrapper，并返回 migration metadata。新 adapter 使用 `agent_work_*`、`agent_tasks_mutate` 与 `agent_tasks_sync_structure`。legacy wrapper 最早在 `0.7.0` 移除。
+`agent_tasks_*` MCP/API 在整个 `0.7.x` release line 中继续保留 compatibility wrapper，并返回 migration metadata。新 adapter 使用 `agent_work_*`、`agent_tasks_mutate` 与 `agent_tasks_sync_structure`。legacy wrapper 最早在 `0.8.0` 移除。
 
 ## Import historical Codex sessions
 

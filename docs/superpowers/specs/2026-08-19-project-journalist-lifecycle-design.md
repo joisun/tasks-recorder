@@ -340,7 +340,7 @@ Adapter 不通过 Agent 调用 MCP。MCP 专注于语义命令，例如：
 - `agent_tasks_sync_structure(...)`：仅在真实结构变化时批量提交 Task/Subtask，不用于 heartbeat 或 Stop。
 - `agent_work_checkpoint(...)`：写 compact summary / next action，不携带整个 session 列表。
 
-旧 `agent_tasks_context`、`agent_tasks_sync_tree` 在 `0.6.x` 兼容期包装到新 command，返回 deprecation metadata；新 skill 不再使用 `list + full sync_tree` 收口。legacy wrapper 最早在 `0.7.0` 移除。
+旧 `agent_tasks_context`、`agent_tasks_sync_tree` 在 `0.7.x` 兼容期继续包装到新 command，返回 deprecation metadata；新 skill 不再使用 `list + full sync_tree` 收口。legacy wrapper 最早在 `0.8.0` 移除。
 
 ### Stop 与异常策略
 
@@ -553,7 +553,7 @@ plan_observations
 3. Attribution 与 compact semantic MCP commands，旧 tools compatibility wrapper。
 4. Dashboard Project tree、双 Inbox、planned/actual timeline projection。
 5. 新 Codex/Claude adapters 与 skill 切换，故障恢复、migration CLI 和 isolated package/runtime rehearsal。
-6. 经用户授权后执行真实本机 migration、merge/release 与本地更新；`0.6.x` 结束后才允许删除 deprecated compatibility wrapper。
+6. 经用户授权后执行真实本机 migration、merge/release 与本地更新；`0.7.x` 结束后才允许删除 deprecated compatibility wrapper。
 
 每阶段必须保留 v2 数据备份，并以契约测试、migration fixture 与浏览器视觉验证作为退出条件。
 
