@@ -26,6 +26,7 @@ macOS `launchd` 只管理一个 KeepAlive service：`taskd`。`taskd` 是唯一 
 8. **Failure isolation**：runtime 缺失、model probe 失败或 Run 失败不能让 Recorder database 和 Dashboard 下线。
 9. **Bounded operations**：probe、output、logs、events、shutdown 与 cancellation 都必须有明确上限。
 10. **Privacy by construction**：Recorder 不持久化 prompt、reasoning、tool payload、streaming assistant delta 或 transcript content；Scheduled ledger 只保留既有 terminal final message。
+11. **Per-Run context policy**：Schedule 的 Skills/integrations policy 必须进入 immutable Run snapshot，并只通过该 Run 的 runtime argv/protocol 生效；不得修改全局 CLI config 或共享 profile。
 
 ## Runtime registry
 
@@ -103,6 +104,12 @@ Dashboard ──POST steer/stop──────────▶ RunService
 - completed Run 不在 Dashboard 内继续 multi-turn；后续操作使用已有 Terminal Resume boundary。
 - protocol request、frame、Run timeout 与 process shutdown 都有上限；`SIGINT` 无效时升级为 `SIGKILL`。
 
+### Context capability isolation
+
+Schedule 可分别把 `skills` 与 `integrations` 设为 `inherit` 或 `disabled`。旧 Markdown 缺省时保持 `inherit / inherit`；Dashboard/API 新建时默认 `disabled / disabled`。`integrations` 只包含 MCP servers、plugin MCP 与 Apps/Connectors，不包含 Web Search 或 Codex core tools；Sandbox 仍独立决定文件系统与网络权限。
+
+Codex adapter 在 spawn 前用同一 executable、cwd 与 child environment 执行 bounded `codex mcp list --json`，再通过本 Run 的 app-server argv 明确禁用 plugins、Apps 和枚举到的 MCP identities。`skills: disabled` 时，adapter 在 `thread/start` 前调用 `skills/list`，为该 Workspace 的每个 Skill path 写入 thread-local disabled config，同时关闭 Skill search 与 Skill MCP dependency install。任何 discovery 失败都在创建 Thread 前 fail closed，返回 typed Run error；不得以“部分禁用”继续执行。
+
 ## Terminal conversation read
 
 Completed Run history does not create a Tasks Recorder transcript store:
@@ -162,3 +169,4 @@ git diff --check
 - release artifact 包含 registry、adapter、Run service 与 migration，且不包含 legacy scheduled runner；
 - source Dashboard 与 taskd API version/capability 不兼容时显式失败。
 - fake app-server E2E 必须覆盖 Run-specific SSE、mouse steer、Stop、terminal authoritative refresh 与 CLI-owned conversation read；runtime `turnId` 和 guidance 不得进入 Run response、SQLite 或 logs。
+- Schedule capability E2E 必须覆盖 Markdown/REST policy、immutable Run snapshot、integration argv overrides、Skill thread config、mixed policies与 Web Search 不受影响。

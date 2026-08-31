@@ -144,6 +144,9 @@ agent: codex
 schedule:
   kind: daily
   at: "09:30"
+capabilities:
+  skills: disabled
+  integrations: disabled
 sandbox: read-only
 model: null
 reasoning: null
@@ -152,6 +155,15 @@ timeout: 2h
 
 Review the repository health and summarize actionable risks.
 ```
+
+`capabilities` 控制 Codex 启动时进入 Agent context 的扩展能力：
+
+- `skills: disabled` 禁用当前 Run 的 Skill discovery、Skill search 与 Skill MCP dependency install；
+- `integrations: disabled` 禁用当前 Run 的 MCP servers、plugin MCP 与 Apps/Connectors；
+- 每项也可设为 `inherit`，沿用本机 Codex 配置；
+- Web Search 与 Codex core tools 不属于 `integrations`，不会被该开关关闭；文件和网络权限仍由 `sandbox` 独立控制。
+
+Dashboard 新建的 Schedule 默认使用 `disabled / disabled`，以获得最小、可预测的自动化上下文。已有 Markdown 未声明 `capabilities` 时保持兼容，按 `inherit / inherit` 读取。每个 Run 会把 policy 写入 immutable execution snapshot；执行期间不会改写全局 Codex 配置，也不需要重启 `taskd`。
 
 支持 `once`、`hourly`、`daily`、`weekly` 与 `monthly` cadence。Dashboard 的 Create/Edit/Pause/Resume 会 atomic rewrite Markdown，并用 SHA-256 `etag` 做 compare-and-set；Delete 把 definition 移到 `.trash/`。行级一次性 Run action 在执行期间会切换为 Stop；它与只控制周期调度的 Schedule pause/resume 是两套独立操作。
 

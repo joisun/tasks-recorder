@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { buildCodexInvocation } from '../../scheduler/codex-run-spec.mjs'
 import { createCodexModelCatalog } from '../../scheduler/codex-model-catalog.mjs'
 import { createCodexAppServerClient } from '../codex-app-server-client.mjs'
+import { createCodexCapabilityPolicyResolver } from '../codex-capability-policy.mjs'
 import { parseCodexJsonLine } from '../parsers/codex-jsonl.mjs'
 import { runtimeError } from '../runtime-errors.mjs'
 import { createCodexInteractiveSessionFactory } from './codex-interactive-session.mjs'
@@ -28,8 +29,13 @@ export function createCodexRuntimeDefinition({
   interactiveFactory = null,
 } = {}) {
   const modelCatalogs = new Map()
+  const capabilityPolicy = createCodexCapabilityPolicyResolver({
+    execFileImpl,
+    runtimeEnvironment,
+  })
   const sessions = interactiveFactory ?? createCodexInteractiveSessionFactory({
     createClient: (options) => createAppServerClient({ ...options, runtimeEnvironment }),
+    resolveCapabilityLaunch: capabilityPolicy.resolveLaunch,
   })
 
   function modelCatalog(executable) {
@@ -69,6 +75,10 @@ export function createCodexRuntimeDefinition({
       sandbox: true,
       interactiveSession: true,
       conversationHistory: true,
+      contextIsolation: Object.freeze({
+        skills: true,
+        integrations: true,
+      }),
     }),
     createInteractiveSession: (input) => sessions.create(input),
     async readConversation({ launch, run }) {

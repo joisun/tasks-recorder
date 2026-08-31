@@ -71,6 +71,40 @@ test('app-server client correlates a JSON-RPC response without shell execution',
   assert.deepEqual(await pending, { userAgent: 'codex-cli 0.150.0' })
 })
 
+test('app-server client applies only bounded trusted capability launch options', () => {
+  const child = fakeChildProcess()
+  const spawns = []
+  const client = createCodexAppServerClient({
+    executable: '/opt/tasks/bin/codex',
+    cwd: '/tmp/project',
+    disabledFeatures: ['plugins'],
+    configOverrides: [
+      'apps._default.enabled=false',
+      'mcp_servers.project-tools.enabled=false',
+    ],
+    spawnImpl(command, args, options) {
+      spawns.push({ command, args, options })
+      return child
+    },
+    runtimeEnvironment: { childEnvironment: () => ({}) },
+  })
+  client.close()
+
+  assert.deepEqual(spawns[0].args, [
+    'app-server',
+    '--disable', 'plugins',
+    '-c', 'apps._default.enabled=false',
+    '-c', 'mcp_servers.project-tools.enabled=false',
+    '--listen', 'stdio://',
+  ])
+  assert.throws(() => createCodexAppServerClient({
+    executable: '/opt/tasks/bin/codex', cwd: '/tmp/project',
+    disabledFeatures: ['plugins', '--listen'],
+    spawnImpl: () => child,
+    runtimeEnvironment: { childEnvironment: () => ({}) },
+  }), /options are invalid/)
+})
+
 test('app-server client preserves split notification frames and writes notifications', async (t) => {
   const child = fakeChildProcess()
   const client = createCodexAppServerClient({

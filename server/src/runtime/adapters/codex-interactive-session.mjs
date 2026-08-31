@@ -1,27 +1,33 @@
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
+import { skillsThreadConfig } from '../codex-capability-policy.mjs'
+
 const FINAL_MESSAGE_BYTES = 8 * 1024
 const FILE_CHANGE_KINDS = new Set(['add', 'update', 'delete'])
 
 export function createCodexInteractiveSessionFactory({
   createClient,
+  resolveCapabilityLaunch = async () => ({ disabledFeatures: [], configOverrides: [] }),
   setTimer = setTimeout,
   clearTimer = clearTimeout,
 } = {}) {
   if (typeof createClient !== 'function' || typeof setTimer !== 'function'
-    || typeof clearTimer !== 'function') {
+    || typeof clearTimer !== 'function' || typeof resolveCapabilityLaunch !== 'function') {
     throw new TypeError('Codex interactive session requires createClient')
   }
 
   return Object.freeze({
     create(options) {
-      return createSession({ ...options, createClient, setTimer, clearTimer })
+      return createSession({
+        ...options, createClient, resolveCapabilityLaunch, setTimer, clearTimer,
+      })
     },
   })
 }
 
 function createSession({
-  launch, run, signal, emit, onSpawn, createClient, setTimer, clearTimer,
+  launch, run, signal, emit, onSpawn, createClient, resolveCapabilityLaunch,
+  setTimer, clearTimer,
 }) {
   if (typeof launch?.executable !== 'string' || !run || typeof run !== 'object'
     || typeof run.workspace !== 'string' || typeof run.prompt !== 'string'
@@ -29,11 +35,9 @@ function createSession({
     throw new TypeError('Codex interactive session options are invalid')
   }
 
-  const client = createClient({
-    executable: launch.executable,
-    cwd: run.workspace,
-    signal,
-  })
+  const capabilities = normalizedCapabilities(run.capabilities)
+  let client = null
+  let unsubscribe = () => {}
   let threadId = null
   let turnId = null
   let turnRevision = 0
@@ -43,7 +47,7 @@ function createSession({
   let resolveCompletion
   const completion = new Promise((resolve) => { resolveCompletion = resolve })
 
-  const unsubscribe = client.onNotification(({ method, params }) => {
+  const handleNotification = ({ method, params }) => {
     if (method === 'turn/started') {
       const nextTurnId = params?.turn?.id
       if (params?.threadId !== threadId || typeof nextTurnId !== 'string') return
@@ -107,7 +111,7 @@ function createSession({
         fileChanges: [...fileChanges.values()],
       }))
     }
-  })
+  }
   const onAbort = () => finish(failedResult(sessionError('RUN_CANCELED')))
   const timeout = setTimer(() => finish(timeoutResult()), run.timeout_seconds * 1_000)
   timeout?.unref?.()
@@ -117,17 +121,38 @@ function createSession({
   async function start() {
     if (settled) return completion
     try {
+      const capabilityLaunch = await resolveCapabilityLaunch({
+        executable: launch.executable,
+        cwd: run.workspace,
+        capabilities,
+      })
+      if (settled) return completion
+      client = createClient({
+        executable: launch.executable,
+        cwd: run.workspace,
+        signal,
+        disabledFeatures: capabilityLaunch.disabledFeatures,
+        configOverrides: capabilityLaunch.configOverrides,
+      })
+      unsubscribe = client.onNotification(handleNotification)
       const spawned = await client.started
       onSpawn({ pid: spawned.pid })
       await client.request('initialize', {
         clientInfo: { name: 'tasks-recorder', title: 'Tasks Recorder', version: 'source' },
       })
+      const threadConfig = capabilities.skills === 'disabled'
+        ? skillsThreadConfig(await client.request('skills/list', {
+          cwds: [run.workspace],
+          forceReload: true,
+        }), { cwd: run.workspace })
+        : null
       const startedThread = await client.request('thread/start', compact({
         cwd: run.workspace,
         model: run.model,
         approvalPolicy: 'never',
         sandbox: run.sandbox_mode,
         ephemeral: false,
+        config: threadConfig,
       }))
       threadId = startedThread?.thread?.id
       if (typeof threadId !== 'string' || threadId.length === 0) {
@@ -196,7 +221,7 @@ function createSession({
     clearTimer(timeout)
     signal.removeEventListener('abort', onAbort)
     unsubscribe()
-    client.close()
+    client?.close()
     resolveCompletion(result)
   }
 
@@ -209,6 +234,11 @@ function createSession({
     get turnRevision() { return turnRevision },
     get steerable() { return !settled && turnRevision > 0 },
   })
+}
+
+function normalizedCapabilities(value) {
+  const mode = (field) => value?.[field] === 'disabled' ? 'disabled' : 'inherit'
+  return { skills: mode('skills'), integrations: mode('integrations') }
 }
 
 function turnResult(turn, { threadId, finalMessage, fileChanges }) {

@@ -5,6 +5,8 @@ import { createRuntimeEnvironment } from './runtime-environment.mjs'
 export function createCodexAppServerClient({
   executable,
   cwd,
+  disabledFeatures = [],
+  configOverrides = [],
   env = {},
   spawnImpl = spawn,
   runtimeEnvironment = createRuntimeEnvironment({ env: process.env }),
@@ -16,6 +18,8 @@ export function createCodexAppServerClient({
 } = {}) {
   if (typeof executable !== 'string' || executable.length === 0
     || typeof cwd !== 'string' || cwd.length === 0
+    || !validDisabledFeatures(disabledFeatures)
+    || !validConfigOverrides(configOverrides)
     || typeof spawnImpl !== 'function'
     || typeof runtimeEnvironment?.childEnvironment !== 'function'
     || !Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs < 1
@@ -25,7 +29,11 @@ export function createCodexAppServerClient({
     throw new TypeError('Codex app-server client options are invalid')
   }
 
-  const child = spawnImpl(executable, ['app-server', '--listen', 'stdio://'], {
+  const capabilityArgs = [
+    ...disabledFeatures.flatMap((feature) => ['--disable', feature]),
+    ...configOverrides.flatMap((value) => ['-c', value]),
+  ]
+  const child = spawnImpl(executable, ['app-server', ...capabilityArgs, '--listen', 'stdio://'], {
     cwd,
     env: runtimeEnvironment.childEnvironment(env),
     shell: false,
@@ -190,6 +198,19 @@ export function createCodexAppServerClient({
     close,
     get closed() { return isClosed },
   })
+}
+
+function validDisabledFeatures(value) {
+  return Array.isArray(value) && value.length <= 16
+    && value.every((feature) => typeof feature === 'string'
+      && /^[a-z][a-z0-9_]{0,63}$/.test(feature))
+}
+
+function validConfigOverrides(value) {
+  return Array.isArray(value) && value.length <= 512
+    && value.every((entry) => entry === 'apps._default.enabled=false'
+      || (typeof entry === 'string' && entry.length <= 256
+        && /^mcp_servers\.[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.enabled=false$/.test(entry)))
 }
 
 function protocolError(code) {
