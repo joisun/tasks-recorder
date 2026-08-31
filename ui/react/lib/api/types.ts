@@ -243,6 +243,13 @@ export interface ScheduleLastRun {
   reviewed_at: string | null
 }
 
+export type ScheduleCapabilityMode = 'inherit' | 'disabled'
+
+export interface ScheduleCapabilities {
+  skills: ScheduleCapabilityMode
+  integrations: ScheduleCapabilityMode
+}
+
 export interface ScheduleRecord {
   id: string
   title: string
@@ -256,6 +263,7 @@ export interface ScheduleRecord {
   model: string | null
   reasoning_effort: string | null
   timeout_seconds: number
+  capabilities: ScheduleCapabilities
   enabled: boolean
   etag: string
   source_path: string
@@ -424,4 +432,5 @@ export interface ScheduleMutationInput {
   model: string | null
   reasoning_effort: string | null
   timeout_seconds: number
+  capabilities: ScheduleCapabilities
 }

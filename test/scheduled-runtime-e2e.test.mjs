@@ -21,7 +21,15 @@ if (args[0] === 'login' && args[1] === 'status') {
   process.stdout.write('Logged in\\n')
   process.exit(0)
 }
+if (args[0] === 'mcp' && args[1] === 'list' && args[2] === '--json') {
+  if (!args.includes('--disable') || !args.includes('plugins')
+    || !args.includes('apps._default.enabled=false')) process.exit(15)
+  process.stdout.write('[]\\n')
+  process.exit(0)
+}
 if (args[0] !== 'app-server') process.exit(12)
+if (!args.includes('--disable') || !args.includes('plugins')
+  || !args.includes('apps._default.enabled=false')) process.exit(16)
 const rl = readline.createInterface({ input: process.stdin })
 const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n')
 const result = (id, value) => send({ jsonrpc: '2.0', id, result: value })
@@ -29,7 +37,20 @@ let turnStarted = false
 rl.on('line', (line) => {
   const request = JSON.parse(line)
   if (request.method === 'initialize') return result(request.id, { userAgent: 'codex-cli 0.999.0' })
+  if (request.method === 'skills/list') {
+    if (request.params.forceReload !== true) process.exit(17)
+    return result(request.id, { data: [{
+      cwd: request.params.cwds[0], errors: [],
+      skills: [{ name: 'report', path: '/skills/report/SKILL.md', enabled: true }],
+    }] })
+  }
   if (request.method === 'thread/start') {
+    const config = request.params.config
+    if (config?.skills?.config?.[0]?.path !== '/skills/report/SKILL.md'
+      || config.skills.config[0].enabled !== false
+      || config.features?.skill_search !== false
+      || config.features?.skill_mcp_dependency_install !== false
+      || JSON.stringify(config).includes('web_search')) process.exit(18)
     return result(request.id, { thread: { id: '${SESSION_ID}', turns: [] } })
   }
   if (request.method === 'turn/start') {
@@ -87,6 +108,9 @@ async function waitForActiveTurn(url, runId) {
     if (result.body.run.status === 'running' && result.body.run.turn_revision === 1) {
       return result.body.run
     }
+    if (!['queued', 'running'].includes(result.body.run.status)) {
+      throw new Error(`Run stopped before exposing an active Turn: ${JSON.stringify(result.body.run)}`)
+    }
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
   throw new Error('Run did not expose an active Turn')
@@ -137,6 +161,10 @@ test('taskd executes Markdown Schedules through the direct runtime registry pipe
   })
   assert.equal(created.status, 200, JSON.stringify(created.body))
   assert.equal(created.body.job.agent, 'codex')
+  assert.deepEqual(created.body.job.capabilities, {
+    skills: 'disabled',
+    integrations: 'disabled',
+  })
 
   const launched = await request(runtime.address.url, '/api/v1/runs', {
     method: 'POST',

@@ -1,7 +1,7 @@
 {
   "name": "tasks-recorder",
   "displayName": "Tasks Recorder",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Record Claude Code work in a local task service with a real-time dashboard.",
   "author": {
     "name": "Joi Sun",

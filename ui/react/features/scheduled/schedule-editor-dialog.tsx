@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input, TextArea } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { DashboardApiError, type DashboardApi } from '@/lib/api/dashboard-api'
 import type { RuntimeStatus, ScheduleRecord } from '@/lib/api/types'
 import {
@@ -141,6 +142,11 @@ export function ScheduleEditorDialog({
       ? selected.reasoningLevels
       : [...new Set(catalog.flatMap(({ reasoningLevels: levels }) => levels))]
   }, [catalog, draft.model])
+  const selectedRuntime = runtimes.find(({ id }) => id === draft.agent)
+  const isolation = selectedRuntime?.capabilities?.contextIsolation as {
+    skills?: boolean
+    integrations?: boolean
+  } | undefined
 
   function update<K extends keyof ScheduleDraft>(key: K, value: ScheduleDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }))
@@ -298,6 +304,29 @@ export function ScheduleEditorDialog({
                     <div className="schedule-editor__field"><FieldLabel htmlFor="schedule-timeout">Timeout (seconds)</FieldLabel><Input disabled={busy} id="schedule-timeout" max={86_400} min={60} type="number" value={draft.timeout_seconds} onChange={(event) => update('timeout_seconds', event.currentTarget.value)} /></div>
                   </div>
                   <p className="schedule-editor__catalog-note" data-state={catalogState}>{catalogNote}</p>
+                  <div className="schedule-editor__context" aria-label="Agent context">
+                    <div className="schedule-editor__context-heading">
+                      <strong>Context</strong>
+                      <span>控制进入 Agent 上下文的扩展能力</span>
+                    </div>
+                    <Switch
+                      aria-label="Load Skills"
+                      isDisabled={busy || isolation?.skills !== true}
+                      isSelected={draft.loadSkills}
+                      onChange={(selected) => update('loadSkills', selected)}
+                    >
+                      <span><strong>Load Skills</strong><small>允许 Codex 发现并按需读取 Skills</small></span>
+                    </Switch>
+                    <Switch
+                      aria-label="Load integrations"
+                      isDisabled={busy || isolation?.integrations !== true}
+                      isSelected={draft.loadIntegrations}
+                      onChange={(selected) => update('loadIntegrations', selected)}
+                    >
+                      <span><strong>Load integrations</strong><small>MCP、Apps 和 plugin tools</small></span>
+                    </Switch>
+                    <p>Web Search 和 Codex 内置工具不受影响；文件与网络权限仍由 Sandbox 控制。</p>
+                  </div>
                   {draft.sandbox_mode === 'workspace-write' ? <p className="schedule-editor__warning"><AlertTriangle aria-hidden="true" />Agent 可以修改 Workspace 内的文件。</p> : null}
                   {draft.sandbox_mode === 'danger-full-access' ? <label className="schedule-editor__danger"><input checked={draft.dangerConfirmed} disabled={busy} type="checkbox" onChange={(event) => update('dangerConfirmed', event.currentTarget.checked)} /><span>我理解 Agent 将不受文件系统 sandbox 限制。</span></label> : null}
                 </section>

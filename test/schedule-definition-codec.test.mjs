@@ -43,6 +43,7 @@ test('parses human-friendly daily front matter into the scheduler domain shape',
     model: 'gpt-5.6-sol',
     reasoning_effort: 'ultra',
     timeout_seconds: 7200,
+    capabilities: { skills: 'inherit', integrations: 'inherit' },
     thread_mode: 'new',
     timezone_mode: 'system',
     prompt: 'Check official Codex sources and summarize changes.',
@@ -78,10 +79,32 @@ test('serializes and parses without changing the executable definition', () => {
   const roundTrip = parseScheduleDefinition(source)
   for (const key of [
     'id', 'title', 'enabled', 'workspace', 'agent', 'cadence', 'sandbox_mode', 'model',
-    'reasoning_effort', 'timeout_seconds', 'thread_mode', 'timezone_mode', 'prompt',
+    'reasoning_effort', 'timeout_seconds', 'capabilities', 'thread_mode', 'timezone_mode', 'prompt',
   ]) assert.deepEqual(roundTrip[key], original[key], key)
   assert.match(source, /^---\n/)
   assert.match(source, /type: tasks-recorder\/schedule/)
+})
+
+test('round-trips exact capability isolation and rejects unsupported policy', () => {
+  const isolated = DAILY.replace(
+    'sandbox: read-only',
+    'capabilities:\n  skills: disabled\n  integrations: disabled\nsandbox: read-only',
+  )
+  const parsed = parseScheduleDefinition(isolated)
+  assert.deepEqual(parsed.capabilities, { skills: 'disabled', integrations: 'disabled' })
+
+  const serialized = serializeScheduleDefinition(parsed)
+  assert.match(serialized, /capabilities:\n  skills: disabled\n  integrations: disabled\n/)
+  assert.deepEqual(parseScheduleDefinition(serialized).capabilities, parsed.capabilities)
+
+  assert.throws(
+    () => parseScheduleDefinition(isolated.replace('skills: disabled', 'skills: enabled')),
+    { code: 'SCHEDULE_DEFINITION_INVALID' },
+  )
+  assert.throws(
+    () => parseScheduleDefinition(isolated.replace('integrations: disabled', 'integrations: disabled\n  web_search: disabled')),
+    { code: 'SCHEDULE_DEFINITION_INVALID' },
+  )
 })
 
 test('uses the repository clock and preserves an expired disabled once definition', () => {

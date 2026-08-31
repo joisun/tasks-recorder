@@ -12,6 +12,7 @@ import { taskInput } from './helpers.mjs'
 test('CLI parses service defaults and the complete Codex import argument set', () => {
   assert.deepEqual(parseCliArguments([]), { type: 'control', command: 'status' })
   assert.deepEqual(parseCliArguments(['start']), { type: 'control', command: 'start' })
+  assert.deepEqual(parseCliArguments(['open']), { type: 'open-dashboard' })
   assert.deepEqual(parseCliArguments(['scheduler', 'status']), { type: 'scheduler', command: 'status' })
   assert.deepEqual(parseCliArguments(['scheduler', 'reconcile']), { type: 'scheduler', command: 'reconcile' })
   assert.deepEqual(parseCliArguments([
@@ -58,6 +59,24 @@ test('CLI parses service defaults and the complete Codex import argument set', (
   )
   assert.throws(() => parseCliArguments(['scheduler', 'status', '--prompt', 'secret']), /does not accept/)
   assert.throws(() => parseCliArguments(['scheduler', 'exec', 'anything']), /usage:/)
+  assert.throws(() => parseCliArguments(['open', '--url', 'https://example.com']), /does not accept/)
+})
+
+test('CLI opens the configured Dashboard URL without modifying service state', async () => {
+  const calls = []
+  const result = await runCli(['open'], {
+    configResolver: async () => ({ serverBaseUrl: 'http://127.0.0.1:43127' }),
+    dashboardOpener: async (url) => {
+      calls.push(url)
+      return { opened: true, url }
+    },
+    controlRunner: async () => {
+      throw new Error('open must not invoke service control')
+    },
+  })
+
+  assert.deepEqual(result, { opened: true, url: 'http://127.0.0.1:43127' })
+  assert.deepEqual(calls, ['http://127.0.0.1:43127'])
 })
 
 test('CLI scheduler commands delegate only to the typed taskd control-plane client', async () => {

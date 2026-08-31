@@ -64,10 +64,12 @@ test('definition Schedule service validates a registered agent without probing i
       model: null,
       reasoning_effort: null,
       timeout_seconds: 600,
+      capabilities: { skills: 'disabled', integrations: 'disabled' },
     })
 
     assert.equal(result.job.agent, 'codex')
     assert.equal(result.job.workspace, await realpath(workspace))
+    assert.deepEqual(result.job.capabilities, { skills: 'disabled', integrations: 'disabled' })
     assert.deepEqual(requested, ['codex'])
     assert.equal('runNow' in service, false)
     assert.equal('listRuns' in service, false)

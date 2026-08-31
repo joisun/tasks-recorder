@@ -14,9 +14,11 @@ const AGENT = /^[a-z][a-z0-9-]{0,63}$/
 const FRONT_MATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*)$/
 const MARKER = /^type:\s*["']?tasks-recorder\/schedule["']?\s*(?:#.*)?$/m
 const FIELDS = new Set([
-  'type', 'id', 'title', 'enabled', 'workspace', 'agent', 'schedule', 'sandbox', 'model', 'reasoning', 'timeout',
+  'type', 'id', 'title', 'enabled', 'workspace', 'agent', 'schedule', 'capabilities',
+  'sandbox', 'model', 'reasoning', 'timeout',
 ])
 const SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
+const CAPABILITY_MODES = new Set(['inherit', 'disabled'])
 const WEEKDAYS = new Map([
   ['mon', 1], ['tue', 2], ['wed', 3], ['thu', 4], ['fri', 5], ['sat', 6], ['sun', 7],
 ])
@@ -61,6 +63,24 @@ function agentId(value = 'codex') {
     fail('SCHEDULE_DEFINITION_INVALID', 'agent is invalid', { field: 'agent' })
   }
   return normalized
+}
+
+function capabilities(value) {
+  if (value === undefined || value === null) {
+    return { skills: 'inherit', integrations: 'inherit' }
+  }
+  const policy = object(value, 'capabilities')
+  exactFields(policy, new Set(['skills', 'integrations']), 'capabilities')
+  const mode = (field) => {
+    const selected = policy[field] ?? 'inherit'
+    if (!CAPABILITY_MODES.has(selected)) {
+      fail('SCHEDULE_DEFINITION_INVALID', `capabilities.${field} is invalid`, {
+        field: `capabilities.${field}`,
+      })
+    }
+    return selected
+  }
+  return { skills: mode('skills'), integrations: mode('integrations') }
 }
 
 function time(value, field = 'schedule.at') {
@@ -188,6 +208,7 @@ export function parseScheduleDefinition(source, {
     model: optionalCodexSelection(frontMatter.model, 'model', isCodexModelSlug, 128),
     reasoning_effort: optionalCodexSelection(frontMatter.reasoning, 'reasoning', isCodexReasoningLevel, 16),
     timeout_seconds: timeoutSeconds(frontMatter.timeout),
+    capabilities: capabilities(frontMatter.capabilities),
     thread_mode: 'new',
     timezone_mode: 'system',
     prompt,
@@ -208,6 +229,7 @@ export function serializeScheduleDefinition(job, { clock = () => new Date() } = 
     workspace: string(value.workspace, 'workspace', 4096),
     agent: agentId(value.agent),
     schedule: humanCadence(validateCadence(value.cadence, { now: clock(), allowPastOnce: !enabled })),
+    capabilities: capabilities(value.capabilities),
     sandbox: value.sandbox_mode ?? 'read-only',
   }
   if (!ID.test(frontMatter.id)) fail('SCHEDULE_DEFINITION_INVALID', 'id must be a UUID', { field: 'id' })

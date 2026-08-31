@@ -151,6 +151,7 @@ function scheduleJob(row, { detail = false, runSummary = null } = {}) {
     model: row.model,
     reasoning_effort: row.reasoning_effort,
     timeout_seconds: row.timeout_seconds,
+    capabilities: row.capabilities ?? { skills: 'inherit', integrations: 'inherit' },
     enabled: row.enabled === true || row.enabled === 1,
     etag: row.etag,
     source_path: row.source_path,
@@ -658,7 +659,7 @@ export function createApiServer({
         requireJson(request)
         const input = exactBody(await readJson(request), new Set([
           'title', 'prompt', 'workspace', 'agent', 'cadence', 'sandbox_mode', 'model',
-          'reasoning_effort', 'timeout_seconds',
+          'reasoning_effort', 'timeout_seconds', 'capabilities',
         ]), 'Schedule')
         const result = scheduleMutationResult(await schedulerService.createJob(input))
         hub.publish()
