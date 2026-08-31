@@ -63,15 +63,15 @@ test('installer creates versioned runtime and preserves existing config/database
     })
 
     const first = await runInstaller({
-      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.0', '--no-start'],
+      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.1', '--no-start'],
     })
     assert.equal(first.code, 0, first.stderr)
-    assert.match(first.stdout, /Installed Tasks Recorder 0\.8\.0/)
+    assert.match(first.stdout, /Installed Tasks Recorder 0\.8\.1/)
     assert.match(first.stdout, /Dashboard: http:\/\/127\.0\.0\.1:43210/)
 
     const installRoot = join(homeDirectory, '.local', 'share', 'tasks-recorder')
     const currentTarget = await readlink(join(installRoot, 'current'))
-    assert.equal(currentTarget, join(installRoot, 'releases', '0.8.0'))
+    assert.equal(currentTarget, join(installRoot, 'releases', '0.8.1'))
     assert.match(
       await readFile(join(currentTarget, 'ui', 'dist', 'react.html'), 'utf8'),
       /<title>Tasks Recorder<\/title>/,
@@ -106,7 +106,7 @@ test('installer creates versioned runtime and preserves existing config/database
     }
 
     const second = await runInstaller({
-      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.0', '--no-start'],
+      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.1', '--no-start'],
     })
     assert.equal(second.code, 0, second.stderr)
     assert.equal(await readFile(join(dataDirectory, 'tasks.sqlite'), 'utf8'), 'existing-database')
@@ -127,7 +127,7 @@ test('installer leaves runtime discovery to the runtime registry', async () => {
     await writeFile(fakeCodex, '#!/usr/bin/env sh\n[ "$1" = exec ] && [ "$2" = --help ]\n')
     await chmod(fakeCodex, 0o755)
     const installed = await runInstaller({
-      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.0', '--no-start'],
+      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.1', '--no-start'],
       env: { PATH: `${commandDirectory}:${process.env.PATH}` },
     })
     assert.equal(installed.code, 0, installed.stderr)
@@ -151,7 +151,7 @@ test('installer rejects a tampered archive before switching current release', as
     await writeFile(join(releaseDirectory, 'tasks-recorder-macos.tar.gz'), 'tampered archive')
 
     const result = await runInstaller({
-      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.0', '--no-start'],
+      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.1', '--no-start'],
     })
     assert.notEqual(result.code, 0)
     assert.match(result.stderr, /checksum/i)
@@ -173,12 +173,12 @@ test('installer replaces an existing current symlink instead of nesting it in th
     await execFileAsync('ln', ['-s', oldRelease, join(installRoot, 'current')])
 
     const result = await runInstaller({
-      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.0', '--no-start'],
+      homeDirectory, releaseDirectory, args: ['--version', 'v0.8.1', '--no-start'],
     })
     assert.equal(result.code, 0, result.stderr)
     assert.equal(
       await readlink(join(installRoot, 'current')),
-      join(installRoot, 'releases', '0.8.0'),
+      join(installRoot, 'releases', '0.8.1'),
     )
     assert.deepEqual(await readdir(oldRelease), [])
     assert.equal(
@@ -226,7 +226,7 @@ exec "$TASKS_RECORDER_REAL_CURL" "$@"
     const result = await runInstaller({
       homeDirectory,
       releaseDirectory,
-      args: ['--version', 'v0.8.0'],
+      args: ['--version', 'v0.8.1'],
       env: {
         PATH: `${commandDirectory}:${process.env.PATH}`,
         TASKS_RECORDER_PROBE_LOG: probeLog,
