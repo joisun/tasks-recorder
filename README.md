@@ -22,9 +22,10 @@ Tasks Recorder 是运行在本机的 coding-agent 工作记录与自动化控制
 curl -fsSL https://raw.githubusercontent.com/joisun/tasks-recorder/main/install.sh | bash
 ```
 
-安装完成后打开 <http://127.0.0.1:43127>，或检查服务：
+安装完成后打开 Dashboard，或检查服务：
 
 ```bash
+tasks-recorder open
 tasks-recorder status
 ```
 
@@ -264,6 +265,7 @@ tasks-recorder import codex --session <session-id>
 ## Operations
 
 ```bash
+tasks-recorder open
 tasks-recorder status
 tasks-recorder stop
 tasks-recorder start
