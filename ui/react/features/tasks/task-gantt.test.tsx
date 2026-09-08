@@ -1,23 +1,9 @@
-import type { ComponentType } from 'react'
-import type { IApi, ITask } from '@svar-ui/react-gantt'
-import { render, screen } from '@testing-library/react'
-import { beforeEach, expect, test, vi } from 'vitest'
-
+import { Profiler } from 'react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { expect, test, vi } from 'vitest'
 import type { DashboardSnapshot, TaskRecord } from '@/lib/api/types'
-import {
-  DEFAULT_TASK_COLUMN_WIDTHS,
-  resizeTaskColumn,
-} from './task-columns'
-import { disableVerticalRowVirtualization, TaskGantt } from './task-gantt'
-
-const ganttProps = vi.hoisted(() => vi.fn())
-
-vi.mock('@svar-ui/react-gantt', () => ({
-  Gantt: (props: Record<string, unknown>) => {
-    ganttProps(props)
-    return <div data-testid="svar-gantt" data-grid-width={String(props.gridWidth)} />
-  },
-}))
+import { TaskGantt } from './task-gantt'
 
 const row = {
   id: 'project:recorder', parent_id: null, project_id: 'recorder', entity_type: 'project',
@@ -40,77 +26,118 @@ const snapshot = {
   attribution_inbox_count: 0, unassigned_execution_count: 0,
 } satisfies DashboardSnapshot
 
-beforeEach(() => ganttProps.mockClear())
 
-test('renders SVAR directly from the typed React projection', () => {
+test('native scroll keeps whole rows without React commits', () => {
+  const commit = vi.fn()
+  const { container } = render(<Profiler id="tasks" onRender={commit}><TaskGantt snapshot={snapshot} /></Profiler>)
+  const viewport = screen.getByRole('treegrid', { name: '任务时间线' })
+  const title = screen.getByRole('button', { name: 'Tasks Recorder' })
+  const calls = commit.mock.calls.length
+  fireEvent.scroll(viewport, { target: { scrollTop: 1400, scrollLeft: 300 } })
+  expect(commit).toHaveBeenCalledTimes(calls)
+  expect(title.isConnected).toBe(true)
+  expect(container.querySelector('[data-row-id]')?.querySelector('.task-timeline-cell')).toBeInTheDocument()
+})
+
+test('metadata and data updates preserve cell identity and latest interactions', async () => {
+  const task: TaskRecord = { ...row, id: 'main', entity_type: 'main_task', resume_available: true, session_id: 'session-a' }
+  const data = { ...snapshot, tasks: [task] }
+  const oldSelect = vi.fn(), select = vi.fn(), resume = vi.fn()
+  const { rerender } = render(<TaskGantt snapshot={data} onTaskSelect={oldSelect} />)
+  const title = screen.getByRole('button', { name: 'Tasks Recorder' })
+  const status = screen.getByRole('button', { name: /修改.*状态/ })
+  rerender(<TaskGantt snapshot={{ ...data, revision: 2 }} onTaskSelect={select} pendingTaskIds={new Set(['main'])} />)
+  expect(screen.getByRole('button', { name: 'Tasks Recorder' })).toBe(title)
+  expect(status).toBeDisabled()
+  expect(screen.getByRole('button', { name: /在终端恢复/ })).toBeDisabled()
+  await userEvent.click(title)
+  expect(select).toHaveBeenCalledWith('main')
+  expect(oldSelect).not.toHaveBeenCalled()
+  rerender(<TaskGantt snapshot={data} onTaskResume={resume} />)
+  await userEvent.click(screen.getByRole('button', { name: /在终端恢复/ }))
+  expect(resume).toHaveBeenCalledWith('main')
+  status.focus()
+  rerender(<TaskGantt snapshot={{ ...data, tasks: [{ ...task, title: 'Updated task', status: 'blocked' }] }} />)
+  expect(screen.getByRole('button', { name: 'Updated task' })).toBe(title)
+  expect(status).toHaveFocus()
+})
+
+test('controlled expansion hides the complete child row', async () => {
+  const child = { ...row, id: 'child', parent_id: row.id, entity_type: 'main_task', title: 'Child' } satisfies TaskRecord
+  const data = { ...snapshot, tasks: [row, child] }
+  const change = vi.fn()
+  const { rerender } = render(<TaskGantt snapshot={data} openIds={new Set([row.id])} onOpenIdsChange={change} />)
+  expect(screen.getByRole('button', { name: 'Child' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '折叠 Tasks Recorder' }))
+  expect(change).toHaveBeenCalledWith(new Set())
+  rerender(<TaskGantt snapshot={data} openIds={new Set()} />)
+  expect(screen.queryByRole('button', { name: 'Child' })).not.toBeInTheDocument()
+  expect(document.querySelector('[data-row-id="child"]')).toBeNull()
+})
+
+test('keyboard navigation focuses next row and Enter opens details', () => {
+  const child = { ...row, id: 'child', parent_id: row.id, entity_type: 'main_task', title: 'Child' } satisfies TaskRecord
+  const select = vi.fn()
+  const { container } = render(<TaskGantt snapshot={{ ...snapshot, tasks: [row, child] }} onTaskSelect={select} />)
+  const parent = container.querySelector<HTMLElement>('[data-row-id]')!
+  parent.focus()
+  fireEvent.keyDown(parent, { key: 'ArrowDown' })
+  const next = container.querySelector<HTMLElement>('[data-row-id="child"]')!
+  expect(next).toHaveFocus()
+  fireEvent.keyDown(next, { key: 'Enter' })
+  expect(select).toHaveBeenCalledWith('child')
+})
+
+test('planned baseline and separate actual segments retain label toggle', () => {
+  const task = { ...row, id: 'main', entity_type: 'main_task', actual: row.planned,
+    actual_segments: [
+      { id: 's1', kind: 'segment', start: '2026-08-02T00:00:00Z', end: '2026-08-03T00:00:00Z' },
+      { id: 's2', kind: 'segment', start: '2026-08-05T00:00:00Z', end: '2026-08-06T00:00:00Z' },
+    ], actual_segment_count: 2 } satisfies TaskRecord
+  const data = { ...snapshot, tasks: [task] }
+  const { container, rerender } = render(<TaskGantt snapshot={data} />)
+  expect(container.querySelectorAll('.task-timeline-segment')).toHaveLength(2)
+  expect(container.querySelector('.task-timeline-baseline')).toBeInTheDocument()
+  expect(container.querySelector('.gantt-task-bar__label')).toBeInTheDocument()
+  rerender(<TaskGantt snapshot={data} labelsVisible={false} />)
+  expect(container.querySelector('.gantt-task-bar__label')).not.toBeInTheDocument()
+})
+
+test('column keyboard resize reports width', () => {
+  const resize = vi.fn()
+  render(<TaskGantt snapshot={snapshot} onColumnResize={resize} />)
+  fireEvent.keyDown(screen.getByRole('separator', { name: '调整任务列宽' }), { key: 'ArrowRight' })
+  expect(resize).toHaveBeenCalledWith('text', 310)
+})
+
+test('empty snapshot can become populated', () => {
+  const { rerender } = render(<TaskGantt snapshot={{ ...snapshot, tasks: [] }} />)
+  expect(screen.getByText('暂无任务')).toBeInTheDocument()
+  rerender(<TaskGantt snapshot={snapshot} />)
+  expect(screen.getByRole('treegrid')).toBeInTheDocument()
+})
+
+test('ArrowLeft on a later root keeps focus on that root', () => {
+  const other = { ...row, id: 'z', title: 'Second root' }
+  const { container } = render(<TaskGantt snapshot={{ ...snapshot, tasks: [row, other] }} />)
+  const target = container.querySelector<HTMLElement>('[data-row-id="z"]')!
+  target.focus()
+  fireEvent.keyDown(target, { key: 'ArrowLeft' })
+  expect(target).toHaveFocus()
+})
+
+test('narrow timeline bars still have labels in month zoom', () => {
+  const task = { ...row, entity_type: 'main_task', planned: {
+    start: '2026-08-02T00:00:00Z', end: '2026-08-02T01:00:00Z',
+  } } satisfies TaskRecord
+  const { container } = render(<TaskGantt snapshot={{ ...snapshot, tasks: [task] }} zoom="month" />)
+  expect(container.querySelector('.gantt-task-bar__label')).toHaveTextContent('Tasks Recorder')
+})
+
+test('pane can shrink below its default minimum without resizing columns', () => {
   render(<TaskGantt snapshot={snapshot} />)
-
-  expect(screen.getByTestId('svar-gantt')).toBeInTheDocument()
-  expect(ganttProps).toHaveBeenCalled()
-  const props = ganttProps.mock.lastCall?.[0]
-  expect(props.tasks.map(({ id }: { id: string }) => id)).toEqual(['project:recorder'])
-  expect(props.cellHeight).toBe(30)
-  expect(props.scaleHeight).toBe(24)
-  expect(props.readonly).toBe(true)
-  expect(props.gridWidth).toBe(500)
-  expect(props.columns[0].width).toBe(300)
-  expect(props.columns.find(({ id }: { id: string }) => id === 'workspace').flexgrow).toBe(1)
-})
-
-test('column resizing changes only the requested column and never the pane width', () => {
-  const gridWidth = 640
-  const resized = resizeTaskColumn(DEFAULT_TASK_COLUMN_WIDTHS, 'workspace', 240)
-
-  expect(resized.workspace).toBe(240)
-  expect(resized.text).toBe(DEFAULT_TASK_COLUMN_WIDTHS.text)
-  expect(resized.branch).toBe(DEFAULT_TASK_COLUMN_WIDTHS.branch)
-  expect(gridWidth).toBe(640)
-})
-
-test('pins the Gantt render area and table to all rows instead of recycling vertical slices', async () => {
-  const state = {
-    _tasks: Array.from({ length: 360 }, (_, index) => ({ id: `task-${index}` })),
-    area: { from: 0, start: 0, end: 0 },
-  }
-  let renderData: ((area: { from: number; start: number; end: number }) => boolean | void) | undefined
-  const setTableState = vi.fn()
-  const api = {
-    getState: () => state,
-    intercept: vi.fn((name, handler) => {
-      if (name === 'render-data') renderData = handler
-    }),
-    exec: vi.fn((_name, area) => {
-      if (renderData?.(area) !== false) state.area = { ...area }
-      return Promise.resolve(area)
-    }),
-    getTable: vi.fn(() => ({
-      getStores: () => ({ data: { setState: setTableState } }),
-    })),
-  } as unknown as IApi
-
-  disableVerticalRowVirtualization(api, 'test-render-all')
-  await Promise.resolve()
-
-  expect(state.area).toEqual({ from: 0, start: 0, end: 360 })
-  expect(setTableState).toHaveBeenCalledWith({ dynamic: { rowCount: 360 } })
-  expect(renderData?.({ from: 30, start: 1, end: 34 })).toBe(false)
-  expect(state.area).toEqual({ from: 0, start: 0, end: 360 })
-})
-
-test('renders the task name inside a Timeline bar when the bar has room', () => {
-  render(<TaskGantt snapshot={snapshot} />)
-
-  const props = ganttProps.mock.lastCall?.[0]
-  const TaskTemplate = props.taskTemplate as ComponentType<{
-    data: ITask
-    api: IApi
-    onaction: (event: { action: string; data: Record<string, unknown> }) => void
-  }>
-  const data = { ...props.tasks[0], $x: 12, $w: 180 } as ITask
-  const api = { getState: () => ({ scrollLeft: 0, _chartWidth: 480 }) } as unknown as IApi
-  render(<TaskTemplate data={data} api={api} onaction={() => undefined} />)
-
-  const label = screen.getByText('Tasks Recorder')
-  expect(label).toHaveClass('gantt-task-bar__label')
-  expect(label.parentElement).toHaveClass('label-inside')
+  const pane = screen.getByRole('separator', { name: '调整任务与时间线分栏' })
+  for (let index = 0; index < 35; index++) fireEvent.keyDown(pane, { key: 'ArrowLeft' })
+  expect(pane).toHaveAttribute('aria-valuenow', '160')
+  expect(screen.getByRole('separator', { name: '调整任务列宽' })).toHaveAttribute('aria-valuenow', '300')
 })

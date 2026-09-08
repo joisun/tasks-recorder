@@ -430,160 +430,198 @@
   line-height: 17px;
 }
 
-.tasks-gantt,
-.tasks-gantt__theme {
+.tasks-gantt {
+  position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  --task-grid-offset: 0px;
 }
 
-.tasks-gantt {
+.task-scroll-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.task-scroll-content {
   position: relative;
-  --wx-background: var(--surface-0);
-  --wx-color-font: var(--text-primary);
-  --wx-font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --wx-border: 1px solid var(--border-subtle);
-  --wx-gantt-border-color: var(--border-subtle);
-  --wx-gantt-border: 1px solid var(--border-subtle);
-  --wx-grid-body-row-border: 1px solid var(--border-subtle);
-  --wx-grid-body-cell-border: 1px solid transparent;
-  --wx-grid-header-font: 600 10.5px var(--wx-font-family);
-  --wx-grid-header-font-color: var(--text-muted);
-  --wx-grid-header-text-transform: none;
-  --wx-grid-body-font: 430 12px var(--wx-font-family);
-  --wx-grid-body-font-color: var(--text-primary);
-  --wx-timescale-font: 560 10px ui-monospace, SFMono-Regular, Menlo, monospace;
-  --wx-timescale-font-color: var(--text-muted);
-  --wx-timescale-border: 1px solid var(--border-subtle);
-  --wx-timescale-shadow: none;
-  --wx-gantt-select-color: color-mix(in oklab, var(--accent) 12%, transparent);
-  --wx-gantt-holiday-background: color-mix(in oklab, var(--surface-2) 52%, var(--surface-1));
+  width: calc(var(--task-grid-width) + var(--task-timeline-width));
+  min-height: 100%;
+  padding-bottom: 14px;
+  isolation: isolate;
 }
 
-.tasks-gantt .tasks-gantt__theme {
-  --wx-background: var(--surface-0);
-}
-
-.tasks-gantt .wx-gantt,
-.tasks-gantt .wx-layout,
-.tasks-gantt .wx-table-container,
-.tasks-gantt .wx-chart,
-.tasks-gantt .wx-scale {
-  background: var(--surface-0);
-  color: var(--text-primary);
-  font-family: var(--wx-font-family);
-}
-
-.tasks-gantt .wx-header {
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in oklab, var(--surface-0) 90%, var(--surface-2));
-}
-
-.tasks-gantt .wx-header .wx-cell {
-  background: var(--surface-2);
-  color: var(--text-muted);
-  letter-spacing: 0.005em;
-}
-
-.tasks-gantt .wx-row {
-  background: var(--surface-0);
-}
-
-.tasks-gantt .wx-row:hover .wx-cell {
-  background: color-mix(in oklab, var(--surface-2) 58%, var(--surface-0));
-}
-
-.tasks-gantt .wx-cell {
-  border-color: var(--border-subtle);
-}
-
-.tasks-gantt .wx-resizer {
-  background: transparent;
-}
-
-.tasks-gantt .wx-resizer::before,
-.tasks-gantt .wx-resizer::after {
-  display: none;
-}
-
-.tasks-gantt .wx-resizer .wx-button-expand-box {
-  display: none;
-}
-
-.tasks-gantt .wx-resizer .wx-resizer-line {
-  position: absolute;
-  inset-block: 0;
-  left: 50%;
-  display: block;
-  width: 1px;
-  height: auto;
-  background: var(--border-subtle);
-  transform: translateX(-50%);
-  transition: width 120ms ease, background-color 120ms ease;
-}
-
-.tasks-gantt .wx-resizer:hover .wx-resizer-line,
-.tasks-gantt .wx-resizer:active .wx-resizer-line {
-  width: 2px;
-  background: color-mix(in oklab, var(--accent-strong) 72%, var(--border-subtle));
-}
-
-.tasks-gantt__now-marker {
-  position: absolute;
-  z-index: 6;
-  width: 1px;
-  background: color-mix(in oklab, var(--accent-strong) 82%, white 18%);
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-strong) 12%, transparent);
-  pointer-events: none;
-}
-
-.tasks-gantt__now-marker[hidden] {
-  display: none;
-}
-
-.tasks-gantt__now-marker > span {
-  position: absolute;
-  top: 3px;
-  right: 0;
-  padding: 2px 5px;
-  border-radius: 3px 0 0 3px;
-  color: color-mix(in oklab, var(--accent-strong) 86%, white 14%);
-  background: color-mix(in oklab, var(--accent) 20%, var(--surface-0));
-  font: 650 9px ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.05em;
-}
-
-.tasks-gantt .wx-toggle-icon,
-.tasks-gantt .wx-toggle-placeholder {
-  width: 22px;
-  min-width: 22px;
+.task-native-row,
+.task-native-header {
+  display: flex;
+  width: 100%;
   height: 30px;
-  margin: 0;
 }
 
-.tasks-gantt .wx-toggle-icon {
+.task-native-row { border-bottom: 1px solid var(--border-subtle); }
+.task-native-row:hover,
+.task-native-row:hover .task-grid-pane { background: var(--surface-1); }
+.task-native-row[aria-selected="true"],
+.task-native-row[aria-selected="true"] .task-grid-pane {
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface-0));
+}
+.task-native-row:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: -1px; }
+
+.task-grid-pane {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: 0 0 var(--task-grid-width);
+  width: var(--task-grid-width);
+  height: 100%;
+  overflow: clip;
+  background: var(--surface-0);
+  border-right: 1px solid var(--border-strong);
+}
+
+.task-grid-columns {
+  display: grid;
+  grid-template-columns: var(--task-columns);
+  width: max(var(--task-columns-width), 100%);
+  height: 100%;
+  transform: translateX(var(--task-grid-offset));
+}
+
+.task-native-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.task-native-cell[data-column-id="text"] { padding-left: 4px; }
+.task-native-cell[data-column-id="activity"] { justify-content: flex-end; }
+.task-native-cell[data-column-id="status"] { justify-content: center; }
+
+.task-tree-indent { display: flex; flex: none; height: 100%; align-items: center; }
+.task-tree-toggle,
+.task-tree-placeholder {
   display: inline-grid;
   place-items: center;
+  width: 22px;
+  height: 26px;
+  flex: none;
+  border: 0;
+  background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+}
+.task-tree-toggle { cursor: pointer; padding: 0; line-height: 1; }
+.task-tree-toggle svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.task-tree-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.task-tree-toggle:focus-visible { outline: 1px solid var(--accent-strong); }
+
+.task-native-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: 48px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+.task-native-header .task-grid-pane { background: var(--surface-2); }
+
+.task-native-heading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
 }
 
-.tasks-gantt .wx-toggle-icon::before {
+.task-time-heading,
+.task-timeline-cell { position: relative; flex: 0 0 var(--task-timeline-width); width: var(--task-timeline-width); }
+.task-time-scale { position: relative; height: 24px; font: 560 10px ui-monospace, monospace; color: var(--text-muted); }
+.task-time-scale > span {
+  position: absolute;
+  height: 24px;
+  padding: 5px 7px;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.task-timeline-cell { height: 100%; overflow: hidden; }
+.task-timeline-guides {
+  position: absolute;
+  top: 48px;
+  bottom: 14px;
+  left: var(--task-grid-width);
+  width: var(--task-timeline-width);
+  pointer-events: none;
+}
+.task-timeline-guides > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border-subtle);
+  opacity: 0.5;
+}
+
+.task-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  z-index: 5;
   width: 6px;
-  height: 6px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  content: "" !important;
+  touch-action: none;
+  cursor: col-resize;
+}
+.task-resize-handle:hover,
+.task-resize-handle:focus-visible { background: color-mix(in oklab, var(--accent-strong) 45%, transparent); outline: none; }
+.task-pane-resizer { position: absolute; top: 0; bottom: 14px; width: 6px; z-index: 6; }
+.task-pane-resizer > .task-resize-handle { right: 0; }
+.task-grid-scrollbar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 7;
+  width: calc(var(--task-grid-width) - 1px);
+  height: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  background: var(--surface-1);
 }
 
-.tasks-gantt .wx-toggle-icon.wxi-menu-right::before {
-  transform: rotate(-45deg);
+.task-native-now {
+  position: absolute;
+  top: 48px;
+  bottom: 14px;
+  width: 1px;
+  z-index: 1;
+  background: var(--accent-strong);
+  pointer-events: none;
 }
-
-.tasks-gantt .wx-toggle-icon.wxi-menu-down::before {
-  transform: rotate(45deg);
+.task-native-now > span {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  color: var(--accent-strong);
+  background: var(--surface-1);
+  padding: 2px 4px;
+  font: 650 9px ui-monospace, monospace;
 }
 
 .gantt-task-cell,
@@ -606,6 +644,7 @@
 }
 
 .gantt-task-cell__title {
+  justify-content: flex-start;
   min-width: 0;
   flex: 1 1 auto;
   padding: 0;
@@ -817,36 +856,30 @@
 .gantt-leaf-status[data-status="done"] > span:first-child { color: var(--success); background-color: var(--success); }
 .gantt-leaf-status[data-indicator="ring"] > span:first-child { background-color: transparent; }
 
-.tasks-gantt .wx-bar {
-  height: 18px !important;
-  overflow: visible;
-  transform: translateY(2px);
-  border: 0;
+.task-timeline-segment {
+  position: absolute;
+  top: 5px;
+  height: 18px;
+  overflow: hidden;
   border-radius: 3px;
+  cursor: pointer;
   background: color-mix(in oklab, var(--accent) 28%, var(--surface-2));
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text-primary) 9%, transparent);
 }
-
-.tasks-gantt .wx-progress-wrapper {
+.task-timeline-progress {
+  position: absolute;
+  inset: 0 auto 0 0;
   border-radius: inherit;
   background: var(--accent-strong);
-  opacity: 0.68;
+  opacity: 0.5;
 }
+.task-timeline-segment[data-kind="summary"],
+.task-timeline-segment[data-planned] { background: transparent; box-shadow: none; }
 
-.gantt-task-bar {
-  position: relative;
-  display: flex;
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  overflow: visible;
-}
-
+.gantt-task-bar { position: relative; display: flex; align-items: center; width: 100%; height: 100%; }
 .gantt-task-bar__label {
-  position: absolute;
-  z-index: 2;
   display: block;
-  max-width: 220px;
+  margin: 0 7px;
   overflow: hidden;
   color: var(--text-primary);
   font-size: 10.5px;
@@ -856,38 +889,10 @@
   white-space: nowrap;
   pointer-events: none;
 }
-
-.gantt-task-bar.label-inside .gantt-task-bar__label {
-  inset-inline: 7px;
-}
-
-.gantt-task-bar.label-right .gantt-task-bar__label {
-  left: calc(100% + 8px);
-  color: var(--text-muted);
-}
-
-.gantt-task-bar.label-left .gantt-task-bar__label {
-  right: calc(100% + 8px);
-  color: var(--text-muted);
-}
-
-.tasks-gantt .wx-bar:has(.gantt-task-bar[data-entity-type="project"]),
-.tasks-gantt .wx-bar:has(.gantt-task-bar[data-entity-type="main_task"][data-task-kind="summary"]) {
-  height: 20px !important;
-  transform: translateY(1px);
-  background: transparent;
-  box-shadow: none;
-}
-
-.tasks-gantt .wx-bar:has(.gantt-task-bar[data-entity-type="project"]) .wx-progress-wrapper,
-.tasks-gantt .wx-bar:has(.gantt-task-bar[data-entity-type="main_task"][data-task-kind="summary"]) .wx-progress-wrapper {
-  display: none;
-}
-
-.gantt-task-bar[data-entity-type="project"]::before,
-.gantt-task-bar[data-entity-type="main_task"][data-task-kind="summary"]::before {
+.task-timeline-label { position: absolute; top: 7px; margin: 0; }
+.gantt-task-bar[data-task-kind="summary"]::before {
   position: absolute;
-  inset: 5px 0 3px;
+  inset: 5px 0 1px;
   border-top: 2px solid var(--accent-strong);
   border-right: 2px solid var(--accent-strong);
   border-left: 2px solid var(--accent-strong);
@@ -895,12 +900,6 @@
   content: "";
   opacity: 0.82;
 }
-
-.tasks-gantt .wx-bar:has(.gantt-task-bar[data-planned-pattern="dash-dot"]) {
-  background: transparent;
-  box-shadow: none;
-}
-
 .gantt-task-bar[data-planned-pattern="dash-dot"]::before {
   position: absolute;
   inset: 0;
@@ -911,12 +910,12 @@
   content: "";
   opacity: 0.72;
 }
-
-.tasks-gantt .wx-baseline {
-  height: 4px !important;
+.task-timeline-baseline {
+  position: absolute;
+  top: 24px;
+  height: 4px;
   border: 1px dashed color-mix(in oklab, var(--accent-strong) 62%, transparent);
   border-radius: 2px;
-  background: transparent !important;
   opacity: 0.72;
 }
 

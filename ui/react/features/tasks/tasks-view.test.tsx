@@ -103,6 +103,27 @@ test('client filters keep ancestors and never mutate server state', async () => 
   expect(api.archiveTask).not.toHaveBeenCalled()
 })
 
+test('metadata refreshes preserve filtered task data and callbacks while inbox counts update', () => {
+  const api = apiMock()
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = (data: DashboardSnapshot) => (
+    <QueryClientProvider client={queryClient}>
+      <TasksView api={api} snapshot={data} status="blocked" />
+    </QueryClientProvider>
+  )
+  const { rerender } = render(view(snapshot))
+  const before = ganttProps.mock.lastCall?.[0]
+  expect(before.snapshot.tasks.map(({ id }: TaskRecord) => id)).toEqual(['project:recorder', 'other'])
+
+  rerender(view({ ...snapshot, generated_at: '2026-08-28T13:00:00.000Z', project_inbox_count: 5 }))
+  const after = ganttProps.mock.lastCall?.[0]
+  expect(after.snapshot.tasks).toBe(before.snapshot.tasks)
+  expect(after.snapshot.project_inbox_count).toBe(5)
+  expect(after.onStatusChange).toBe(before.onStatusChange)
+  expect(after.onArchive).toBe(before.onArchive)
+  expect(after.onTaskResume).toBe(before.onTaskResume)
+})
+
 test('current status counts exclude completed work and history groups terminal states', () => {
   expect(taskStatusCounts(snapshot)).toEqual({
     all: 2,

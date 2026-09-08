@@ -1,5 +1,5 @@
-import type { IColumnConfig } from '@svar-ui/react-gantt'
 import { Terminal } from 'lucide-react'
+import { createContext, useContext, type ComponentType } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { TaskStatus } from '@/lib/api/types'
@@ -8,6 +8,14 @@ import { TaskStatusControl } from './task-status-control'
 import type { TaskGanttRow } from './task-types'
 
 interface CellProps { row: unknown }
+
+export interface TaskColumn {
+  id: TaskColumnId
+  header: string
+  width: number
+  align?: 'right' | 'center'
+  cell: ComponentType<CellProps>
+}
 
 function taskRow(row: unknown) {
   return row as TaskGanttRow
@@ -45,7 +53,10 @@ interface TaskColumnInteractions {
   onArchive?: (taskId: string) => void
 }
 
-function TaskCell({ row: sourceRow, interactions }: CellProps & { interactions: TaskColumnInteractions }) {
+export const TaskColumnInteractionsContext = createContext<TaskColumnInteractions>({})
+
+function TaskCell({ row: sourceRow }: CellProps) {
+  const interactions = useContext(TaskColumnInteractionsContext)
   const row = taskRow(sourceRow)
   return (
     <span className="gantt-task-cell" data-entity-type={row.entity_type} data-task-id={row.id}>
@@ -82,7 +93,8 @@ function ActivityCell({ row: sourceRow }: CellProps) {
   return <span className="gantt-activity-cell">{relativeActivity(row.last_activity)}</span>
 }
 
-function StatusCell({ row: sourceRow, interactions }: CellProps & { interactions: TaskColumnInteractions }) {
+function StatusCell({ row: sourceRow }: CellProps) {
+  const interactions = useContext(TaskColumnInteractionsContext)
   const row = taskRow(sourceRow)
   return (
     <TaskStatusControl
@@ -124,14 +136,13 @@ export function resizeTaskColumn(
 
 export function createTaskColumns(
   widths: TaskColumnWidths,
-  interactions: TaskColumnInteractions = {},
-): IColumnConfig[] {
+): TaskColumn[] {
   return [
-    { id: 'text', header: '任务', width: widths.text, resize: true, cell: (props: CellProps) => <TaskCell {...props} interactions={interactions} /> },
-    { id: 'activity', header: '最近活跃', width: widths.activity, resize: true, align: 'right', cell: ActivityCell },
-    { id: 'status', header: '进度', width: widths.status, resize: true, align: 'center', cell: (props: CellProps) => <StatusCell {...props} interactions={interactions} /> },
-    { id: 'workspace', header: 'Workspace', width: widths.workspace, flexgrow: 1, resize: true, cell: WorkspaceCell },
-    { id: 'branch', header: 'Branch', width: widths.branch, resize: true, cell: BranchCell },
-    { id: 'session_id', header: 'Session ID', width: widths.session_id, resize: true, cell: SessionCell },
+    { id: 'text', header: '任务', width: widths.text, cell: TaskCell },
+    { id: 'activity', header: '最近活跃', width: widths.activity, align: 'right', cell: ActivityCell },
+    { id: 'status', header: '进度', width: widths.status, align: 'center', cell: StatusCell },
+    { id: 'workspace', header: 'Workspace', width: widths.workspace, cell: WorkspaceCell },
+    { id: 'branch', header: 'Branch', width: widths.branch, cell: BranchCell },
+    { id: 'session_id', header: 'Session ID', width: widths.session_id, cell: SessionCell },
   ]
 }

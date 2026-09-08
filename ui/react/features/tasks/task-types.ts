@@ -1,5 +1,3 @@
-import type { ITask } from '@svar-ui/react-gantt'
-
 import type { DashboardSnapshot, TaskRecord, TaskStatus, TimeRange } from '@/lib/api/types'
 
 export type TimelineZoom = 'auto' | 'hour' | 'day' | 'week' | 'month'
@@ -30,12 +28,16 @@ export interface TaskProjectionOptions {
   now?: Date
 }
 
-export interface TaskGanttRow extends ITask {
+export interface TaskGanttRow {
   id: string
   parent: string | number
   text: string
   start: Date
   end: Date
+  progress: number
+  base_start?: Date
+  base_end?: Date
+  segments?: Array<{ start: Date; end: Date }>
   type: 'summary' | 'task'
   open: boolean
   status: TaskStatus

@@ -115,7 +115,7 @@ export function chooseTimelineScale(
 }
 
 export function projectTaskSnapshot(
-  snapshot: DashboardSnapshot,
+  snapshot: Pick<DashboardSnapshot, 'tasks' | 'generated_at'>,
   {
     viewportWidth,
     openIds = null,

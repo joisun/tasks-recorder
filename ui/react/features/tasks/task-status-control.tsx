@@ -91,41 +91,15 @@ function StatusMenu({
   }, [anchor])
 
   useEffect(() => {
+    if (!position) return
     const focusSelected = () => {
       const menu = menuRef.current
       if (!menu) return
       const selected = menu.querySelector<HTMLElement>('[aria-selected="true"]')
       ;(selected ?? menu.querySelector<HTMLElement>('[role="option"]'))?.focus({ preventScroll: true })
     }
-    // SVAR's grid re-focuses its cell after the click that opened the menu.
-    // Re-assert focus on the next two frames, so the option keeps focus
-    // regardless of when the grid's post-click focus lands.
     focusSelected()
-    let inner = 0
-    const outer = window.requestAnimationFrame(() => {
-      focusSelected()
-      inner = window.requestAnimationFrame(focusSelected)
-    })
-    return () => {
-      window.cancelAnimationFrame(outer)
-      if (inner) window.cancelAnimationFrame(inner)
-    }
-  }, [])
-
-  useEffect(() => {
-    // Safety net: if focus is still outside the menu (stolen by the grid),
-    // reclaim it once so arrow keys reach the listbox, not the grid.
-    const handleFocusIn = (event: FocusEvent) => {
-      const menu = menuRef.current
-      const target = event.target as Node
-      // The anchor regaining focus means we are closing — let it keep focus.
-      if (!menu || menu.contains(target) || anchor.contains(target)) return
-      const selected = menu.querySelector<HTMLElement>('[aria-selected="true"]')
-      ;(selected ?? menu.querySelector<HTMLElement>('[role="option"]'))?.focus({ preventScroll: true })
-    }
-    document.addEventListener('focusin', handleFocusIn)
-    return () => document.removeEventListener('focusin', handleFocusIn)
-  }, [anchor])
+  }, [position])
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {

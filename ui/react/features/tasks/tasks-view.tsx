@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { InboxDrawer } from '@/features/inbox/inbox-drawer'
 import { DashboardApiError, type DashboardApi } from '@/lib/api/dashboard-api'
@@ -62,10 +62,10 @@ export function taskStatusCounts(snapshot: DashboardSnapshot): TaskStatusCounts 
   return counts
 }
 
-export function filterTaskSnapshot(
-  snapshot: DashboardSnapshot,
+export function filterTaskSnapshot<T extends Pick<DashboardSnapshot, 'tasks'>>(
+  snapshot: T,
   { query = '', status = 'all' }: { query?: string; status?: TaskStatusScope },
-): DashboardSnapshot {
+): T {
   const needle = query.trim().toLocaleLowerCase()
   if (!needle && status === 'all') return snapshot
   const byId = new Map(snapshot.tasks.map((task) => [task.id, task]))
@@ -130,10 +130,12 @@ export function TasksView({
   const [labelsVisible, setLabelsVisible] = useState(readTimelineLabelPreference)
   const [message, setMessage] = useState('')
   const [inboxOpen, setInboxOpen] = useState(false)
-  const filtered = useMemo(
-    () => filterTaskSnapshot(snapshot, { query, status }),
-    [query, snapshot, status],
+  const tasks = snapshot.tasks
+  const filteredTasks = useMemo(
+    () => filterTaskSnapshot({ tasks }, { query, status }).tasks,
+    [query, tasks, status],
   )
+  const filtered = useMemo(() => ({ ...snapshot, tasks: filteredTasks }), [snapshot, filteredTasks])
   const selectedTask = snapshot.tasks.find(({ id }) => id === selectedTaskId) ?? null
 
   const statusMutation = useMutation({
@@ -214,23 +216,24 @@ export function TasksView({
     resumeMutation.isPending,
     resumeMutation.variables,
   ])
-  const groupIds = snapshot.tasks
-    .filter((task) => task.entity_type === 'project' || snapshot.tasks.some(({ parent_id: parentId }) => parentId === task.id))
-    .map(({ id }) => id)
+  const groupIds = useMemo(() => {
+    const parentIds = new Set(tasks.map(({ parent_id }) => parent_id))
+    return tasks.filter((task) => task.entity_type === 'project' || parentIds.has(task.id)).map(({ id }) => id)
+  }, [tasks])
   const allExpanded = openIds === null || groupIds.every((id) => openIds.has(id))
 
-  const mutateStatus = (taskId: string, nextStatus: TaskStatus) => {
-    const task = snapshot.tasks.find(({ id }) => id === taskId)
+  const mutateStatus = useCallback((taskId: string, nextStatus: TaskStatus) => {
+    const task = tasks.find(({ id }) => id === taskId)
     if (task && task.status !== nextStatus) statusMutation.mutate({ task, nextStatus })
-  }
-  const archive = (taskId: string) => {
-    const task = snapshot.tasks.find(({ id }) => id === taskId)
+  }, [tasks, statusMutation.mutate])
+  const archive = useCallback((taskId: string) => {
+    const task = tasks.find(({ id }) => id === taskId)
     if (task && ['done', 'canceled'].includes(effectiveStatus(task))) archiveMutation.mutate(task)
-  }
-  const resume = (taskId: string) => {
-    const task = snapshot.tasks.find(({ id }) => id === taskId)
+  }, [tasks, archiveMutation.mutate])
+  const resume = useCallback((taskId: string) => {
+    const task = tasks.find(({ id }) => id === taskId)
     if (task?.resume_available && task.workspace && task.session_id) resumeMutation.mutate(task)
-  }
+  }, [tasks, resumeMutation.mutate])
 
   return (
     <div className="tasks-view">
