@@ -118,7 +118,7 @@ function handler(operation) {
 
 export function createTasksRecorderServer({ service }) {
   const server = new McpServer(
-    { name: 'tasks-recorder', version: '0.8.1' },
+    { name: 'tasks-recorder', version: '0.8.2' },
     { instructions: SERVER_INSTRUCTIONS },
   )
 
