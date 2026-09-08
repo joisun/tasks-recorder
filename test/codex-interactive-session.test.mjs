@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { createCodexInteractiveSessionFactory } from '../server/src/runtime/adapters/codex-interactive-session.mjs'
 
-function fakeClient() {
+function fakeClient({ skillsResponse } = {}) {
   const notifications = new Set()
   const requests = []
   const client = {
@@ -14,6 +14,7 @@ function fakeClient() {
     async request(method, params) {
       requests.push({ method, params })
       if (method === 'initialize') return { userAgent: 'codex-cli 0.150.0' }
+      if (method === 'skills/list') return skillsResponse ?? { data: [] }
       if (method === 'thread/start') {
         return {
           thread: { id: 'private-thread', turns: [] },
@@ -49,6 +50,7 @@ const RUN = Object.freeze({
   model: 'gpt-5',
   reasoning_effort: 'high',
   timeout_seconds: 7_200,
+  capabilities: Object.freeze({ skills: 'inherit', integrations: 'inherit' }),
 })
 
 test('Codex interactive session streams a private Turn and steers it through a public revision', async () => {
@@ -65,9 +67,7 @@ test('Codex interactive session streams a private Turn and steers it through a p
   })
 
   const completion = session.start()
-  await Promise.resolve()
-  await Promise.resolve()
-  await Promise.resolve()
+  await new Promise((resolve) => setImmediate(resolve))
 
   assert.deepEqual(spawns, [{ pid: 7401 }])
   assert.deepEqual(events.slice(0, 2), [
@@ -170,6 +170,114 @@ test('Codex interactive session closes promptly when taskd aborts the Run', asyn
     session_id: null, final_message: null, usage: null, file_changes: [],
   })
   assert.equal(client.closed, true)
+})
+
+test('Codex interactive session applies integration launch isolation and disables Skills before Thread creation', async () => {
+  const client = fakeClient({
+    skillsResponse: { data: [{
+      cwd: '/tmp/project', errors: [],
+      skills: [{
+        name: 'review', path: '/skills/review/SKILL.md', enabled: true,
+        description: 'Review code', scope: 'user',
+      }],
+    }] },
+  })
+  const launches = []
+  const clients = []
+  const signal = new AbortController().signal
+  const factory = createCodexInteractiveSessionFactory({
+    async resolveCapabilityLaunch(input) {
+      launches.push(input)
+      return {
+        disabledFeatures: ['plugins'],
+        configOverrides: ['apps._default.enabled=false'],
+      }
+    },
+    createClient(options) {
+      clients.push(options)
+      return client
+    },
+  })
+  const session = factory.create({
+    launch: { executable: '/opt/tasks/bin/codex', version: 'codex-cli 0.150.0' },
+    run: {
+      ...RUN,
+      capabilities: { skills: 'disabled', integrations: 'disabled' },
+    },
+    signal,
+    emit: () => {},
+    onSpawn: () => {},
+  })
+
+  const completion = session.start()
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(launches, [{
+    executable: '/opt/tasks/bin/codex',
+    cwd: '/tmp/project',
+    capabilities: { skills: 'disabled', integrations: 'disabled' },
+  }])
+  assert.deepEqual(clients, [{
+    executable: '/opt/tasks/bin/codex',
+    cwd: '/tmp/project',
+    signal,
+    disabledFeatures: ['plugins'],
+    configOverrides: ['apps._default.enabled=false'],
+  }])
+  assert.deepEqual(client.requests.slice(0, 3), [
+    {
+      method: 'initialize',
+      params: { clientInfo: { name: 'tasks-recorder', title: 'Tasks Recorder', version: 'source' } },
+    },
+    {
+      method: 'skills/list',
+      params: { cwds: ['/tmp/project'], forceReload: true },
+    },
+    {
+      method: 'thread/start',
+      params: {
+        cwd: '/tmp/project', model: 'gpt-5', approvalPolicy: 'never',
+        sandbox: 'read-only', ephemeral: false,
+        config: {
+          skills: { config: [{ path: '/skills/review/SKILL.md', enabled: false }] },
+          features: { skill_search: false, skill_mcp_dependency_install: false },
+        },
+      },
+    },
+  ])
+  assert.doesNotMatch(JSON.stringify(client.requests), /web_search/i)
+
+  client.emit('turn/completed', {
+    threadId: 'private-thread',
+    turn: { id: 'private-turn', status: 'completed', items: [] },
+  })
+  await completion
+})
+
+test('Codex interactive session fails before spawning when capability discovery fails', async () => {
+  let clients = 0
+  const factory = createCodexInteractiveSessionFactory({
+    createClient() { clients += 1 },
+    resolveCapabilityLaunch: async () => {
+      throw Object.assign(new Error('private discovery output'), {
+        code: 'RUNTIME_CAPABILITY_DISCOVERY_INVALID',
+      })
+    },
+  })
+  const session = factory.create({
+    launch: { executable: '/opt/tasks/bin/codex', version: 'codex-cli 0.150.0' },
+    run: { ...RUN, capabilities: { skills: 'inherit', integrations: 'disabled' } },
+    signal: new AbortController().signal,
+    emit: () => {},
+    onSpawn: () => {},
+  })
+
+  assert.deepEqual(await session.start(), {
+    status: 'failed', exit_code: null,
+    error_code: 'RUNTIME_CAPABILITY_DISCOVERY_INVALID',
+    session_id: null, final_message: null, usage: null, file_changes: [],
+  })
+  assert.equal(clients, 0)
 })
 
 test('Codex interactive session enforces the durable Run timeout', async () => {

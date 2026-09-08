@@ -215,6 +215,7 @@ fi
 
 printf 'Installed Tasks Recorder %s.\n' "$installed_version"
 printf 'Dashboard: %s\n' "$dashboard_url"
+printf 'Open Dashboard: tasks-recorder open\n'
 if [ ":${PATH}:" != *":$bin_directory:"* ]; then
   printf 'Add %s to PATH to use the tasks-recorder command.\n' "$bin_directory"
 fi

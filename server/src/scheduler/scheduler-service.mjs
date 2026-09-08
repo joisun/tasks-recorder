@@ -6,9 +6,10 @@ import { SchedulerError } from './scheduler-errors.mjs'
 
 const JOB_FIELDS = new Set([
   'title', 'prompt', 'workspace', 'agent', 'cadence', 'sandbox_mode', 'model',
-  'reasoning_effort', 'timeout_seconds',
+  'reasoning_effort', 'timeout_seconds', 'capabilities',
 ])
 const SANDBOX_MODES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
+const CAPABILITY_MODES = new Set(['inherit', 'disabled'])
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ETAG = /^[0-9a-f]{64}$/
 const AGENT = /^[a-z][a-z0-9-]{0,63}$/
@@ -64,6 +65,11 @@ export function createDefinitionScheduleService({
       )
     }
     if (!patch || own(output, 'timeout_seconds')) output.timeout_seconds = timeoutSeconds(output.timeout_seconds)
+    if (!patch || own(output, 'capabilities')) {
+      output.capabilities = capabilityPolicy(output.capabilities, {
+        defaultMode: patch ? 'inherit' : 'disabled',
+      })
+    }
     return output
   }
 
@@ -198,6 +204,23 @@ function timeoutSeconds(value = 7_200) {
     fail('SCHEDULE_INPUT_INVALID', 'timeout_seconds is invalid', { field: 'timeout_seconds' })
   }
   return value
+}
+
+function capabilityPolicy(value, { defaultMode = 'inherit' } = {}) {
+  if (value === undefined || value === null) {
+    return { skills: defaultMode, integrations: defaultMode }
+  }
+  allowOnly(value, new Set(['skills', 'integrations']), 'capabilities')
+  const mode = (field) => {
+    const selected = value[field] ?? defaultMode
+    if (!CAPABILITY_MODES.has(selected)) {
+      fail('SCHEDULE_INPUT_INVALID', `capabilities.${field} is invalid`, {
+        field: `capabilities.${field}`,
+      })
+    }
+    return selected
+  }
+  return { skills: mode('skills'), integrations: mode('integrations') }
 }
 
 function scheduleIdValue(value) {

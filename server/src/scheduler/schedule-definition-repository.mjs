@@ -11,7 +11,8 @@ import { SchedulerError } from './scheduler-errors.mjs'
 const MAX_DEFINITION_BYTES = 256 * 1024
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const PATCH_FIELDS = new Set([
-  'title', 'prompt', 'workspace', 'agent', 'cadence', 'sandbox_mode', 'model', 'reasoning_effort', 'timeout_seconds',
+  'title', 'prompt', 'workspace', 'agent', 'cadence', 'capabilities', 'sandbox_mode',
+  'model', 'reasoning_effort', 'timeout_seconds',
 ])
 
 function fail(code, message, details) {

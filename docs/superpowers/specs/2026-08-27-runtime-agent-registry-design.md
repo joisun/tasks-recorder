@@ -175,8 +175,8 @@ The first registry entry is `codex`:
 - platform candidates: normal `PATH`, common macOS user toolchain directories, and the Codex.app bundle;
 - version probe: `codex --version`;
 - model probe: `codex debug models`;
-- new Run: `codex exec --json --skip-git-repo-check ... -`, with prompt through stdin so standalone Schedule workspaces do not depend on Git trust detection;
-- stream format: Codex JSONL;
+- new Run: one private `codex app-server --listen stdio://` process per active Run, with `thread/start` and `turn/start` over JSON-RPC;
+- stream format: Codex app-server notifications normalized into bounded Run events;
 - session identity: normalized thread/session ID from Codex events;
 - resume capability: existing terminal adapter receives the trusted session ID and Workspace from the Run ledger.
 
@@ -344,9 +344,16 @@ Markdown remains canonical. Frontmatter gains an `agent` field whose default is 
 agent: codex
 model: default
 reasoning: default
+capabilities:
+  skills: disabled
+  integrations: disabled
 ```
 
 Missing `agent` is read as `codex` without rewriting the file. The next user edit may write the explicit field.
+
+Each capability policy is exactly `inherit` or `disabled`. Existing Markdown without `capabilities` reads as `inherit / inherit`; new Schedules created through the HTTP/UI contract default to `disabled / disabled`. `skills` governs Skill discovery and Skill-owned MCP dependency installation. `integrations` governs configured MCP servers, plugin MCP, and Apps/Connectors; it deliberately does not include Web Search or Codex core tools. Sandbox remains an orthogonal filesystem/network permission boundary.
+
+The Codex adapter resolves isolation at the per-Run boundary. It launches app-server with Run-local feature/config overrides for integrations, discovers the Skills visible for the Run Workspace, and passes an explicit disabled Skill config to `thread/start`. It never mutates global Codex configuration or a shared `CODEX_HOME`. Discovery failure is fail-closed with a typed Run error. The immutable Run snapshot retains the complete policy so later Schedule edits cannot change an already queued Run.
 
 ### Run ledger
 
@@ -439,6 +446,7 @@ An advanced UI-only command may continue to proxy an installed service, but the 
 - model IDs, reasoning values, runtime IDs, and session IDs use bounded allowlists;
 - the browser sends semantic IDs and choices, never commands or filesystem paths that bypass server validation;
 - each adapter declares its sandbox and permission capabilities; the UI must not imply equivalent isolation across runtimes;
+- per-Run capability isolation uses runtime-owned argv/protocol controls and never mutates global CLI configuration; Web Search remains independent from the MCP/App integration policy;
 - logs and SQLite remain local and use private permissions;
 - taskd never assumes that `shell: false` replaces the CLI's own sandbox or approval model.
 

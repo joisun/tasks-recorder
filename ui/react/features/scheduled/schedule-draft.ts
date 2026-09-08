@@ -29,6 +29,8 @@ export interface ScheduleDraft {
   model: string
   reasoning_effort: string
   timeout_seconds: string
+  loadSkills: boolean
+  loadIntegrations: boolean
 }
 
 export interface ModelOption {
@@ -96,6 +98,7 @@ export function defaultScheduleDraft(): ScheduleDraft {
     onceAt: '', minute: '0', hour: '9', weekdays: [1], day: '1',
     sandbox_mode: 'read-only', dangerConfirmed: false, model: '',
     reasoning_effort: '', timeout_seconds: '7200',
+    loadSkills: false, loadIntegrations: false,
   }
 }
 
@@ -126,6 +129,8 @@ export function scheduleToDraft(source: Partial<ScheduleRecord> = {}): ScheduleD
     timeout_seconds: String(Number.isSafeInteger(source.timeout_seconds)
       && Number(source.timeout_seconds) >= 60 && Number(source.timeout_seconds) <= 86_400
       ? source.timeout_seconds : 7_200),
+    loadSkills: source.capabilities?.skills !== 'disabled',
+    loadIntegrations: source.capabilities?.integrations !== 'disabled',
   }
 }
 
@@ -213,5 +218,9 @@ export function draftToScheduleInput(
     model: model || null,
     reasoning_effort: reasoningEffort || null,
     timeout_seconds: integer(draft.timeout_seconds, 'Timeout', 60, 86_400),
+    capabilities: {
+      skills: draft.loadSkills ? 'inherit' : 'disabled',
+      integrations: draft.loadIntegrations ? 'inherit' : 'disabled',
+    },
   }
 }

@@ -19,7 +19,7 @@ test('public package and native adapter metadata share version, license, and rep
   const claudeManifest = await json('adapters/claude/tasks-recorder/.claude-plugin/plugin.json')
   const claudeMarketplace = await json('.claude-plugin/marketplace.json')
 
-  assert.equal(packageManifest.version, '0.8.0')
+  assert.equal(packageManifest.version, '0.8.1')
   assert.equal(packageManifest.license, 'GPL-2.0-only')
   assert.equal(packageManifest.repository.url, 'git+https://github.com/joisun/tasks-recorder.git')
   for (const manifest of [codexManifest, claudeManifest]) {
@@ -41,7 +41,7 @@ test('README installation commands target published service and separate native 
   assert.match(readme, /^## Migrate a schema v2 database$/m)
   assert.match(readme, /tasks-recorder migrate --dry-run/)
   assert.match(readme, /tasks-recorder migrate --apply/)
-  assert.match(readme, /version=v0\.8\.0/)
+  assert.match(readme, /version=v0\.8\.1/)
   assert.match(readme, /`0\.8\.x` release line/)
   assert.match(readme, /`0\.9\.0`/)
   assert.match(readme, /~\/\.config\/tasks-recorder\/tasks\.sqlite/)

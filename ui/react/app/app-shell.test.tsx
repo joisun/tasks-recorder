@@ -82,6 +82,7 @@ const snapshot: DashboardSnapshot = {
 const schedule: ScheduleRecord = {
   id: 'schedule-a', title: 'Codex update report', workspace: '/Users/me/notes', agent: 'codex',
   cadence: { kind: 'daily', hour: 9, minute: 0, timezone_mode: 'system' },
+  capabilities: { skills: 'inherit', integrations: 'inherit' },
   timezone_mode: 'system', thread_mode: 'new', sandbox_mode: 'read-only', model: 'gpt-5.6',
   reasoning_effort: 'low', timeout_seconds: 7200, enabled: true, etag: 'a'.repeat(64),
   source_path: '/Users/me/schedules/codex-update-report.md', schedule_generation: 1,

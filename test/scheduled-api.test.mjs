@@ -22,6 +22,7 @@ function job(overrides = {}) {
     model: null,
     reasoning_effort: null,
     timeout_seconds: 7200,
+    capabilities: { skills: 'disabled', integrations: 'disabled' },
     enabled: 1,
     etag: ETAG,
     source_path: '/schedules/daily-review.md',
@@ -124,6 +125,7 @@ test('Schedule list is privacy-bounded while detail exposes the editable Prompt'
     assert.equal(list.status, 200)
     assert.equal(list.body.capability.supported, true)
     assert.equal(list.body.jobs[0].enabled, true)
+    assert.deepEqual(list.body.jobs[0].capabilities, { skills: 'disabled', integrations: 'disabled' })
     assert.deepEqual(list.body.jobs[0].cadence, { kind: 'daily', hour: 9, minute: 0, timezone_mode: 'system' })
     assert.equal(list.body.jobs[0].unread_run_count, 1)
     assert.deepEqual(list.body.jobs[0].last_run, {
@@ -231,7 +233,7 @@ test('Schedule mutations map exact typed bodies and publish one revision each', 
   const current = await fixture()
   try {
     const requests = [
-      ['/api/v1/schedules', 'POST', { title: 'Daily', prompt: 'Review', workspace: '/workspace', cadence: { kind: 'daily' } }],
+      ['/api/v1/schedules', 'POST', { title: 'Daily', prompt: 'Review', workspace: '/workspace', cadence: { kind: 'daily' }, capabilities: { skills: 'disabled', integrations: 'disabled' } }],
       [`/api/v1/schedules/${JOB_ID}`, 'PATCH', { expected_etag: ETAG, patch: { title: 'Updated' } }],
       [`/api/v1/schedules/${JOB_ID}/pause`, 'POST', { expected_etag: ETAG }],
       [`/api/v1/schedules/${JOB_ID}/resume`, 'POST', { expected_etag: ETAG }],

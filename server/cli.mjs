@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawn } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -26,11 +27,23 @@ function optionValue(argv, index, option) {
 
 function usageError() {
   return new Error(
-    'usage: tasks-recorder [install|start|stop|status|uninstall] | '
+    'usage: tasks-recorder [install|start|stop|status|uninstall|open] | '
     + 'scheduler (status|reconcile) | '
     + 'migrate (--dry-run | --apply --backup <path>) [--database <path>] | '
     + 'import codex --session <id> [--dry-run] [--codex-home <path>]',
   )
+}
+
+async function defaultDashboardOpener(url) {
+  await new Promise((resolve, reject) => {
+    const child = spawn('/usr/bin/open', [url], { stdio: 'ignore' })
+    child.once('error', reject)
+    child.once('close', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`/usr/bin/open failed with exit ${code}`))
+    })
+  })
+  return { opened: true, url }
 }
 
 function parseMigration(argv) {
@@ -97,6 +110,10 @@ export function parseCliArguments(argv) {
     if (argv.length !== 1) throw new Error(`${argv[0]} does not accept additional arguments`)
     return { type: 'control', command: argv[0] }
   }
+  if (argv[0] === 'open') {
+    if (argv.length !== 1) throw new Error('open does not accept additional arguments')
+    return { type: 'open-dashboard' }
+  }
   if (argv[0] === 'scheduler') {
     if (!['status', 'reconcile'].includes(argv[1])) throw usageError()
     if (argv.length !== 2) throw new Error(`scheduler ${argv[1]} does not accept additional arguments`)
@@ -152,9 +169,15 @@ export async function runCli(argv, {
   clientFactory = createTaskClient,
   serviceProbe = defaultServiceProbe,
   migrationRunner = defaultMigrationRunner,
+  dashboardOpener = defaultDashboardOpener,
 } = {}) {
   const command = parseCliArguments(argv)
   if (command.type === 'control') return controlRunner(command.command)
+
+  if (command.type === 'open-dashboard') {
+    const config = await configResolver({ projectRoot, env, homeDirectory })
+    return dashboardOpener(config.serverBaseUrl)
+  }
 
   if (command.type === 'scheduler') {
     const config = await configResolver({ projectRoot, env, homeDirectory })

@@ -132,6 +132,10 @@ test('Codex definition exposes one interactive session factory without changing 
   })
 
   assert.equal(definition.capabilities.interactiveSession, true)
+  assert.deepEqual(definition.capabilities.contextIsolation, {
+    skills: true,
+    integrations: true,
+  })
   assert.deepEqual(definition.createInteractiveSession({ run: { id: 'run-1' } }), {
     kind: 'interactive-session',
   })
