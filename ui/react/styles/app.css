@@ -2389,6 +2389,20 @@
   white-space: nowrap;
 }
 
+.run-detail__file-open {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding-inline: 3px;
+  text-align: left;
+}
+.run-detail__file-open:not(:disabled):hover code {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.run-detail__file-open:disabled code { color: var(--text-muted); }
+
 .run-detail__files span {
   color: var(--text-muted);
   font: 500 8px ui-monospace, SFMono-Regular, Menlo, monospace;

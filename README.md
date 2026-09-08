@@ -119,6 +119,8 @@ queued → running → succeeded | failed | timed_out | canceled | interrupted
 8. Dashboard 通过 Run-specific SSE 更新；active Turn 可以追加指令或停止；terminal Run 的历史对话由 runtime adapter 使用可信 Run ID 和 session ID 从 CLI-owned session 按需读取；
 9. 需要继续工作时，terminal Run 可以从可信 snapshot 召回 session。
 
+macOS 上可以点击 Run「产出文件」中的文件名，用本机默认应用打开。相对路径以该 Run 执行时的 workspace 为准；仅支持 workspace 内已记录且仍存在的普通文件。已删除的文件不可点击，文件缺失或无法打开时会显示原因。
+
 一个 runtime 不可用不会让 Recorder 或其他 runtime 下线。登录或 provider 错误由实际 Run 记录为 typed failure，不会阻塞 service 启动与 runtime 列表加载。
 
 ### Live Session control

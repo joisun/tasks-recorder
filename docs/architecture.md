@@ -124,6 +124,12 @@ Dashboard ──GET /runs/:id/conversation──▶ RunService
 - 本机 CLI session 缺失或协议不可用时返回 typed unavailable，UI 可回退到已经存在的 bounded `final_message`；
 - 该路径只读历史；completed Run 的继续对话仍通过 Terminal Resume，不从 Dashboard 创建 follow-up Turn。
 
+## Run output files
+
+React Run detail 使用 `POST /api/v1/runs/:id/files/open`，JSON body 只允许 `{ path }`。接口沿用 loopback Host、same-Origin 与 JSON 请求保护。RunService 从 ledger 读取 immutable snapshot 和 file_changes；客户端不得传 workspace、command 或 application。
+
+file opener 要求 path 精确匹配该 Run 的非删除文件记录，相对路径以 snapshot.workspace 解析；路径规范化及 realpath 后均须处于该 workspace 内，且目标必须为普通文件。macOS 通过 argv array、`shell: false` 调用 `/usr/bin/open`，参数为编码后的本地 file URL，使用系统默认应用。未记录、已删除、缺失、越界、非普通文件、非 macOS 或 opener 失败均返回可展示的 typed error；不回写 Run，也不执行 shell 拼接命令。
+
 ## Schedule clock
 
 `scheduler-clock` 在 `taskd` 内根据 wall clock 和 durable occurrence key 计算到期任务。filesystem watcher 负责低延迟 definition change，周期 rescan 提供最终一致性。sleep/wake 可产生 bounded catch-up，但同一个 occurrence key 不能创建两次 Run。

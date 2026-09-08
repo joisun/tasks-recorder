@@ -95,6 +95,7 @@ export interface DashboardApi {
   scheduledRunConversation(id: string): Promise<RunConversationResponse>
   markScheduledRunReviewed(id: string): Promise<RunResponse>
   resumeScheduledRun(id: string): Promise<RunResumeResponse>
+  openRunFile(id: string, path: string): Promise<{ opened: boolean; path: string }>
   steerRun(
     id: string,
     input: { expected_turn_revision: number; text: string },
@@ -265,6 +266,10 @@ export function createDashboardApi({
     resumeScheduledRun: (id) => request(
       `/api/v1/scheduled-runs/${encodeURIComponent(id)}/resume`,
       { method: 'POST', body: {} },
+    ),
+    openRunFile: (id, path) => request(
+      `/api/v1/runs/${encodeURIComponent(id)}/files/open`,
+      { method: 'POST', body: { path } },
     ),
     steerRun: (id, { expected_turn_revision, text }) => request(
       `/api/v1/runs/${encodeURIComponent(id)}/steer`,

@@ -81,6 +81,7 @@ describe('DashboardApi', () => {
     await api.scheduledRunLog(runId, { stream: 'stderr', tail: 4096 })
     await api.markScheduledRunReviewed(runId)
     await api.resumeScheduledRun(runId)
+    await api.openRunFile(runId, 'reports/产出 #1.md')
 
     expect(calls).toEqual([
       { url: '/api/v1/schedules', method: 'GET', body: null },
@@ -107,6 +108,7 @@ describe('DashboardApi', () => {
       },
       { url: '/api/v1/scheduled-runs/run%2Fid%20%3F/review', method: 'POST', body: {} },
       { url: '/api/v1/scheduled-runs/run%2Fid%20%3F/resume', method: 'POST', body: {} },
+      { url: '/api/v1/runs/run%2Fid%20%3F/files/open', method: 'POST', body: { path: 'reports/产出 #1.md' } },
     ])
   })
 

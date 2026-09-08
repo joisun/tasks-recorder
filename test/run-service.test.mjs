@@ -148,6 +148,22 @@ test('RunService returns a queued Run before runtime resolution settles', async 
   ])
 })
 
+test('Run file opening uses the stored Run snapshot, not caller workspace data', async t => {
+  const calls = []
+  const current = await fixture(t, {
+    fileOpener: async (run, path) => { calls.push({ run, path }); return { opened: true, path } },
+  })
+  const run = current.runStore.create({
+    schedule: SCHEDULE, origin: 'manual', occurrence_key: null, scheduled_for: null,
+    idempotency_key: 'file-open-test', runtime_id: 'codex',
+  })
+  assert.deepEqual(await current.service.openFile(run.id, 'report.md'), { opened: true, path: 'report.md' })
+  assert.equal(calls[0].run.snapshot.workspace, SCHEDULE.workspace)
+  assert.equal(calls[0].run.id, run.id)
+  assert.equal(calls[0].path, 'report.md')
+  assert.throws(() => current.service.openFile('missing', 'report.md'), { code: 'RUN_NOT_FOUND' })
+})
+
 test('RunService reads conversation through the owning runtime without persisting transcript content', async (t) => {
   const reads = []
   const current = await fixture(t, {

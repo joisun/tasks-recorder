@@ -505,6 +505,13 @@ export function createApiServer({
         sendJson(response, 202, result)
         return
       }
+      const runFile = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/files\/open$/)
+      if (request.method === 'POST' && runFile && runService?.openFile) {
+        requireJson(request)
+        const input = exactBody(await readJson(request, { limit: 8192 }), new Set(['path']), 'Run file open')
+        sendJson(response, 200, await runService.openFile(safeSegment(runFile[1]), input.path))
+        return
+      }
       const runAction = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/(cancel|review|resume)$/)
       if (request.method === 'POST' && runAction && runService) {
         requireJson(request)

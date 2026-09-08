@@ -1,4 +1,5 @@
 import { runtimeEvent } from '../runtime/runtime-event.mjs'
+import { openRunFile } from './run-file-opener.mjs'
 import {
   captureWorkspaceSnapshot,
   diffWorkspaceSnapshots,
@@ -13,11 +14,13 @@ export function createRunService({
   logStore,
   clock = () => new Date(),
   onChange = () => {},
+  fileOpener = openRunFile,
 } = {}) {
   if (!runStore?.create || !runStore?.get || !registry?.resolve || !registry?.get
     || !supervisor?.start || !eventHub?.publish || !eventHub?.subscribe
     || !eventHub?.replayState
-    || !logStore?.open || typeof clock !== 'function' || typeof onChange !== 'function') {
+    || !logStore?.open || typeof clock !== 'function' || typeof onChange !== 'function'
+    || typeof fileOpener !== 'function') {
     throw new TypeError('RunService dependencies are invalid')
   }
 
@@ -296,6 +299,7 @@ export function createRunService({
     steer,
     stop,
     conversation,
+    openFile: (id, path) => fileOpener(runStore.get(id), path),
     markReviewed: (id) => publicRun(runStore.markReviewed(id)),
     resumeTarget(id) {
       const run = runStore.get(id)

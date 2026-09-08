@@ -51,6 +51,9 @@ export function RunDetail({ api, run }: { api: DashboardApi; run: RunRecord }) {
     onMutate: () => setActionError(''),
     onError: (error) => setActionError(error instanceof Error ? error.message : 'Terminal 打开失败'),
   })
+  const fileOpen = useMutation({
+    mutationFn: (path: string) => api.openRunFile(run.id, path),
+  })
   const cancel = useMutation({
     mutationFn: () => api.cancelRun(run.id),
     onMutate: () => setActionError(''),
@@ -176,14 +179,32 @@ export function RunDetail({ api, run }: { api: DashboardApi; run: RunRecord }) {
         {run.file_changes.length ? (
           <ul className="run-detail__files">
             {run.file_changes.map((file) => (
-              <li key={`${file.kind}-${file.path}`}>
+              <li key={`${file.kind}-${file.path}`}
+                title={['delete', 'deleted', 'removed'].includes(file.kind) ? '文件已删除，无法打开' : file.path}>
                 <FileText aria-hidden="true" />
-                <code>{file.path}</code>
+                <Button
+                  className="run-detail__file-open"
+                  aria-label={`打开文件 ${file.path}`}
+                  isDisabled={fileOpen.isPending || ['delete', 'deleted', 'removed'].includes(file.kind)}
+                  size="xs"
+                  variant="quiet"
+                  onPress={() => fileOpen.mutate(file.path)}
+                ><code>{file.path}</code></Button>
                 <span>{file.kind}</span>
               </li>
             ))}
           </ul>
         ) : <p className="run-detail__empty">没有记录文件变更</p>}
+        {fileOpen.isPending || fileOpen.isSuccess ? (
+          <p className="run-detail__action-status" role="status">
+            {fileOpen.isPending ? '正在请求系统打开…' : `已请求系统打开：${fileOpen.data?.path}`}
+          </p>
+        ) : null}
+        {fileOpen.isError ? (
+          <p className="run-detail__action-error" role="alert">
+            {fileOpen.error instanceof Error ? fileOpen.error.message : '无法打开文件'}
+          </p>
+        ) : null}
       </section>
 
       <section className="run-detail__section">

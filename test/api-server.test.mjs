@@ -48,6 +48,51 @@ async function fixture(apiOverrides = {}) {
 
 const sseReaderStates = new WeakMap()
 
+test('Run file open requires same-origin JSON and forwards only run ID and recorded path', async () => {
+  const calls = []
+  const current = await fixture({
+    runService: { openFile: async (id, path) => { calls.push({ id, path }); return { opened: true, path } } },
+  })
+  try {
+    const url = `${current.url}/api/v1/runs/run%20one/files/open`
+    const body = JSON.stringify({ path: 'report #1.md' })
+    const result = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+    assert.equal(result.status, 200)
+    assert.deepEqual(await result.json(), { opened: true, path: 'report #1.md' })
+    assert.deepEqual(calls, [{ id: 'run one', path: 'report #1.md' }])
+    const wrongOrigin = await fetch(url, { method: 'POST', headers: {
+      'Content-Type': 'application/json', Origin: 'https://example.invalid',
+    }, body })
+    assert.equal(wrongOrigin.status, 403)
+    const form = await fetch(url, { method: 'POST', body })
+    assert.equal(form.status, 415)
+    const extra = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: 'report #1.md', command: 'unexpected' }),
+    })
+    assert.equal(extra.status, 400)
+    assert.equal(calls.length, 1)
+  } finally {
+    await current.cleanup()
+  }
+})
+
+test('Run file open preserves actionable file errors', async () => {
+  const current = await fixture({
+    runService: { openFile: async () => {
+      throw Object.assign(new Error('文件已不存在'), { code: 'RUN_FILE_NOT_FOUND', statusCode: 404 })
+    } },
+  })
+  try {
+    const result = await fetch(`${current.url}/api/v1/runs/run-one/files/open`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: 'missing.md' }),
+    })
+    assert.equal(result.status, 404)
+    assert.equal((await result.json()).error.message, '文件已不存在')
+  } finally {
+    await current.cleanup()
+  }
+})
+
 async function readSseEvent(reader) {
   let state = sseReaderStates.get(reader)
   if (!state) {
