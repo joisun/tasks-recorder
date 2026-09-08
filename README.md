@@ -346,4 +346,4 @@ npm run package:release
 
 ## License
 
-Tasks Recorder 采用 [GPL-2.0-only](LICENSE)。Dashboard bundle 使用 React、React DOM 与 SVAR React Gantt，第三方许可见 [ui/THIRD_PARTY_NOTICES.md](ui/THIRD_PARTY_NOTICES.md)；service bundle 见 [server/THIRD_PARTY_NOTICES.md](server/THIRD_PARTY_NOTICES.md)。
+Tasks Recorder 采用 [GPL-2.0-only](LICENSE)。默认 Dashboard bundle 使用 React 与 React DOM；随 release 打包的 Legacy 回滚界面使用 SVAR React Gantt。第三方许可见 [ui/THIRD_PARTY_NOTICES.md](ui/THIRD_PARTY_NOTICES.md)；service bundle 见 [server/THIRD_PARTY_NOTICES.md](server/THIRD_PARTY_NOTICES.md)。

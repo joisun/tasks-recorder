@@ -134,9 +134,11 @@ Definitions directory 切换是一个受控迁移：验证目标、迁移/合并
 
 Production `taskd` 明确读取自包含的 `ui/dist/react.html`。`ui/dist/index.html` 继续随 release 打包，仅用于回滚和迁移对照，不参与默认路由；source preview 与 installed runtime 因此使用同一 React entry 和同一 API contract。
 
-Tasks 视图仍由 SVAR React Gantt 统一拥有 Tree、Grid、Timeline 的行几何与横向时间窗口。React adapter 通过 SVAR 的 typed `render-data` interceptor 和 embedded Grid API 关闭两层纵向 row recycling，使当前 projection 的每一行在滚动期间保持稳定 DOM identity；这是为避免 Tree 与 Timeline 在 30px 行边界发生可见替换和抖动的明确取舍，而不是 CSS 或 DOM monkey patch。横向 Timeline virtualization 保持启用。
+React Tasks 使用单一原生 overflow 容器承载 Tree 与 Timeline，每个任务的两侧内容共享同一条 30px 行。任务列通过 sticky 固定在左侧；独立横向 scrollbar 仅通过 CSS 变量同步任务列位移。纵向滚动及 Timeline 横向滚动不得写入 React state 或触发数据投影、组件初始化。表头固定在顶部；列宽与分栏宽度独立调整。Workspace 列以用户设置宽度为下限，吸收左侧面板的剩余空间；其他列保持设置宽度，总列宽超出面板时横向滚动。键盘焦点进入被裁剪的任务列时统一调整列窗口，不允许单行独立横向位移。
 
-Dashboard snapshot、状态筛选与默认折叠共同约束实际挂载行数。若未来数据规模使完整纵向 projection 超出可接受的 render/scroll budget，应先以真实数据测量并更换支持 stable-row virtualization 的 renderer；不得重新启用当前双层 recycling 并接受视觉抖动。
+Dashboard snapshot、状态筛选与展开状态共同约束实际挂载行数；折叠子树不挂载，滚动不回收可见树的行节点。时间坐标与刻度由有界纯函数生成，每层至多 500 个刻度，按本地日历边界覆盖完整时间范围。计划基线、实际执行分段和短条外置标签使用同一坐标系。未来若任务规模超出完整行 DOM 的预算，须以真实数据测量后引入共享行窗口的 virtualization，并保持 Tree / Timeline 同行对齐。
+
+任务筛选与 Timeline projection 按 `tasks` 引用缓存；当任务无需 snapshot 时间 fallback 时，仅 revision、Inbox 或生成时间变化不得重建行投影。缺少自身 activity / update timestamp 的任务仍允许以 `generated_at` 作为时间范围 fallback。Grid cell 必须使用稳定的 React 组件类型，操作回调与 pending 状态通过 Context 更新，不得动态创建 cell component 触发 remount。
 
 ## Compatibility and migrations
 
