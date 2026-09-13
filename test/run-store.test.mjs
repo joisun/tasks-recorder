@@ -164,3 +164,12 @@ test('restart recovery interrupts open Runs and list omits private prompts', asy
     assert.equal(JSON.stringify(summary).includes(definition.prompt), false)
   })
 })
+
+test('Run snapshot retains Fast mode after its source definition changes', async (t) => {
+  await withStore(t, ({ store }) => {
+    const definition = schedule({ fast_mode: true })
+    const run = store.create({ schedule: definition, runtime_id: 'codex', origin: 'manual' })
+    definition.fast_mode = false
+    assert.equal(store.get(run.id).snapshot.fast_mode, true)
+  })
+})

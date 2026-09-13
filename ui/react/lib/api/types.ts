@@ -262,6 +262,7 @@ export interface ScheduleRecord {
   sandbox_mode: 'read-only' | 'workspace-write' | 'danger-full-access'
   model: string | null
   reasoning_effort: string | null
+  fast_mode?: boolean | null
   timeout_seconds: number
   capabilities: ScheduleCapabilities
   enabled: boolean
@@ -431,6 +432,7 @@ export interface ScheduleMutationInput {
   sandbox_mode: ScheduleRecord['sandbox_mode']
   model: string | null
   reasoning_effort: string | null
+  fast_mode?: boolean | null
   timeout_seconds: number
   capabilities: ScheduleCapabilities
 }

@@ -6,7 +6,7 @@ import { SchedulerError } from './scheduler-errors.mjs'
 
 const JOB_FIELDS = new Set([
   'title', 'prompt', 'workspace', 'agent', 'cadence', 'sandbox_mode', 'model',
-  'reasoning_effort', 'timeout_seconds', 'capabilities',
+  'reasoning_effort', 'fast_mode', 'timeout_seconds', 'capabilities',
 ])
 const SANDBOX_MODES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 const CAPABILITY_MODES = new Set(['inherit', 'disabled'])
@@ -63,6 +63,9 @@ export function createDefinitionScheduleService({
         REASONING,
         16,
       )
+    }
+    if (output.fast_mode != null && typeof output.fast_mode !== 'boolean') {
+      fail('SCHEDULE_INPUT_INVALID', 'fast_mode must be boolean or null', { field: 'fast_mode' })
     }
     if (!patch || own(output, 'timeout_seconds')) output.timeout_seconds = timeoutSeconds(output.timeout_seconds)
     if (!patch || own(output, 'capabilities')) {

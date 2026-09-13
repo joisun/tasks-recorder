@@ -441,3 +441,22 @@ test('Scheduler boundary keeps unavailable/log errors typed and rejects malforme
     await missingLog.close()
   }
 })
+
+test('Schedule API accepts Fast mode and exposes it in list/detail responses', async () => {
+  const current = await fixture({ schedulerService: {
+    listJobs: async () => ({ jobs: [job({ fast_mode: true })] }),
+    getJob: async () => ({ job: job({ fast_mode: false }) }),
+  } })
+  try {
+    assert.equal((await json(current.url, '/api/v1/schedules')).body.jobs[0].fast_mode, true)
+    assert.equal((await json(current.url, `/api/v1/schedules/${JOB_ID}`)).body.job.fast_mode, false)
+    for (const fast_mode of [true, false, null]) {
+      const created = await json(current.url, '/api/v1/schedules', { method: 'POST', body: { fast_mode } })
+      assert.equal(created.status, 200)
+      assert.deepEqual(current.calls.at(-1), ['create', { fast_mode }])
+      const updated = await json(current.url, `/api/v1/schedules/${JOB_ID}`, { method: 'PATCH', body: { expected_etag: ETAG, patch: { fast_mode } } })
+      assert.equal(updated.status, 200)
+      assert.deepEqual(current.calls.at(-1), ['update', JOB_ID, ETAG, { fast_mode }])
+    }
+  } finally { await current.close() }
+})

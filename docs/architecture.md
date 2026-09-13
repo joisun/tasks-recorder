@@ -178,3 +178,7 @@ git diff --check
 - source Dashboard 与 taskd API version/capability 不兼容时显式失败。
 - fake app-server E2E 必须覆盖 Run-specific SSE、mouse steer、Stop、terminal authoritative refresh 与 CLI-owned conversation read；runtime `turnId` 和 guidance 不得进入 Run response、SQLite 或 logs。
 - Schedule capability E2E 必须覆盖 Markdown/REST policy、immutable Run snapshot、integration argv overrides、Skill thread config、mixed policies与 Web Search 不受影响。
+
+### Schedule Fast mode
+
+Schedule Markdown 与 CRUD API 的可选 `fast_mode` 为 boolean 或 null，仅 Codex 支持显式 boolean。省略/null 继承运行时默认，true 开启，false 使用普通速度；旧 definition 无需迁移。Run 沿用完整不可变 snapshot 保存选择。Codex interactive adapter 将显式值映射为 `turn/start.serviceTier` 的 `fast` / `default`；CLI invocation 对应 `-c service_tier="fast"` / `"default"`，继承时不传覆盖值。不要用降低 reasoning effort 实现 Fast mode，也不要修改用户的全局 Codex 配置。

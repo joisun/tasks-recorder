@@ -310,3 +310,29 @@ test('Codex interactive session enforces the durable Run timeout', async () => {
   })
   assert.equal(client.closed, true)
 })
+
+test('Fast mode reaches the actual turn request as fast/default or inherits without an override', async () => {
+  for (const [fast_mode, tier] of [[true, 'fast'], [false, 'default'], [null, undefined], [undefined, undefined]]) {
+    const client = fakeClient()
+    const controller = new AbortController()
+    const factory = createCodexInteractiveSessionFactory({ createClient: () => client })
+    const session = factory.create({
+      launch: { executable: '/opt/tasks/bin/codex' },
+      run: { ...RUN, fast_mode },
+      signal: controller.signal,
+      emit() {},
+      onSpawn() {},
+    })
+    const completion = session.start()
+    try {
+      await new Promise((resolve) => setImmediate(resolve))
+      const turn = client.requests.find(({ method }) => method === 'turn/start')
+      assert.ok(turn)
+      assert.equal(turn.params.serviceTier, tier)
+      assert.equal(Object.hasOwn(turn.params, 'serviceTier'), tier !== undefined)
+    } finally {
+      controller.abort()
+      await completion
+    }
+  }
+})

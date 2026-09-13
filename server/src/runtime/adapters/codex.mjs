@@ -196,6 +196,7 @@ function invocationSnapshot(run) {
     sandbox_mode: run.sandbox_mode,
     model: run.model ?? null,
     reasoning_effort: run.reasoning_effort ?? null,
+    ...(run.fast_mode != null ? { fast_mode: run.fast_mode } : {}),
     timeout_seconds: run.timeout_seconds,
   }
 }

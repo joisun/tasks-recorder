@@ -38,11 +38,12 @@ async function canonicalDirectory(value) {
   } catch (error) { throw error?.code === 'CODEX_INVOCATION_INVALID' ? error : fail() }
 }
 function validateSnapshot(spec) {
-  if (!object(spec) || Object.keys(spec).length !== SPEC_KEYS.size || Object.keys(spec).some((key) => !SPEC_KEYS.has(key))) throw fail()
+  if (!object(spec) || [...SPEC_KEYS].some((key) => !Object.hasOwn(spec, key)) || Object.keys(spec).some((key) => !SPEC_KEYS.has(key) && key !== 'fast_mode')) throw fail()
   if (!string(spec.job_id, 36) || !UUID.test(spec.job_id) || !string(spec.definition_etag, 64) || !ETAG.test(spec.definition_etag)
     || !string(spec.title, 512) || !string(spec.prompt, 64 * 1024) || !validCadence(spec.cadence)
     || spec.timezone_mode !== 'system' || spec.thread_mode !== 'new' || !SANDBOXES.has(spec.sandbox_mode)
     || !Number.isSafeInteger(spec.timeout_seconds) || spec.timeout_seconds < 60 || spec.timeout_seconds > 86400) throw fail()
+  if (spec.fast_mode != null && typeof spec.fast_mode !== 'boolean') throw fail()
   if (spec.model !== null && (!string(spec.model, 128) || !isCodexModelSlug(spec.model))) throw fail()
   if (spec.reasoning_effort !== null && (!string(spec.reasoning_effort, 16) || !isCodexReasoningLevel(spec.reasoning_effort))) throw fail()
 }
@@ -57,6 +58,7 @@ export async function buildCodexInvocation(claimedSpec, { codexPath } = {}) {
   ]
   if (claimedSpec.model !== null) args.push('--model', claimedSpec.model)
   if (claimedSpec.reasoning_effort !== null) args.push('-c', `model_reasoning_effort="${claimedSpec.reasoning_effort}"`)
+  if (claimedSpec.fast_mode != null) args.push('-c', `service_tier="${claimedSpec.fast_mode ? 'fast' : 'default'}"`)
   args.push('-')
   return Object.freeze({ command, args: Object.freeze(args), cwd, stdin: claimedSpec.prompt, timeout_ms: claimedSpec.timeout_seconds * 1000 })
 }

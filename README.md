@@ -32,7 +32,7 @@ tasks-recorder status
 普通安装不需要 clone repository、`npm install` 或 `npm ci`。更谨慎的固定版本安装方式：
 
 ```bash
-version=v0.8.2
+version=v0.8.3
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -169,6 +169,8 @@ Review the repository health and summarize actionable risks.
 Dashboard 新建的 Schedule 默认使用 `disabled / disabled`，以获得最小、可预测的自动化上下文。已有 Markdown 未声明 `capabilities` 时保持兼容，按 `inherit / inherit` 读取。每个 Run 会把 policy 写入 immutable execution snapshot；执行期间不会改写全局 Codex 配置，也不需要重启 `taskd`。
 
 支持 `once`、`hourly`、`daily`、`weekly` 与 `monthly` cadence。Dashboard 的 Create/Edit/Pause/Resume 会 atomic rewrite Markdown，并用 SHA-256 `etag` 做 compare-and-set；Delete 把 definition 移到 `.trash/`。行级一次性 Run action 在执行期间会切换为 Stop；它与只控制周期调度的 Schedule pause/resume 是两套独立操作。
+
+Codex Schedule 支持 `fast_mode: true`（开启 Fast mode）、`false`（明确使用普通速度）；省略或 `null` 表示跟随 Codex 默认配置。Dashboard 的 Fast mode 选项与此对应。配置随 Run 快照保存，修改 Schedule 不会改变已创建的 Run。该选项仅适用于 Codex，实际可用性及用量规则由所选模型和账号决定。
 
 filesystem watcher 提供低延迟刷新，周期性 rescan 保证最终收敛。修改 Definitions directory 时，现有 definitions 会在同一个操作中安全迁移并切换 watcher，不需要重启 `taskd`。
 

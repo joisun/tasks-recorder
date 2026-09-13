@@ -1,7 +1,7 @@
 const DEFAULT_TIMEOUT_MS = 5_000
 const SCHEDULE_CREATE_FIELDS = Object.freeze([
   'title', 'prompt', 'workspace', 'cadence', 'sandbox_mode', 'model',
-  'reasoning_effort', 'timeout_seconds',
+  'reasoning_effort', 'fast_mode', 'timeout_seconds',
 ])
 const SCHEDULE_PATCH_FIELDS = Object.freeze([...SCHEDULE_CREATE_FIELDS, 'next_run_at'])
 const RUN_STEER_FIELDS = Object.freeze(['expected_turn_revision', 'text'])

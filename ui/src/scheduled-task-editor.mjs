@@ -194,6 +194,7 @@ export function normalizeDraft(input = {}) {
     dangerConfirmed: source.dangerConfirmed === true,
     model,
     reasoning_effort: reasoning,
+    ...(source.fast_mode != null ? { fast_mode: source.fast_mode === true || source.fast_mode === 'on' ? 'on' : source.fast_mode === false || source.fast_mode === 'off' ? 'off' : '' } : {}),
     timeout_seconds: String(Number.isSafeInteger(timeout) && timeout >= 60 && timeout <= 86400 ? timeout : 7200),
   }
 }
@@ -262,6 +263,7 @@ export function draftToPayload(draft = {}, { modelCatalog = [] } = {}) {
     sandbox_mode: sandboxMode,
     model: model || null,
     reasoning_effort: reasoningEffort || null,
+    ...(Object.hasOwn(source, 'fast_mode') ? { fast_mode: source.agent !== 'codex' || !source.fast_mode ? null : source.fast_mode === 'on' } : {}),
     timeout_seconds: integer(source.timeout_seconds, 'timeout_seconds', 60, 86_400),
   }
 }
@@ -329,6 +331,7 @@ function sandboxControls(draft, disabled, modelCatalog, modelCatalogState, runti
     <div class="schedule-editor-advanced">
       <label class="schedule-editor-field"><span>Model</span><select name="model"${catalogControlUnavailable}><option value=""${selectedOption(draft.model, '')}>Scheduler default</option>${modelMissing ? `<option value="${escapeHtml(draft.model)}" selected>${escapeHtml(draft.model)} · unavailable</option>` : ''}${modelOptions}</select></label>
       <label class="schedule-editor-field"><span>Reasoning</span><select name="reasoning_effort"${catalogControlUnavailable}><option value=""${selectedOption(draft.reasoning_effort, '')}>Scheduler default</option>${reasoningMissing ? `<option value="${escapeHtml(draft.reasoning_effort)}" selected>${escapeHtml(draft.reasoning_effort)} · unavailable</option>` : ''}${reasoningOptions}</select></label>
+      ${draft.agent === 'codex' ? `<label class="schedule-editor-field"><span>Fast mode</span><select name="fast_mode"${unavailable}><option value=""${selectedOption(draft.fast_mode ?? '', '')}>跟随 Codex 默认</option><option value="on"${selectedOption(draft.fast_mode, 'on')}>开启</option><option value="off"${selectedOption(draft.fast_mode, 'off')}>关闭（普通速度）</option></select></label>` : ''}
       <label class="schedule-editor-field"><span>Timeout (seconds)</span><input name="timeout_seconds" type="number" min="60" max="86400" value="${escapeHtml(draft.timeout_seconds)}"${unavailable}></label>
     </div>
     <p class="schedule-editor-note" data-model-catalog-state="${escapeHtml(modelCatalogState)}">${escapeHtml(catalogNote)}</p>
@@ -624,6 +627,7 @@ export function createScheduledTaskEditor({
     if (event.target.name === 'agent') {
       state.draft.model = ''
       state.draft.reasoning_effort = ''
+      state.draft.fast_mode = ''
       state.modelCatalog = []
       state.modelCatalogState = 'loading'
       const request = ++state.requestSequence

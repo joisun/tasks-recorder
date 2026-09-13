@@ -15,7 +15,7 @@ const FRONT_MATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*
 const MARKER = /^type:\s*["']?tasks-recorder\/schedule["']?\s*(?:#.*)?$/m
 const FIELDS = new Set([
   'type', 'id', 'title', 'enabled', 'workspace', 'agent', 'schedule', 'capabilities',
-  'sandbox', 'model', 'reasoning', 'timeout',
+  'sandbox', 'model', 'reasoning', 'fast_mode', 'timeout',
 ])
 const SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 const CAPABILITY_MODES = new Set(['inherit', 'disabled'])
@@ -190,6 +190,12 @@ export function parseScheduleDefinition(source, {
   if (frontMatter.enabled !== undefined && typeof frontMatter.enabled !== 'boolean') {
     fail('SCHEDULE_DEFINITION_INVALID', 'enabled must be boolean', { field: 'enabled' })
   }
+  if (frontMatter.fast_mode != null && typeof frontMatter.fast_mode !== 'boolean') {
+    fail('SCHEDULE_DEFINITION_INVALID', 'fast_mode must be boolean or null', { field: 'fast_mode' })
+  }
+  if (frontMatter.fast_mode != null && agentId(frontMatter.agent) !== 'codex') {
+    fail('SCHEDULE_DEFINITION_INVALID', 'fast_mode is only supported by Codex', { field: 'fast_mode' })
+  }
   const sandbox = frontMatter.sandbox ?? 'read-only'
   if (!SANDBOXES.has(sandbox)) fail('SCHEDULE_DEFINITION_INVALID', 'sandbox is not supported', { field: 'sandbox' })
   const prompt = match[2].trim()
@@ -207,6 +213,7 @@ export function parseScheduleDefinition(source, {
     sandbox_mode: sandbox,
     model: optionalCodexSelection(frontMatter.model, 'model', isCodexModelSlug, 128),
     reasoning_effort: optionalCodexSelection(frontMatter.reasoning, 'reasoning', isCodexReasoningLevel, 16),
+    ...(frontMatter.fast_mode != null ? { fast_mode: frontMatter.fast_mode } : {}),
     timeout_seconds: timeoutSeconds(frontMatter.timeout),
     capabilities: capabilities(frontMatter.capabilities),
     thread_mode: 'new',
@@ -239,6 +246,12 @@ export function serializeScheduleDefinition(job, { clock = () => new Date() } = 
   }
   if (value.reasoning_effort !== undefined && value.reasoning_effort !== null) {
     frontMatter.reasoning = optionalCodexSelection(value.reasoning_effort, 'reasoning', isCodexReasoningLevel, 16)
+  }
+  if (value.fast_mode != null) {
+    if (typeof value.fast_mode !== 'boolean' || frontMatter.agent !== 'codex') {
+      fail('SCHEDULE_DEFINITION_INVALID', 'fast_mode requires Codex and a boolean value', { field: 'fast_mode' })
+    }
+    frontMatter.fast_mode = value.fast_mode
   }
   frontMatter.timeout = duration(timeoutSeconds(value.timeout_seconds))
   const prompt = string(value.prompt, 'prompt', 20000)

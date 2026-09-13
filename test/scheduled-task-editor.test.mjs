@@ -326,3 +326,12 @@ test('Schedule Editor saves the bounded payload with the fetched etag, then refr
     globalThis.document = originalDocument
   }
 })
+
+test('legacy editor preserves Fast mode across rendering and sends all three choices', () => {
+  for (const [value, choice] of [[true, 'on'], [false, 'off'], [null, '']]) {
+    const draft = normalizeDraft({ title: 'Review', prompt: 'Review files', workspace: '/tmp/project', fast_mode: value })
+    draft.fast_mode ??= ''
+    assert.equal(normalizeDraft(draft).fast_mode, choice)
+    assert.equal(draftToPayload(draft).fast_mode, value)
+  }
+})

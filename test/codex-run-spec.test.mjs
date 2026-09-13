@@ -63,3 +63,14 @@ test('accepts only the exact Task2 snapshot shape and keeps Codex machine config
     await assert.rejects(buildCodexInvocation(current.spec, { codexPath: 'codex' }), { code: 'CODEX_INVOCATION_INVALID' })
   } finally { await current.cleanup() }
 })
+
+test('Fast mode explicitly overrides CLI speed while old snapshots inherit', async () => {
+  const current = await fixture()
+  try {
+    for (const [fast_mode, tier] of [[true, 'fast'], [false, 'default']]) {
+      const invocation = await buildCodexInvocation({ ...current.spec, fast_mode }, { codexPath: current.codexPath })
+      assert.deepEqual(invocation.args.slice(-3), ['-c', `service_tier="${tier}"`, '-'])
+    }
+    await assert.rejects(buildCodexInvocation({ ...current.spec, fast_mode: 'true' }, { codexPath: current.codexPath }), { code: 'CODEX_INVOCATION_INVALID' })
+  } finally { await current.cleanup() }
+})

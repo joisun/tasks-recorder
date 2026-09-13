@@ -169,6 +169,7 @@ function createSession({
         cwd: run.workspace,
         model: run.model,
         effort: run.reasoning_effort,
+        serviceTier: run.fast_mode == null ? undefined : run.fast_mode ? 'fast' : 'default',
       }))
       const startedTurnId = startedTurn?.turn?.id
       if (typeof startedTurnId !== 'string' || startedTurnId.length === 0) {

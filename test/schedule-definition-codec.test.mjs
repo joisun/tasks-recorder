@@ -157,3 +157,18 @@ prompt
 `), /front matter|yaml/i)
   assert.throws(() => parseScheduleDefinition(DAILY.replace('at: "09:05"', 'at: "25:00"')), /schedule\.at/i)
 })
+
+test('Fast mode preserves explicit on/off, inherits when absent, and rejects invalid definitions', () => {
+  const base = parseScheduleDefinition(DAILY)
+  assert.equal(base.fast_mode, undefined)
+  for (const fast_mode of [true, false]) {
+    const source = serializeScheduleDefinition({ ...base, fast_mode })
+    assert.equal(parseScheduleDefinition(source).fast_mode, fast_mode)
+  }
+  assert.equal(parseScheduleDefinition(serializeScheduleDefinition({ ...base, fast_mode: null })).fast_mode, undefined)
+  for (const fast_mode of ['true', 1, {}]) {
+    assert.throws(() => serializeScheduleDefinition({ ...base, fast_mode }), /fast_mode/)
+  }
+  assert.throws(() => parseScheduleDefinition(DAILY.replace('timeout: 2h', 'fast_mode: "true"\ntimeout: 2h')), /fast_mode/)
+  assert.throws(() => serializeScheduleDefinition({ ...base, agent: 'other', fast_mode: true }), /fast_mode/)
+})

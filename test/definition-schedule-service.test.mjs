@@ -105,3 +105,14 @@ test('definition Schedule service rejects an unknown agent before writing Markdo
     await rm(workspace, { recursive: true, force: true })
   }
 })
+
+test('Schedule service validates Fast mode before persisting changes', async () => {
+  const definitions = repository([{ id: ID, enabled: true, cadence: { kind: 'daily', hour: 9, minute: 0 } }])
+  const service = createDefinitionScheduleService({ definitions, runtimeRegistry: { get: () => ({ id: 'codex' }) } })
+  for (const fast_mode of [true, false, null]) {
+    assert.equal((await service.updateJob(ID, 'a'.repeat(64), { fast_mode })).job.fast_mode, fast_mode)
+  }
+  for (const fast_mode of ['true', 1, {}]) {
+    await assert.rejects(service.updateJob(ID, 'a'.repeat(64), { fast_mode }), { code: 'SCHEDULE_INPUT_INVALID' })
+  }
+})
