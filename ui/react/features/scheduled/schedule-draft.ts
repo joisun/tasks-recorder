@@ -29,6 +29,7 @@ export interface ScheduleDraft {
   model: string
   reasoning_effort: string
   fast_mode: '' | 'on' | 'off'
+  network_access: '' | 'on' | 'off'
   timeout_seconds: string
   loadSkills: boolean
   loadIntegrations: boolean
@@ -98,7 +99,7 @@ export function defaultScheduleDraft(): ScheduleDraft {
     title: '', prompt: '', workspace: '', agent: 'codex', cadenceKind: 'daily',
     onceAt: '', minute: '0', hour: '9', weekdays: [1], day: '1',
     sandbox_mode: 'read-only', dangerConfirmed: false, model: '',
-    reasoning_effort: '', fast_mode: '', timeout_seconds: '7200',
+    reasoning_effort: '', fast_mode: '', network_access: '', timeout_seconds: '7200',
     loadSkills: false, loadIntegrations: false,
   }
 }
@@ -127,6 +128,7 @@ export function scheduleToDraft(source: Partial<ScheduleRecord> = {}): ScheduleD
       : 'read-only',
     model: safeModelSlug(source.model),
     reasoning_effort: safeReasoningLevel(source.reasoning_effort),
+    network_access: source.network_access == null ? '' : source.network_access ? 'on' : 'off',
     fast_mode: source.fast_mode == null ? '' : source.fast_mode ? 'on' : 'off',
     timeout_seconds: String(Number.isSafeInteger(source.timeout_seconds)
       && Number(source.timeout_seconds) >= 60 && Number(source.timeout_seconds) <= 86_400
@@ -219,6 +221,7 @@ export function draftToScheduleInput(
     sandbox_mode: draft.sandbox_mode,
     model: model || null,
     reasoning_effort: reasoningEffort || null,
+    network_access: draft.agent !== 'codex' || !draft.network_access ? null : draft.network_access === 'on',
     fast_mode: draft.agent !== 'codex' || !draft.fast_mode ? null : draft.fast_mode === 'on',
     timeout_seconds: integer(draft.timeout_seconds, 'Timeout', 60, 86_400),
     capabilities: {

@@ -159,7 +159,10 @@ function createSession({
         approvalPolicy: 'never',
         sandbox: run.sandbox_mode,
         ephemeral: false,
-        config: threadConfig,
+        config: run.network_access == null ? threadConfig : {
+          ...threadConfig,
+          'sandbox_workspace_write.network_access': run.network_access,
+        },
       }))
       if (settled) return completion
       threadId = startedThread?.thread?.id
@@ -233,7 +236,12 @@ function createSession({
     unsubscribe()
     unsubscribeClosed()
     client?.close()
-    resolveCompletion(result)
+    resolveCompletion({
+      ...result,
+      session_id: threadId ?? result.session_id,
+      final_message: result.final_message ?? (finalMessage || null),
+      file_changes: [...fileChanges.values()],
+    })
   }
 
   return Object.freeze({

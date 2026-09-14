@@ -151,6 +151,7 @@ export function createDashboardDevGateway({ host, port, upstream, getHtml } = {}
         upstreamResponse.statusCode ?? 502,
         responseHeaders(upstreamResponse.headers),
       )
+      response.flushHeaders()
       upstreamResponse.pipe(response)
     })
     upstreamRequests.add(upstreamRequest)

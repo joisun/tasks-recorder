@@ -18,6 +18,7 @@ export const queryKeys = {
   schedules: ['dashboard', 'schedules'] as const,
   schedule: (id: string) => ['dashboard', 'schedules', id] as const,
   runs: (scheduleId: string) => ['dashboard', 'schedules', scheduleId, 'runs'] as const,
+  allRuns: ['dashboard', 'runs'] as const,
   run: (runId: string) => ['dashboard', 'runs', runId] as const,
   runConversation: (runId: string) => ['dashboard', 'runs', runId, 'conversation'] as const,
   runLog: (runId: string, stream: 'stdout' | 'stderr') => (

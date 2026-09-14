@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Clipboard, FileText, Square, Terminal } from 'lucide-react'
+import { Check, Clipboard, FileText, RefreshCw, Square, Terminal } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -144,6 +144,7 @@ export function RunDetail({ api, run }: { api: DashboardApi; run: RunRecord }) {
             <h3>Session 对话</h3>
             <div className="live-session__header-actions">
               <span>{conversation.data?.truncated ? '仅展示最近消息' : 'Codex 本地 Session'}</span>
+              {conversation.isError && <Button size="xs" variant="quiet" isPending={conversation.isFetching} onPress={() => void conversation.refetch()}><RefreshCw aria-hidden="true" />重新读取</Button>}
               {!run.reviewed_at ? (
                 <Button size="xs" variant="quiet" isPending={reviewed.isPending} onPress={() => reviewed.mutate()}>
                   <Check aria-hidden="true" />标记已读
@@ -170,7 +171,7 @@ export function RunDetail({ api, run }: { api: DashboardApi; run: RunRecord }) {
       {run.error_code ? (
         <section className="run-detail__section">
           <div className="run-detail__section-heading"><h3>错误</h3></div>
-          <code className="run-detail__error">{run.error_code === 'RUNTIME_PROTOCOL_CLOSED' ? 'Codex 执行连接已关闭，本次任务已结束。可查看退出码后重新运行。' : run.error_code}</code>
+          <code className="run-detail__error">{run.error_code === 'RUNTIME_PROTOCOL_CLOSED' ? 'Codex 执行连接已关闭，本次任务已结束。可查看退出码后重新运行。' : run.error_code === 'RUNTIME_PROTOCOL_FRAME_TOO_LARGE' ? 'Codex 单条消息超过接收上限，本次运行已中断。Session 已保留时可在 Terminal 恢复。' : run.error_code === 'RUNTIME_TIMEOUT' ? '执行超过任务设置的时间上限。请检查超时配置，或从已保存的 Session 继续。' : run.error_code}</code>
         </section>
       ) : null}
 
@@ -215,11 +216,12 @@ export function RunDetail({ api, run }: { api: DashboardApi; run: RunRecord }) {
             <Button aria-label="复制 Session ID" isIconOnly size="xs" variant="quiet" onPress={() => void copySession()}>
               {copied ? <Check aria-hidden="true" /> : <Clipboard aria-hidden="true" />}
             </Button>
-            <Button size="xs" variant="secondary" isPending={resume.isPending} onPress={() => resume.mutate()}>
+            <Button size="xs" variant="secondary" isPending={resume.isPending} isDisabled={active} onPress={() => resume.mutate()}>
               <Terminal aria-hidden="true" />Terminal Resume
             </Button>
           </div>
-        ) : <p className="run-detail__empty">没有可恢复的 Session</p>}
+        ) : <p className="run-detail__empty">{active ? '等待 Codex 创建 Session…' : '任务在创建 Session 前结束，无法恢复；可重新运行。'}</p>}
+        {active && run.thread_id ? <p className="run-detail__empty">Session 已保存，运行结束后可在 Terminal 恢复。</p> : null}
         {resume.isSuccess ? <p className="run-detail__action-status">Terminal 已打开</p> : null}
         {actionError ? <p className="run-detail__action-error" role="alert">{actionError}</p> : null}
       </section>

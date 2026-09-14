@@ -173,3 +173,17 @@ test('Run snapshot retains Fast mode after its source definition changes', async
     assert.equal(store.get(run.id).snapshot.fast_mode, true)
   })
 })
+
+
+test('session identity is durable before completion and survives restart recovery', async (t) => {
+  await withStore(t, ({ store }) => {
+    const run = store.create({ schedule: schedule({ network_access: true }), runtime_id: 'codex', origin: 'manual', idempotency_key: 'durable-session' })
+    store.markRunning(run.id, { pid: 123 })
+    store.recordSession(run.id, 'thread-durable')
+    assert.equal(store.get(run.id).session_id, 'thread-durable')
+    assert.equal(store.get(run.id).snapshot.network_access, true)
+    store.interruptOpen()
+    assert.equal(store.get(run.id).session_id, 'thread-durable')
+    assert.equal(store.get(run.id).status, 'interrupted')
+  })
+})

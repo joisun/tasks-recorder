@@ -176,6 +176,7 @@ export function useLiveRun({
   retryMs?: number
 }) {
   const [state, setState] = useState(() => initialState(run))
+  const reconnectHandler = useRef<() => void>(() => {})
   const terminalHandler = useRef(onTerminal)
   terminalHandler.current = onTerminal
   const active = run.interactive && ACTIVE_STATUSES.has(run.status)
@@ -210,10 +211,27 @@ export function useLiveRun({
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let latestSequence = 0
     let stopped = false
+    let hasConnected = false
 
     const closeSource = () => {
       source?.close()
       source = null
+    }
+
+    const reconcile = async () => {
+      try {
+        const { run: latest } = await api.scheduledRun(run.id)
+        if (stopped) return
+        if (TERMINAL_STATUSES.has(latest.status)) {
+          stopped = true
+          if (retryTimer !== null) clearTimeout(retryTimer)
+          closeSource()
+          setState((value) => ({ ...value, connection: 'closed', stopping: false }))
+          terminalHandler.current?.(latest.status)
+        }
+      } catch {
+        // The stream retry remains responsible for temporary network failures.
+      }
     }
 
     const connect = () => {
@@ -225,6 +243,8 @@ export function useLiveRun({
       current.addEventListener('open', () => {
         if (source === current && !stopped) {
           setState((value) => ({ ...value, connection: 'connected' }))
+          if (hasConnected) void reconcile()
+          hasConnected = true
         }
       })
       current.addEventListener('reset', ((message: MessageEvent<string>) => {
@@ -235,6 +255,7 @@ export function useLiveRun({
         } catch {
           return
         }
+        latestSequence = 0
         setState((value) => ({
           ...value,
           entries: [],
@@ -249,7 +270,14 @@ export function useLiveRun({
         const sequence = Number(message.lastEventId || event.sequence)
         if (!Number.isSafeInteger(sequence) || sequence <= latestSequence || event.sequence !== sequence) return
         latestSequence = sequence
-        setState((value) => applyLiveRunEvent(value, event))
+        setState((value) => {
+          const next = applyLiveRunEvent(value, event)
+          return next.entries.length <= 500 ? next : {
+            ...next,
+            entries: next.entries.slice(-500),
+            resetNotice: '实时窗口仅保留最近 500 条消息；运行结束后可读取完整 Session。',
+          }
+        })
         if (event.type !== 'status') return
         const status = stringPayload(event.payload, 'state') as RunStatus | null
         if (!status || !TERMINAL_STATUSES.has(status)) return
@@ -262,6 +290,7 @@ export function useLiveRun({
         if (source !== current || stopped) return
         closeSource()
         setState((value) => ({ ...value, connection: 'disconnected' }))
+        void reconcile()
         retryTimer = setTimeout(() => {
           retryTimer = null
           connect()
@@ -269,13 +298,21 @@ export function useLiveRun({
       })
     }
 
+    reconnectHandler.current = () => {
+      if (stopped) return
+      if (retryTimer !== null) clearTimeout(retryTimer)
+      retryTimer = null
+      closeSource()
+      connect()
+    }
     connect()
     return () => {
+      reconnectHandler.current = () => {}
       stopped = true
       if (retryTimer !== null) clearTimeout(retryTimer)
       closeSource()
     }
-  }, [active, createSource, retryMs, run.id])
+  }, [active, api, createSource, retryMs, run.id])
 
   const setDraft = (draft: string) => setState((current) => ({ ...current, draft }))
 
@@ -286,7 +323,7 @@ export function useLiveRun({
     setState((current) => ({ ...current, submitting: true, controlError: '' }))
     try {
       await api.steerRun(run.id, { expected_turn_revision: state.turnRevision, text })
-      setState((current) => ({ ...current, draft: '', submitting: false }))
+      setState((current) => ({ ...current, draft: current.draft === state.draft ? '' : current.draft, submitting: false }))
     } catch (error) {
       setState((current) => ({ ...current, submitting: false, controlError: controlError(error) }))
     }
@@ -308,6 +345,7 @@ export function useLiveRun({
     canSteer: active && state.connection === 'connected' && Boolean(state.turnRevision)
       && Boolean(state.draft.trim()) && !state.submitting,
     canStop: active && Boolean(state.turnRevision) && !state.stopping,
+    reconnect: () => reconnectHandler.current(),
     setDraft,
     steer,
     stop,

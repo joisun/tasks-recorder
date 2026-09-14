@@ -163,6 +163,15 @@ export function createRunStore({
     })
   }
 
+  function recordSession(id, sessionId) {
+    const run = requireRun(id)
+    const value = optionalString(sessionId, 'session_id')
+    if (!value || !OPEN_STATUSES.has(run.status)) return publicRun(run)
+    db.prepare('UPDATE scheduled_runs SET session_id = ?, updated_at = ? WHERE id = ?')
+      .run(value, nowIso(clock), run.id)
+    return publicRun(requireRun(id))
+  }
+
   function complete(id, input = {}) {
     if (!TERMINAL_STATUSES.has(input.status)) {
       throw runtimeError('RUN_INPUT_INVALID', 'completion status must be terminal')
@@ -181,7 +190,7 @@ export function createRunStore({
         WHERE id = ?
       `).run(
         input.status,
-        optionalString(input.session_id, 'session_id'),
+        optionalString(input.session_id ?? run.session_id, 'session_id'),
         timestamp,
         exitCode,
         optionalString(input.error_code, 'error_code'),
@@ -289,6 +298,7 @@ export function createRunStore({
   return Object.freeze({
     create,
     markRunning,
+    recordSession,
     complete,
     cancelQueued,
     interruptOpen,

@@ -278,3 +278,28 @@ test('pipe error terminates the lifecycle and rejects pending startup and reques
   assert.equal(closes, 1)
   assert.deepEqual(child.kills, ['SIGINT'])
 })
+
+
+test('large legitimate tool notifications survive chunk boundaries and preserve following RPC responses', async (t) => {
+  const child = fakeChildProcess()
+  const client = createCodexAppServerClient({ executable: '/bin/codex', cwd: '/tmp', spawnImpl: () => child })
+  t.after(() => client.close())
+  const notifications = []
+  client.onNotification((event) => notifications.push(event))
+  const result = client.request('thread/read')
+  const data = Buffer.from(JSON.stringify({ method: 'item/completed', params: { text: '中'.repeat(500_000) } }) + '\n' + JSON.stringify({ id: 1, result: { ok: true } }) + '\n')
+  for (let offset = 0; offset < data.length; offset += 65536) child.stdout.write(data.subarray(offset, offset + 65536))
+  assert.deepEqual(await result, { ok: true })
+  assert.equal(notifications[0].params.text.length, 500_000)
+  assert.equal(client.closed, false)
+})
+
+
+test('legacy Codex unknown pagination method maps to the bounded history fallback', async (t) => {
+  const child = fakeChildProcess()
+  const client = createCodexAppServerClient({ executable: '/bin/codex', cwd: '/tmp', spawnImpl: () => child })
+  t.after(() => client.close())
+  const pending = client.request('thread/items/list', { threadId: 'thread' })
+  child.stdout.write(JSON.stringify({ id: 1, error: { code: -32600, message: 'Invalid request: unknown variant `thread/items/list`, expected one of `thread/read`' } }) + '\n')
+  await assert.rejects(pending, { code: 'RUNTIME_PROTOCOL_METHOD_UNAVAILABLE' })
+})

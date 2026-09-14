@@ -176,6 +176,15 @@ export function ScheduledView({
         <div className="scheduled-definition-errors" role="alert">
           <strong>{data.invalid.length} 个 definition 未启用</strong>
           <span>修复 Markdown 后会自动重新读取。</span>
+          <details>
+            <summary>查看文件与错误原因</summary>
+            <ul>{data.invalid.map((definition, index) => (
+              <li key={definition.source_path ?? definition.path ?? index}>
+                <code>{definition.source_path ?? definition.path ?? definition.title ?? '未知文件'}</code>
+                <span>{definition.message ?? definition.error_code ?? definition.code ?? '定义无效'}</span>
+              </li>
+            ))}</ul>
+          </details>
         </div>
       ) : null}
       {mutationError ? <div className="scheduled-mutation-error" role="alert">{mutationError}</div> : null}

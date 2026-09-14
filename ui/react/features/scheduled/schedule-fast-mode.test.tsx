@@ -44,3 +44,11 @@ it('edits an enabled Fast mode to ordinary speed and saves false', async () => {
   await user.click(screen.getByRole('button', { name: '保存计划' }))
   await waitFor(() => expect(api.updateSchedule).toHaveBeenCalledWith(job.id, job.etag, expect.objectContaining({ fast_mode: false })))
 })
+
+
+it.each([['', null], ['on', true], ['off', false]] as const)('round-trips sandbox network policy %s independently from Fast mode', (choice, value) => {
+  const input = draftToScheduleInput({ ...defaultScheduleDraft(), title: 'Network', prompt: 'Fetch sources', workspace: '/tmp/project', network_access: choice, fast_mode: 'off' })
+  expect(input.network_access).toBe(value)
+  expect(input.fast_mode).toBe(false)
+  expect(scheduleToDraft(input).network_access).toBe(choice)
+})

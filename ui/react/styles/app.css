@@ -2274,7 +2274,7 @@
 
 .live-session__conversation {
   min-height: 220px;
-  max-height: 420px;
+  max-height: min(60vh, 680px);
   background: var(--surface-0);
 }
 
@@ -2284,9 +2284,11 @@
 }
 
 .live-session__message {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text-primary);
-  font-size: 10.5px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .live-session__message :where(p, ul, ol, pre, table, blockquote) {
@@ -2658,7 +2660,12 @@
     grid-column: auto;
   }
 
+  [role="presentation"]:has(> .run-review-drawer) {
+    padding-inline: 0;
+  }
+
   .run-review-drawer {
+    max-width: calc(100vw - 12px) !important;
     width: calc(100vw - 12px) !important;
     height: calc(100% - 12px) !important;
     margin: 6px;
@@ -2678,4 +2685,46 @@
   .run-detail__summary dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.live-session__prompt-summary {
+  cursor: pointer;
+  padding-block: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 680px) {
+  .live-session__conversation {
+    min-height: 180px;
+    max-height: 40dvh;
+  }
+  .live-session__content {
+    padding-inline: 10px;
+  }
+}
+
+.schedule-editor__hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.scheduled-definition-errors {
+  flex-wrap: wrap;
+}
+.scheduled-definition-errors details {
+  min-width: 0;
+  width: 100%;
+}
+.scheduled-definition-errors summary {
+  cursor: pointer;
+}
+.scheduled-definition-errors li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
 }

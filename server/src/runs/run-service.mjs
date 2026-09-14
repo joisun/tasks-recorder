@@ -62,6 +62,10 @@ export function createRunService({
       })
       let sequence = sequences.get(runId) ?? 0
       const emitEvent = (event) => {
+        if (event.type === 'session' && event.payload.session_id) {
+          runStore.recordSession?.(runId, event.payload.session_id)
+          changed(runId)
+        }
         sequences.set(runId, Math.max(sequences.get(runId) ?? 0, event.sequence))
         eventHub.publish(event)
       }
@@ -291,6 +295,9 @@ export function createRunService({
         turn_revision: execution?.turnRevision ?? null,
       }
     }),
+    latestRun(scheduleId) {
+      return runStore.list({ schedule_id: scheduleId, limit: 1 })[0] ?? null
+    },
     latestOccurrence(scheduleId) {
       return runStore.list({ schedule_id: scheduleId, limit: 100 })
         .find(({ occurrence_key: occurrenceKey }) => occurrenceKey !== null) ?? null
@@ -303,6 +310,9 @@ export function createRunService({
     markReviewed: (id) => publicRun(runStore.markReviewed(id)),
     resumeTarget(id) {
       const run = runStore.get(id)
+      if (['queued', 'running'].includes(run.status)) {
+        throw serviceError('SCHEDULE_RUN_ACTIVE', 'Wait for the active Run to finish before resuming its session')
+      }
       return {
         run_id: run.id,
         schedule_id: run.schedule_id,

@@ -32,7 +32,7 @@ tasks-recorder status
 普通安装不需要 clone repository、`npm install` 或 `npm ci`。更谨慎的固定版本安装方式：
 
 ```bash
-version=v0.8.4
+version=v0.8.5
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -128,7 +128,9 @@ macOS 上可以点击 Run「产出文件」中的文件名，用本机默认应�
 
 打开一个正在运行的 Codex Run，Run Review 会显示 Live Session：assistant message delta 与安全的 activity 摘要按发生顺序更新。输入追加指令后，Dashboard 只提交 Run ID、`expected_turn_revision` 和最多 16 KiB 的 text；`taskd` 使用私有 `turnId` 调用 `turn/steer`。Stop 同样只提交 Run ID 与 revision，并映射到 `turn/interrupt`。
 
-Live Session 只干预当前 active Turn，不在 Dashboard 内创建第二轮对话。Run 结束后，页面会重新读取 authoritative terminal Run，并通过 Codex `thread/read` 从本机 Codex-owned session 临时取得 user/assistant messages；Tasks Recorder 不复制或持久化这份 transcript。需要继续多轮对话时使用 Terminal Resume。
+Live Session 断线后自动重连，也可点击“重新连接”；连接恢复会补读任务状态，避免错过结束事件。最近 500 条实时消息保留在窗口内，发送期间继续输入的文字不会被清空。Scheduled 列表、执行历史和详情会随服务端事件更新，连接恢复后会同步补读。
+
+Live Session 只干预当前 active Turn，不在 Dashboard 内创建第二轮对话。Run 结束后，页面会重新读取 authoritative terminal Run，并通过 Codex 原生分页接口从本机 Codex-owned session 临时取得 user/assistant messages（旧 CLI 回退为有容量上限的 `thread/read`）；Tasks Recorder 不复制或持久化这份 transcript。需要继续多轮对话时使用 Terminal Resume。Session ID 在创建时立即保存，超时、取消、连接异常或服务重启后仍可恢复已创建的会话；运行结束前不开放 Terminal Resume。历史对话读取失败时可点击“重新读取”。
 
 实时 message、guidance、reasoning 与 tool payload 不写入 SQLite 或普通日志。历史读取只向 loopback browser 返回可展示的 `userMessage` / `agentMessage`，不返回 reasoning、tool arguments/results 或 command output；本机 Codex session 被删除后，页面明确回退到 Run `final_message`。Run ledger 只保留既有 terminal facts；browser 不接触 runtime `turnId`、executable、argv 或 shell command。Run SSE 是 bounded memory replay，缓冲过期时页面明确 reset，并仍可读取 terminal facts。
 
@@ -171,6 +173,9 @@ Dashboard 新建的 Schedule 默认使用 `disabled / disabled`，以获得最�
 支持 `once`、`hourly`、`daily`、`weekly` 与 `monthly` cadence。Dashboard 的 Create/Edit/Pause/Resume 会 atomic rewrite Markdown，并用 SHA-256 `etag` 做 compare-and-set；Delete 把 definition 移到 `.trash/`。行级一次性 Run action 在执行期间会切换为 Stop；它与只控制周期调度的 Schedule pause/resume 是两套独立操作。
 
 Codex Schedule 支持 `fast_mode: true`（开启 Fast mode）、`false`（明确使用普通速度）；省略或 `null` 表示跟随 Codex 默认配置。Dashboard 的 Fast mode 选项与此对应。配置随 Run 快照保存，修改 Schedule 不会改变已创建的 Run。该选项仅适用于 Codex，实际可用性及用量规则由所选模型和账号决定。
+
+Codex 的 `workspace-write` 只表示文件写入权限，不等于允许联网。联网采集任务可显式设置 `network_access: true`；`false` 禁止网络，省略/null 继承 Codex 默认。该字段只控制 workspace-write 下的 shell 网络访问，独立于 Fast mode、Web Search 和 MCP 设置；后台审批策略为 `never`，不会弹出额外授权。Dashboard 的“沙箱网络访问”与此对应，选择随 Run 快照保存，不修改全局 Codex 配置。完整采集、编稿、构建与浏览器检查应设置足够的 `timeout`（例如 `2h`），超时仍会终止运行。
+
 
 filesystem watcher 提供低延迟刷新，周期性 rescan 保证最终收敛。修改 Definitions directory 时，现有 definitions 会在同一个操作中安全迁移并切换 watcher，不需要重启 `taskd`。
 

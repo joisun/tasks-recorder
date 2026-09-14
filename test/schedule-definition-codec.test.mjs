@@ -172,3 +172,24 @@ test('Fast mode preserves explicit on/off, inherits when absent, and rejects inv
   assert.throws(() => parseScheduleDefinition(DAILY.replace('timeout: 2h', 'fast_mode: "true"\ntimeout: 2h')), /fast_mode/)
   assert.throws(() => serializeScheduleDefinition({ ...base, agent: 'other', fast_mode: true }), /fast_mode/)
 })
+
+
+test('network access is an independent optional Codex policy and round-trips false', () => {
+  for (const network_access of [true, false, null]) {
+    const definition = { ...parseScheduleDefinition(DAILY), network_access }
+    const parsed = parseScheduleDefinition(serializeScheduleDefinition(definition))
+    assert.equal(parsed.network_access, network_access ?? undefined)
+  }
+  assert.throws(() => serializeScheduleDefinition({ ...parseScheduleDefinition(DAILY), network_access: 'true' }), { code: 'SCHEDULE_DEFINITION_INVALID' })
+  assert.throws(() => serializeScheduleDefinition({ ...parseScheduleDefinition(DAILY), agent: 'claude', network_access: true }), { code: 'SCHEDULE_DEFINITION_INVALID' })
+})
+
+
+test('an enabled once definition remains readable and editable after its due time', () => {
+  const at = '2026-09-14T04:00:00.000Z'
+  const source = serializeScheduleDefinition({ ...parseScheduleDefinition(DAILY), cadence: { kind: 'once', at }, enabled: true }, { clock: () => new Date('2026-09-14T03:00:00Z') })
+  const after = { clock: () => new Date('2026-09-14T05:00:00Z') }
+  const completed = parseScheduleDefinition(source, after)
+  assert.equal(completed.enabled, true)
+  assert.equal(parseScheduleDefinition(serializeScheduleDefinition({ ...completed, title: 'Reviewed' }, after), after).title, 'Reviewed')
+})

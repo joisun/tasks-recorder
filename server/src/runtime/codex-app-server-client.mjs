@@ -11,7 +11,7 @@ export function createCodexAppServerClient({
   spawnImpl = spawn,
   runtimeEnvironment = createRuntimeEnvironment({ env: process.env }),
   requestTimeoutMs = 10_000,
-  maximumLineBytes = 256 * 1024,
+  maximumLineBytes = 16 * 1024 * 1024,
   shutdownGraceMs = 2_000,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
@@ -45,7 +45,8 @@ export function createCodexAppServerClient({
   const closeListeners = new Set()
   let closeError = null
   let nextId = 0
-  let buffer = Buffer.alloc(0)
+  let fragments = []
+  let bufferedBytes = 0
   let isClosed = false
   let childClosed = false
   let forceKillTimer = null
@@ -63,19 +64,25 @@ export function createCodexAppServerClient({
   child.stdout.on('data', (chunk) => {
     if (isClosed) return
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    buffer = buffer.byteLength === 0 ? Buffer.from(bytes) : Buffer.concat([buffer, bytes])
-    let newline = buffer.indexOf(0x0a)
-    while (newline !== -1) {
-      if (newline > maximumLineBytes) {
+    let offset = 0
+    while (offset < bytes.byteLength) {
+      const newline = bytes.indexOf(0x0a, offset)
+      const end = newline === -1 ? bytes.byteLength : newline
+      const fragment = bytes.subarray(offset, end)
+      bufferedBytes += fragment.byteLength
+      if (bufferedBytes > maximumLineBytes) {
         terminate('RUNTIME_PROTOCOL_FRAME_TOO_LARGE')
         return
       }
-      const line = buffer.subarray(0, newline).toString('utf8')
-      buffer = buffer.subarray(newline + 1)
+      if (fragment.byteLength) fragments.push(fragment)
+      if (newline === -1) break
+      const line = Buffer.concat(fragments, bufferedBytes).toString('utf8')
+      fragments = []
+      bufferedBytes = 0
       consume(line)
-      newline = buffer.indexOf(0x0a)
+      if (isClosed) return
+      offset = newline + 1
     }
-    if (buffer.byteLength > maximumLineBytes) terminate('RUNTIME_PROTOCOL_FRAME_TOO_LARGE')
   })
   child.stdin.on('error', () => terminate('RUNTIME_PROTOCOL_CLOSED'))
   child.stdout.on('error', () => terminate('RUNTIME_PROTOCOL_CLOSED'))
@@ -208,6 +215,8 @@ export function createCodexAppServerClient({
       request.reject(closeError)
     }
     pending.clear()
+    fragments = []
+    bufferedBytes = 0
     notificationListeners.clear()
     for (const listener of closeListeners) {
       try { listener(closeError) } catch {}
@@ -244,6 +253,11 @@ function protocolError(code) {
 }
 
 function protocolFailureCode(value) {
+  if (value?.code === -32601 || (value?.code === -32600
+    && typeof value.message === 'string'
+    && value.message.startsWith('Invalid request: unknown variant `thread/items/list`'))) {
+    return 'RUNTIME_PROTOCOL_METHOD_UNAVAILABLE'
+  }
   let serialized = ''
   try { serialized = JSON.stringify(value).slice(0, 8 * 1024) } catch {}
   return serialized.includes('activeTurnNotSteerable')

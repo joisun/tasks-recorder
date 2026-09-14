@@ -45,7 +45,10 @@ export class DashboardEventSource {
     const source = this.#createEventSource('/api/v1/events')
     this.#source = source
 
-    this.#listen('open', () => this.#onStateChange('open'))
+    this.#listen('open', () => {
+      this.#onStateChange('open')
+      this.#scheduleRefresh()
+    })
     this.#listen('error', () => this.#onStateChange('connecting'))
     this.#listen('changed', () => this.#scheduleRefresh())
   }
@@ -85,5 +88,10 @@ export class DashboardEventSource {
     void this.#queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })
     void this.#queryClient.invalidateQueries({ queryKey: queryKeys.tasks })
     void this.#queryClient.invalidateQueries({ queryKey: queryKeys.executions })
+    void this.#queryClient.invalidateQueries({ queryKey: queryKeys.schedules })
+    void this.#queryClient.invalidateQueries({
+      queryKey: queryKeys.allRuns,
+      predicate: (query) => query.queryKey.length === 3,
+    })
   }
 }

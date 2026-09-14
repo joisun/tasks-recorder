@@ -362,3 +362,21 @@ test('idle Codex exit completes the Run immediately, keeps session identity and 
   assert.equal(session.steerable, false)
   await assert.rejects(session.steer({ expectedTurnRevision: 1, text: 'hello' }), { code: 'RUN_NOT_ACTIVE' })
 })
+
+
+test('workspace network policy reaches thread creation and canceled sessions remain recoverable', async () => {
+  for (const network_access of [true, false, null]) {
+    const client = fakeClient()
+    const controller = new AbortController()
+    const session = createCodexInteractiveSessionFactory({ createClient: () => client }).create({
+      launch: { executable: '/bin/codex' }, run: { ...RUN, sandbox_mode: 'workspace-write', network_access },
+      signal: controller.signal, emit() {}, onSpawn() {},
+    })
+    const completion = session.start()
+    await new Promise((resolve) => setImmediate(resolve))
+    const thread = client.requests.find(({ method }) => method === 'thread/start')
+    assert.equal(thread.params.config?.['sandbox_workspace_write.network_access'], network_access ?? undefined)
+    controller.abort()
+    assert.equal((await completion).session_id, 'private-thread')
+  }
+})

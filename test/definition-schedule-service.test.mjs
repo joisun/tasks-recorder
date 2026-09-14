@@ -116,3 +116,11 @@ test('Schedule service validates Fast mode before persisting changes', async () 
     await assert.rejects(service.updateJob(ID, 'a'.repeat(64), { fast_mode }), { code: 'SCHEDULE_INPUT_INVALID' })
   }
 })
+
+test('invalid cadence is an actionable input error rather than an internal server error', async () => {
+  const definitions = repository([{ id: ID, enabled: true, cadence: { kind: 'daily', hour: 9, minute: 0 } }])
+  const service = createDefinitionScheduleService({ definitions, runtimeRegistry: { get: () => ({ id: 'codex' }) } })
+  for (const cadence of [{ kind: 'daily', hour: 99, minute: 0 }, { kind: 'once', at: 'invalid' }]) {
+    await assert.rejects(service.updateJob(ID, 'a'.repeat(64), { cadence }), { code: 'SCHEDULE_INPUT_INVALID' })
+  }
+})

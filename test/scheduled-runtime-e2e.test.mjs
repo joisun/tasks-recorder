@@ -194,7 +194,7 @@ for (const crash of [false, true]) test(`taskd executes Markdown Schedules throu
   }
   const active = await waitForActiveTurn(runtime.address.url, launched.body.run.id)
   assert.equal(active.interactive, true)
-  assert.equal(active.session_id, null)
+  assert.equal(active.session_id, SESSION_ID)
 
   const steered = await request(runtime.address.url, `/api/v1/runs/${active.id}/steer`, {
     method: 'POST',

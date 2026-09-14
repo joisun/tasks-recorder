@@ -151,6 +151,7 @@ function scheduleJob(row, { detail = false, runSummary = null } = {}) {
     model: row.model,
     reasoning_effort: row.reasoning_effort,
     fast_mode: row.fast_mode ?? null,
+    network_access: row.network_access ?? null,
     timeout_seconds: row.timeout_seconds,
     capabilities: row.capabilities ?? { skills: 'inherit', integrations: 'inherit' },
     enabled: row.enabled === true || row.enabled === 1,
@@ -559,7 +560,12 @@ export function createApiServer({
             `id: ${event.sequence}\nevent: run\ndata: ${JSON.stringify(event)}\n\n`,
           )
         }, { afterSequence })
-        request.once('close', unsubscribe)
+        const keepAlive = setInterval(() => {
+          if (!response.destroyed) response.write(': keep-alive\n\n')
+        }, 15_000)
+        keepAlive.unref?.()
+        const cleanup = () => { clearInterval(keepAlive); unsubscribe() }
+        response.once('close', cleanup)
         return
       }
       const runConversation = pathname.match(/^\/api\/v1\/runs\/([^/]+)\/conversation$/)
@@ -667,7 +673,7 @@ export function createApiServer({
         requireJson(request)
         const input = exactBody(await readJson(request), new Set([
           'title', 'prompt', 'workspace', 'agent', 'cadence', 'sandbox_mode', 'model',
-          'reasoning_effort', 'fast_mode', 'timeout_seconds', 'capabilities',
+          'reasoning_effort', 'fast_mode', 'network_access', 'timeout_seconds', 'capabilities',
         ]), 'Schedule')
         const result = scheduleMutationResult(await schedulerService.createJob(input))
         hub.publish()

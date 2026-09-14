@@ -102,6 +102,7 @@ Dashboard ──POST steer/stop──────────▶ RunService
 - activity normalization 只公开 command label、file count、MCP server/tool 等安全摘要，不公开 arguments、results 或 reasoning。
 - terminal SSE 到达后，Dashboard 必须关闭 Live stream 并重新读取 authoritative Run，避免 row/detail/session/summary 分裂。
 - completed Run 不在 Dashboard 内继续 multi-turn；后续操作使用已有 Terminal Resume boundary。
+- app-server 单帧上限为 16 MiB（包括历史对话响应），按分片累积，完整帧只合并一次，避免大消息反复复制。超限仍以 `RUNTIME_PROTOCOL_FRAME_TOO_LARGE` 收口，不能无限分配内存。
 - protocol request、frame、Run timeout 与 process shutdown 都有上限；`SIGINT` 无效时升级为 `SIGKILL`。
 
 ### Context capability isolation
@@ -119,13 +120,13 @@ Dashboard ──GET /runs/:id/conversation──▶ RunService
                                                │ trusted Run facts
                                                ▼
                                      Runtime adapter readConversation
-                                               │ thread/read
+                                               │ thread/items/list
                                                ▼
                                       CLI-owned local session
 ```
 
 - browser 只能提交 Run ID；`RunService` 从 ledger 取得 runtime ID、session ID 与 immutable Workspace snapshot；
-- Codex adapter 启动 bounded app-server client，并调用 `thread/read({ threadId, includeTurns: true })`；
+- Codex adapter 启动 bounded app-server client，优先使用 `thread/items/list` 分页读取，旧 CLI 明确不支持该方法时才回退 `thread/read({ threadId, includeTurns: true })`；
 - response 只规范化 `userMessage` 与 `agentMessage`，丢弃 reasoning、command、MCP/tool payload 与其他内部 item；
 - normalized messages 仅存在于 request/React query memory，不写 SQLite、Run logs、localStorage 或 persistent cache；
 - 本机 CLI session 缺失或协议不可用时返回 typed unavailable，UI 可回退到已经存在的 bounded `final_message`；
@@ -186,3 +187,20 @@ Schedule Markdown 与 CRUD API 的可选 `fast_mode` 为 boolean 或 null，仅 
 ### Codex 连接关闭
 
 App-server client 的 `onClose` 是一次性生命周期通知，覆盖无 pending RPC 时的进程退出、pipe error 与主动关闭；晚订阅者立即收到已保存的关闭结果。启动未完成时关闭也必须拒绝 `started`，不能留下无限等待。Interactive session 在启动请求前订阅，完成时退订，异常关闭立即 settle 为 failed，保留数字 exit code、已有 session ID 和已确认 file changes；不把原始 stderr、RPC payload 或未完成回复写入错误字段。主动取消与正常 Turn 完成先 settle 再关连接，避免被错误覆盖。RunService 沿用 terminal persistence 与 SSE 更新界面。
+
+
+### Schedule network access and recovery
+
+可选 `network_access` 为 boolean/null，仅 Codex 支持；缺省继承。Markdown、CRUD、Run snapshot 与两个编辑器必须保持 true/false/null 的语义。Interactive adapter 在 `thread/start.config` 传递 `sandbox_workspace_write.network_access`，CLI 路径传递对应 `-c`；不改变审批策略、全局配置或其他任务。该原生键仅影响 workspace-write 的 shell 网络策略。
+
+`RunService` 在 normalized `session` 事件到达时立即调用 `RunStore.recordSession`，而不是等待终态。完成、取消、超时与异常分支保留已知 session；restart recovery 仍将 open Run 标为 interrupted，不自动接管进程。UI 仅终态允许 Terminal Resume。
+
+Dashboard SSE 的 changed/open 必须使 schedules（含运行历史）和 runs（含详情）查询失效，并沿用 2 秒合并窗口。Live SSE 重连保留 cursor 和草稿，reset 后清除旧 cursor；连接丢失或恢复时补读 authoritative Run，使遗漏终态也能关闭 stream。客户端最多保留 500 条实时条目；完整对话仍由 Codex-owned session 提供。
+
+Cadence 输入校验错误返回 `SCHEDULE_INPUT_INVALID`，不能暴露为泛化 500 错误。
+
+已到期的一次性定义仍须可读取、编辑与查看运行历史，不能因时间流逝变为 invalid。读写 codec 允许过去的 once 时间；新建或明确修改 cadence 的 API 仍要求未来时间，调度防重由持久化 occurrence 负责。
+
+历史对话优先使用原生 `thread/items/list`（倒序分页，每页 8 条，最多 128 页），仅保留 user/assistant messages 后按时间正序展示。字符总量仍限制为 1 MiB，达到页数或容量上限必须标记 truncated；不落盘工具输出。仅旧 CLI 明确返回 method-not-found 时退回有 16 MiB 上限的 `thread/read`。
+
+Run SSE 每 15 秒发送 comment 保活，关闭 response 时同时清理 timer 与订阅。开发代理必须立即转发响应头，不能等下一条事件才让浏览器进入 connected。全局变更只刷新 Run 元数据，避免反复启动 CLI 重读终态对话。

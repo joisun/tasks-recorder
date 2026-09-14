@@ -38,6 +38,7 @@ jobs:
           npm run build:adapters
           npm run check
           npm test
+          npm run test:ui -- --maxWorkers=2
 
       - name: Package release assets
         run: |

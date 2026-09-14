@@ -8,7 +8,7 @@ import { parseCodexJsonLine } from '../parsers/codex-jsonl.mjs'
 import { runtimeError } from '../runtime-errors.mjs'
 import { createCodexInteractiveSessionFactory } from './codex-interactive-session.mjs'
 
-const CONVERSATION_PROTOCOL_BYTES = 4 * 1024 * 1024
+const CONVERSATION_PROTOCOL_BYTES = 16 * 1024 * 1024
 const MAX_CONVERSATION_CHARACTERS = 1024 * 1024
 const MAX_CONVERSATION_MESSAGES = 2_048
 
@@ -102,6 +102,11 @@ export function createCodexRuntimeDefinition({
         await client.request('initialize', {
           clientInfo: { name: 'tasks-recorder', title: 'Tasks Recorder', version: 'source' },
         })
+        try {
+          return await readConversationPages(client, threadId)
+        } catch (error) {
+          if (error?.code !== 'RUNTIME_PROTOCOL_METHOD_UNAVAILABLE') throw error
+        }
         const response = await client.request('thread/read', {
           threadId,
           includeTurns: true,
@@ -132,6 +137,43 @@ export function createCodexRuntimeDefinition({
       })
     },
   })
+}
+
+async function readConversationPages(client, threadId) {
+  const messages = []
+  const cursors = new Set()
+  let cursor
+  let characters = 0
+  let truncated = false
+  for (let page = 0; page < 128; page += 1) {
+    const response = await client.request('thread/items/list', {
+      threadId, limit: 8, sortDirection: 'desc', ...(cursor ? { cursor } : {}),
+    })
+    if (!Array.isArray(response?.data)) {
+      throw runtimeError('RUNTIME_CONVERSATION_UNAVAILABLE', 'Codex returned an invalid conversation page.')
+    }
+    for (const entry of response.data) {
+      const message = conversationMessage(entry?.item)
+      if (!message) continue
+      const remaining = MAX_CONVERSATION_CHARACTERS - characters
+      if (messages.length >= MAX_CONVERSATION_MESSAGES || remaining <= 0) {
+        return { session_id: threadId, messages: messages.reverse(), truncated: true }
+      }
+      if (message.text.length > remaining) {
+        message.text = message.text.slice(-remaining)
+        truncated = true
+      }
+      messages.push(message)
+      characters += message.text.length
+    }
+    cursor = response.nextCursor
+    if (!cursor) return { session_id: threadId, messages: messages.reverse(), truncated }
+    if (typeof cursor !== 'string' || cursors.has(cursor)) {
+      throw runtimeError('RUNTIME_CONVERSATION_UNAVAILABLE', 'Codex returned a repeated conversation cursor.')
+    }
+    cursors.add(cursor)
+  }
+  return { session_id: threadId, messages: messages.reverse(), truncated: true }
 }
 
 function normalizeConversation(thread, expectedThreadId) {
@@ -196,6 +238,7 @@ function invocationSnapshot(run) {
     sandbox_mode: run.sandbox_mode,
     model: run.model ?? null,
     reasoning_effort: run.reasoning_effort ?? null,
+    ...(run.network_access != null ? { network_access: run.network_access } : {}),
     ...(run.fast_mode != null ? { fast_mode: run.fast_mode } : {}),
     timeout_seconds: run.timeout_seconds,
   }

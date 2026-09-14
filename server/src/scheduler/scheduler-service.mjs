@@ -6,7 +6,7 @@ import { SchedulerError } from './scheduler-errors.mjs'
 
 const JOB_FIELDS = new Set([
   'title', 'prompt', 'workspace', 'agent', 'cadence', 'sandbox_mode', 'model',
-  'reasoning_effort', 'fast_mode', 'timeout_seconds', 'capabilities',
+  'reasoning_effort', 'fast_mode', 'network_access', 'timeout_seconds', 'capabilities',
 ])
 const SANDBOX_MODES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 const CAPABILITY_MODES = new Set(['inherit', 'disabled'])
@@ -52,7 +52,12 @@ export function createDefinitionScheduleService({
     if (!patch || own(output, 'workspace')) output.workspace = await canonicalWorkspace(output.workspace)
     if (!patch || own(output, 'agent')) output.agent = registeredAgent(output.agent)
     if (!patch || own(output, 'cadence')) {
-      output.cadence = validateCadence(output.cadence, { now: nowDate(clock) })
+      try {
+        output.cadence = validateCadence(output.cadence, { now: nowDate(clock) })
+      } catch (error) {
+        if (!(error instanceof TypeError || error instanceof RangeError)) throw error
+        fail('SCHEDULE_INPUT_INVALID', error.message, { field: 'cadence' })
+      }
     }
     if (!patch || own(output, 'sandbox_mode')) output.sandbox_mode = sandboxMode(output.sandbox_mode)
     if (!patch || own(output, 'model')) output.model = optionalSelection(output.model, 'model', MODEL, 128)
@@ -67,6 +72,9 @@ export function createDefinitionScheduleService({
     if (output.fast_mode != null && typeof output.fast_mode !== 'boolean') {
       fail('SCHEDULE_INPUT_INVALID', 'fast_mode must be boolean or null', { field: 'fast_mode' })
     }
+    if (output.network_access != null && typeof output.network_access !== 'boolean') {
+      fail('SCHEDULE_INPUT_INVALID', 'network_access must be boolean or null', { field: 'network_access' })
+    }
     if (!patch || own(output, 'timeout_seconds')) output.timeout_seconds = timeoutSeconds(output.timeout_seconds)
     if (!patch || own(output, 'capabilities')) {
       output.capabilities = capabilityPolicy(output.capabilities, {
@@ -77,8 +85,8 @@ export function createDefinitionScheduleService({
   }
 
   async function view(definition) {
-    const latest = runService?.latestOccurrence
-      ? await runService.latestOccurrence(definition.id)
+    const latest = runService?.latestRun
+      ? await runService.latestRun(definition.id)
       : null
     return {
       ...definition,

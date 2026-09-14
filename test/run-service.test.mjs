@@ -430,6 +430,10 @@ test('RunService steers the current interactive Turn without persisting guidance
   assert.equal(interactiveStarted, true)
   sessionOptions.emit({ type: 'turn_started', payload: { turn_revision: 1 } })
 
+  sessionOptions.emit({ type: 'session', payload: { session_id: 'session-1' } })
+  assert.equal(current.runStore.get(run.id).session_id, 'session-1')
+  assert.throws(() => current.service.resumeTarget(run.id), { code: 'SCHEDULE_RUN_ACTIVE' })
+  assert.equal(current.service.latestRun(SCHEDULE.id).id, run.id)
   const activeRun = current.service.get(run.id)
   assert.equal(activeRun.status, 'running')
   assert.equal(activeRun.interactive, true)
@@ -455,4 +459,5 @@ test('RunService steers the current interactive Turn without persisting guidance
   })
   await current.service.whenIdle()
   assert.equal(current.service.get(run.id).interactive, false)
+  assert.equal(current.service.resumeTarget(run.id).session_id, 'session-1')
 })

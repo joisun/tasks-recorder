@@ -15,7 +15,7 @@ const FRONT_MATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*
 const MARKER = /^type:\s*["']?tasks-recorder\/schedule["']?\s*(?:#.*)?$/m
 const FIELDS = new Set([
   'type', 'id', 'title', 'enabled', 'workspace', 'agent', 'schedule', 'capabilities',
-  'sandbox', 'model', 'reasoning', 'fast_mode', 'timeout',
+  'sandbox', 'model', 'reasoning', 'fast_mode', 'network_access', 'timeout',
 ])
 const SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 const CAPABILITY_MODES = new Set(['inherit', 'disabled'])
@@ -190,6 +190,9 @@ export function parseScheduleDefinition(source, {
   if (frontMatter.enabled !== undefined && typeof frontMatter.enabled !== 'boolean') {
     fail('SCHEDULE_DEFINITION_INVALID', 'enabled must be boolean', { field: 'enabled' })
   }
+  if (frontMatter.network_access != null && (typeof frontMatter.network_access !== 'boolean' || agentId(frontMatter.agent) !== 'codex')) {
+    fail('SCHEDULE_DEFINITION_INVALID', 'network_access requires Codex and a boolean value', { field: 'network_access' })
+  }
   if (frontMatter.fast_mode != null && typeof frontMatter.fast_mode !== 'boolean') {
     fail('SCHEDULE_DEFINITION_INVALID', 'fast_mode must be boolean or null', { field: 'fast_mode' })
   }
@@ -209,10 +212,11 @@ export function parseScheduleDefinition(source, {
     enabled,
     workspace: string(frontMatter.workspace, 'workspace', 4096),
     agent: agentId(frontMatter.agent),
-    cadence: cadence(frontMatter.schedule, clock, { allowPastOnce: !enabled }),
+    cadence: cadence(frontMatter.schedule, clock, { allowPastOnce: true }),
     sandbox_mode: sandbox,
     model: optionalCodexSelection(frontMatter.model, 'model', isCodexModelSlug, 128),
     reasoning_effort: optionalCodexSelection(frontMatter.reasoning, 'reasoning', isCodexReasoningLevel, 16),
+    ...(frontMatter.network_access != null ? { network_access: frontMatter.network_access } : {}),
     ...(frontMatter.fast_mode != null ? { fast_mode: frontMatter.fast_mode } : {}),
     timeout_seconds: timeoutSeconds(frontMatter.timeout),
     capabilities: capabilities(frontMatter.capabilities),
@@ -235,7 +239,7 @@ export function serializeScheduleDefinition(job, { clock = () => new Date() } = 
     enabled,
     workspace: string(value.workspace, 'workspace', 4096),
     agent: agentId(value.agent),
-    schedule: humanCadence(validateCadence(value.cadence, { now: clock(), allowPastOnce: !enabled })),
+    schedule: humanCadence(validateCadence(value.cadence, { now: clock(), allowPastOnce: true })),
     capabilities: capabilities(value.capabilities),
     sandbox: value.sandbox_mode ?? 'read-only',
   }
@@ -246,6 +250,12 @@ export function serializeScheduleDefinition(job, { clock = () => new Date() } = 
   }
   if (value.reasoning_effort !== undefined && value.reasoning_effort !== null) {
     frontMatter.reasoning = optionalCodexSelection(value.reasoning_effort, 'reasoning', isCodexReasoningLevel, 16)
+  }
+  if (value.network_access != null) {
+    if (typeof value.network_access !== 'boolean' || frontMatter.agent !== 'codex') {
+      fail('SCHEDULE_DEFINITION_INVALID', 'network_access requires Codex and a boolean value', { field: 'network_access' })
+    }
+    frontMatter.network_access = value.network_access
   }
   if (value.fast_mode != null) {
     if (typeof value.fast_mode !== 'boolean' || frontMatter.agent !== 'codex') {

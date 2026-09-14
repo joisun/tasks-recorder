@@ -1,4 +1,4 @@
-import { CircleCheck, CircleX, Send, Square } from 'lucide-react'
+import { CircleCheck, CircleX, RefreshCw, Send, Square } from 'lucide-react'
 import type { KeyboardEvent } from 'react'
 
 import {
@@ -48,9 +48,16 @@ export function SessionConversation({
         {entries.length ? entries.map((entry) => entry.kind === 'message' ? (
           <Message from={entry.role} key={`message-${entry.itemId}`}>
             <MessageContent>
-              <MessageResponse className="live-session__message" isAnimating={isAnimating}>
-                {entry.text}
-              </MessageResponse>
+              {entry.role === 'user' && entry.text.length > 1200 ? (
+                <details>
+                  <summary className="live-session__prompt-summary">展开完整指令（{entry.text.length.toLocaleString()} 字符）</summary>
+                  <MessageResponse className="live-session__message">{entry.text}</MessageResponse>
+                </details>
+              ) : (
+                <MessageResponse className="live-session__message" isAnimating={isAnimating}>
+                  {entry.text}
+                </MessageResponse>
+              )}
             </MessageContent>
           </Message>
         ) : (
@@ -81,6 +88,7 @@ export function LiveSession({
   if (!live.active) return null
 
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing) return
     if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return
     event.preventDefault()
     if (live.canSteer) void live.steer()
@@ -93,6 +101,9 @@ export function LiveSession({
         <span data-connection={live.connection}>
           <i aria-hidden="true" />{CONNECTION_LABELS[live.connection]}
         </span>
+        <Button size="xs" variant="quiet" onPress={live.reconnect} isDisabled={live.connection === 'closed'} aria-label="重新连接 Live Session">
+          <RefreshCw aria-hidden="true" />重新连接
+        </Button>
       </header>
 
       <SessionConversation

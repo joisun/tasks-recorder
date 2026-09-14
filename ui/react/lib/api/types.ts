@@ -263,6 +263,7 @@ export interface ScheduleRecord {
   model: string | null
   reasoning_effort: string | null
   fast_mode?: boolean | null
+  network_access?: boolean | null
   timeout_seconds: number
   capabilities: ScheduleCapabilities
   enabled: boolean
@@ -319,6 +320,8 @@ export interface RuntimeModelCatalogResponse {
 }
 
 export interface InvalidScheduleDefinition {
+  source_path?: string
+  error_code?: string
   path?: string
   title?: string
   code?: string
@@ -433,6 +436,7 @@ export interface ScheduleMutationInput {
   model: string | null
   reasoning_effort: string | null
   fast_mode?: boolean | null
+  network_access?: boolean | null
   timeout_seconds: number
   capabilities: ScheduleCapabilities
 }

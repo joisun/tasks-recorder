@@ -35,6 +35,7 @@ jobs:
         run: |
           npm run check
           npm test
+          npm run test:ui -- --maxWorkers=2
 
       - name: Build release artifacts
         run: npm run package:release

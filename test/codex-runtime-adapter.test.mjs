@@ -155,6 +155,7 @@ test('Codex definition reads display messages from the CLI-owned Thread without 
         async request(method, params) {
           requests.push({ method, params })
           if (method === 'initialize') return {}
+          if (method === 'thread/items/list') throw Object.assign(new Error('unsupported'), { code: 'RUNTIME_PROTOCOL_METHOD_UNAVAILABLE' })
           return {
             thread: {
               id: 'thread-1',
@@ -189,4 +190,24 @@ test('Codex definition reads display messages from the CLI-owned Thread without 
     params: { threadId: 'thread-1', includeTurns: true },
   })
   assert.equal(closed, true)
+})
+
+
+test('Codex conversation pagination keeps chronological display messages and drops tool payloads', async () => {
+  const requests = []
+  const definition = createCodexRuntimeDefinition({ createAppServerClient: () => ({
+    started: Promise.resolve({ pid: 1 }), close() {},
+    async request(method, params) {
+      if (method === 'initialize') return {}
+      assert.equal(method, 'thread/items/list')
+      requests.push(params)
+      return params.cursor ? { data: [{ item: { type: 'userMessage', id: 'u', content: [{ type: 'text', text: 'Question' }] } }], nextCursor: null }
+        : { data: [{ item: { type: 'agentMessage', id: 'a', text: 'Answer' } }, { item: { type: 'commandExecution', command: 'private tool payload' } }], nextCursor: 'page-2' }
+    },
+  }) })
+  const result = await definition.readConversation({ launch: { executable: '/bin/codex' }, run: { session_id: 'thread', snapshot: { workspace: '/tmp' } } })
+  assert.deepEqual(result.messages, [{ id: 'u', role: 'user', text: 'Question' }, { id: 'a', role: 'assistant', text: 'Answer' }])
+  assert.equal(requests[0].sortDirection, 'desc')
+  assert.equal(requests[1].cursor, 'page-2')
+  assert.equal(result.truncated, false)
 })
