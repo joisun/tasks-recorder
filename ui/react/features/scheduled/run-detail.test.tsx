@@ -49,3 +49,12 @@ test('prevents repeated clicks while opening and displays actionable failures', 
   expect(await screen.findByRole('alert')).toHaveTextContent('文件已不存在')
   await waitFor(() => expect(file).not.toBeDisabled())
 })
+
+
+test('closed protocol displays an actionable terminal error and its exit code', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><RunDetail api={createDashboardApi()} run={{ ...run, status: 'failed', error_code: 'RUNTIME_PROTOCOL_CLOSED', exit_code: 17 }} /></QueryClientProvider>)
+  expect(screen.getByText(/Codex 执行连接已关闭/)).toBeInTheDocument()
+  expect(screen.getByText('17')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument()
+})

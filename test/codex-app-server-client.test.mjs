@@ -244,3 +244,37 @@ test('app-server client maps Codex activeTurnNotSteerable without exposing RPC d
     return true
   })
 })
+
+test('idle process close notifies once, preserves exit code, and supports late subscribers', async () => {
+  const child = fakeChildProcess()
+  const client = createCodexAppServerClient({ executable: '/codex', cwd: '/tmp', spawnImpl: () => child })
+  child.emit('spawn')
+  await client.started
+  const errors = []
+  client.onClose((error) => errors.push(error))
+  const remove = client.onClose(() => assert.fail('unsubscribed listener'))
+  remove()
+  child.stderr.write('private prompt or token must never enter close diagnostics')
+  child.emit('close', 17, null)
+  client.close()
+  child.emit('close', 17, null)
+  client.onClose((error) => errors.push(error))
+  assert.equal(errors.length, 2)
+  assert.equal(errors[0], errors[1])
+  assert.equal(errors[0].exit_code, 17)
+  assert.equal(errors[0].code, 'RUNTIME_PROTOCOL_CLOSED')
+  assert.doesNotMatch(JSON.stringify(errors), /private|token/)
+})
+
+test('pipe error terminates the lifecycle and rejects pending startup and requests', async () => {
+  const child = fakeChildProcess()
+  const client = createCodexAppServerClient({ executable: '/codex', cwd: '/tmp', spawnImpl: () => child })
+  const started = assert.rejects(client.started, { code: 'RUNTIME_PROTOCOL_CLOSED' })
+  const pending = assert.rejects(client.request('initialize'), { code: 'RUNTIME_PROTOCOL_CLOSED' })
+  let closes = 0
+  client.onClose(() => { closes += 1 })
+  child.stdin.emit('error', new Error('EPIPE'))
+  await Promise.all([started, pending])
+  assert.equal(closes, 1)
+  assert.deepEqual(child.kills, ['SIGINT'])
+})

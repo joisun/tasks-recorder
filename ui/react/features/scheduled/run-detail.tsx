@@ -170,7 +170,7 @@ export function RunDetail({ api, run }: { api: DashboardApi; run: RunRecord }) {
       {run.error_code ? (
         <section className="run-detail__section">
           <div className="run-detail__section-heading"><h3>错误</h3></div>
-          <code className="run-detail__error">{run.error_code}</code>
+          <code className="run-detail__error">{run.error_code === 'RUNTIME_PROTOCOL_CLOSED' ? 'Codex 执行连接已关闭，本次任务已结束。可查看退出码后重新运行。' : run.error_code}</code>
         </section>
       ) : null}
 

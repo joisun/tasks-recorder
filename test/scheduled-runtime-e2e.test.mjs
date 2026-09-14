@@ -8,7 +8,7 @@ import { startTaskd } from '../server/src/taskd-runtime.mjs'
 
 const SESSION_ID = '019fcfae-8d5b-7640-aec8-83a114810589'
 
-async function writeFakeCodex(directory) {
+async function writeFakeCodex(directory, crash = false) {
   const path = join(directory, 'codex')
   await writeFile(path, `#!/usr/bin/env node
 const readline = require('node:readline')
@@ -56,6 +56,7 @@ rl.on('line', (line) => {
   if (request.method === 'turn/start') {
     if (!request.params.input[0].text.includes('Create the report')) process.exit(13)
     result(request.id, { turn: { id: 'turn-1', status: 'inProgress', items: [] } })
+    if (${crash}) { setTimeout(() => process.exit(17), 100); return }
     turnStarted = true
     send({ jsonrpc: '2.0', method: 'turn/started', params: { threadId: '${SESSION_ID}', turn: { id: 'turn-1', status: 'inProgress', items: [] } } })
     send({ jsonrpc: '2.0', method: 'item/agentMessage/delta', params: { threadId: '${SESSION_ID}', turnId: 'turn-1', itemId: 'message-1', delta: 'Starting report. ' } })
@@ -116,14 +117,14 @@ async function waitForActiveTurn(url, runId) {
   throw new Error('Run did not expose an active Turn')
 }
 
-test('taskd executes Markdown Schedules through the direct runtime registry pipeline', async (t) => {
+for (const crash of [false, true]) test(`taskd executes Markdown Schedules through the direct runtime registry pipeline (crash=${crash})`, async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'tasks-recorder-runtime-e2e-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const workspace = join(root, 'workspace')
   const data = join(root, 'data')
   await mkdir(workspace)
   await mkdir(data)
-  const codexPath = await writeFakeCodex(root)
+  const codexPath = await writeFakeCodex(root, crash)
 
   const runtime = await startTaskd({
     config: {
@@ -177,6 +178,20 @@ test('taskd executes Markdown Schedules through the direct runtime registry pipe
   assert.equal(launched.status, 202, JSON.stringify(launched.body))
   assert.equal(launched.body.run.status, 'queued')
 
+  if (crash) {
+    const failed = await waitForRun(runtime.address.url, launched.body.run.id)
+    assert.equal(failed.status, 'failed')
+    assert.equal(failed.error_code, 'RUNTIME_PROTOCOL_CLOSED')
+    assert.equal(failed.exit_code, 17)
+    assert.equal(failed.session_id, SESSION_ID)
+    assert.equal(failed.interactive, false)
+    const retry = await request(runtime.address.url, `/api/v1/runs/${failed.id}/steer`, {
+      method: 'POST', body: { expected_turn_revision: 1, text: 'Please add a summary.' },
+    })
+    assert.notEqual(retry.status, 202)
+    assert.equal(retry.body.error.code, 'RUN_NOT_ACTIVE')
+    return
+  }
   const active = await waitForActiveTurn(runtime.address.url, launched.body.run.id)
   assert.equal(active.interactive, true)
   assert.equal(active.session_id, null)

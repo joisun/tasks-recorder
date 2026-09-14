@@ -32,7 +32,7 @@ tasks-recorder status
 普通安装不需要 clone repository、`npm install` 或 `npm ci`。更谨慎的固定版本安装方式：
 
 ```bash
-version=v0.8.3
+version=v0.8.4
 curl -fsSLO "https://raw.githubusercontent.com/joisun/tasks-recorder/${version}/install.sh"
 less install.sh
 bash install.sh --version "$version"
@@ -308,7 +308,7 @@ tail -n 100 ~/.config/tasks-recorder/logs/tasks-recorder.ndjson
 - Dashboard 打不开：检查 `server_port` 是否被占用以及 `taskd.stderr.log`。
 - Runtime 为 `unavailable`：运行对应 CLI 的 `--version` 后重新打开 editor 或调用 `POST /api/v1/runtimes/refresh`；失败结果不会被长期缓存。registry 会自动补充 Homebrew、fnm/nvm/mise 等 GUI-missing toolchain directories，也可显式配置 `CODEX_BIN` / `codex_path`。
 - Model 使用 fallback：手动运行解析到的 `codex debug models`；fallback 不会阻止保存或 Run。
-- Run 失败：在 Run Review 查看 stable error code、bounded stderr 与 final result。
+- Run 失败：在 Run Review 查看 stable error code、退出码与 final result。`RUNTIME_PROTOCOL_CLOSED` 表示 Codex 执行连接已关闭；任务会结束并停止接受消息，已有 session ID 会保留以便读取历史。退出码可辅助诊断，但不能单独证明退出原因；interactive app-server 的原始 stderr 不保存。
 - 历史对话不可用：确认对应 `thread_id` 仍存在于本机 Codex session inventory；Tasks Recorder 不保存第二份 transcript，因此 session 被 Codex 清理后只显示 Run `final_message`。
 - Schedule definition 不可用：按页面给出的 source path 修复 YAML、duplicate UUID、unknown field、cadence 或 symlink 问题；watcher 会自动重试。
 - Dashboard 正常但没有自动记录：确认 adapter 已启用，重新打开 agent conversation，并完成 hooks trust / MCP approval。

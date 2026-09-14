@@ -5,6 +5,7 @@ import { createCodexInteractiveSessionFactory } from '../server/src/runtime/adap
 
 function fakeClient({ skillsResponse } = {}) {
   const notifications = new Set()
+  const closeListeners = new Set()
   const requests = []
   const client = {
     pid: 7401,
@@ -32,6 +33,14 @@ function fakeClient({ skillsResponse } = {}) {
     onNotification(listener) {
       notifications.add(listener)
       return () => notifications.delete(listener)
+    },
+    onClose(listener) {
+      closeListeners.add(listener)
+      return () => closeListeners.delete(listener)
+    },
+    disconnect(exit_code = 1) {
+      client.closed = true
+      for (const listener of closeListeners) listener(Object.assign(new Error('RUNTIME_PROTOCOL_CLOSED'), { code: 'RUNTIME_PROTOCOL_CLOSED', exit_code }))
     },
     emit(method, params) {
       for (const listener of notifications) listener({ method, params })
@@ -335,4 +344,21 @@ test('Fast mode reaches the actual turn request as fast/default or inherits with
       await completion
     }
   }
+})
+
+test('idle Codex exit completes the Run immediately, keeps session identity and disables steering', async () => {
+  const client = fakeClient()
+  const factory = createCodexInteractiveSessionFactory({ createClient: () => client })
+  const session = factory.create({ launch: { executable: '/codex' }, run: RUN, signal: new AbortController().signal, emit() {}, onSpawn() {} })
+  const completion = session.start()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(session.steerable, true)
+  client.disconnect(17)
+  const result = await completion
+  assert.equal(result.status, 'failed')
+  assert.equal(result.error_code, 'RUNTIME_PROTOCOL_CLOSED')
+  assert.equal(result.exit_code, 17)
+  assert.equal(result.session_id, 'private-thread')
+  assert.equal(session.steerable, false)
+  await assert.rejects(session.steer({ expectedTurnRevision: 1, text: 'hello' }), { code: 'RUN_NOT_ACTIVE' })
 })

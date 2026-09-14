@@ -42,6 +42,8 @@ export function createCodexAppServerClient({
   })
   const pending = new Map()
   const notificationListeners = new Set()
+  const closeListeners = new Set()
+  let closeError = null
   let nextId = 0
   let buffer = Buffer.alloc(0)
   let isClosed = false
@@ -54,6 +56,9 @@ export function createCodexAppServerClient({
     resolveStarted = resolve
     rejectStarted = reject
   })
+
+  // Lifecycle consumers may subscribe before awaiting process startup.
+  started.catch(() => {})
 
   child.stdout.on('data', (chunk) => {
     if (isClosed) return
@@ -72,6 +77,8 @@ export function createCodexAppServerClient({
     }
     if (buffer.byteLength > maximumLineBytes) terminate('RUNTIME_PROTOCOL_FRAME_TOO_LARGE')
   })
+  child.stdin.on('error', () => terminate('RUNTIME_PROTOCOL_CLOSED'))
+  child.stdout.on('error', () => terminate('RUNTIME_PROTOCOL_CLOSED'))
   child.stderr?.resume?.()
   child.once('spawn', () => {
     if (startSettled) return
@@ -90,11 +97,11 @@ export function createCodexAppServerClient({
     }
     settleClosed()
   })
-  child.once('close', () => {
+  child.once('close', (exitCode) => {
     childClosed = true
     if (forceKillTimer !== null) clearTimer(forceKillTimer)
     forceKillTimer = null
-    settleClosed()
+    settleClosed('RUNTIME_PROTOCOL_CLOSED', exitCode)
   })
 
   function consume(line) {
@@ -133,6 +140,13 @@ export function createCodexAppServerClient({
     if (typeof listener !== 'function') throw new TypeError('notification listener is required')
     notificationListeners.add(listener)
     return () => notificationListeners.delete(listener)
+  }
+
+  function onClose(listener) {
+    if (typeof listener !== 'function') throw new TypeError('close listener is required')
+    if (isClosed) listener(closeError)
+    else closeListeners.add(listener)
+    return () => closeListeners.delete(listener)
   }
 
   function request(method, params = {}) {
@@ -179,21 +193,33 @@ export function createCodexAppServerClient({
     forceKillTimer?.unref?.()
   }
 
-  function settleClosed(errorCode = 'RUNTIME_PROTOCOL_CLOSED') {
+  function settleClosed(errorCode = 'RUNTIME_PROTOCOL_CLOSED', exitCode = null) {
     if (isClosed) return
     isClosed = true
+    closeError = Object.assign(protocolError(errorCode), {
+      exit_code: Number.isSafeInteger(exitCode) ? exitCode : null,
+    })
+    if (!startSettled) {
+      startSettled = true
+      rejectStarted(closeError)
+    }
     for (const request of pending.values()) {
       clearTimer(request.timer)
-      request.reject(protocolError(errorCode))
+      request.reject(closeError)
     }
     pending.clear()
     notificationListeners.clear()
+    for (const listener of closeListeners) {
+      try { listener(closeError) } catch {}
+    }
+    closeListeners.clear()
   }
 
   return Object.freeze({
     request,
     notify,
     onNotification,
+    onClose,
     started,
     close,
     get closed() { return isClosed },

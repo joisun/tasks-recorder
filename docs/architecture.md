@@ -182,3 +182,7 @@ git diff --check
 ### Schedule Fast mode
 
 Schedule Markdown 与 CRUD API 的可选 `fast_mode` 为 boolean 或 null，仅 Codex 支持显式 boolean。省略/null 继承运行时默认，true 开启，false 使用普通速度；旧 definition 无需迁移。Run 沿用完整不可变 snapshot 保存选择。Codex interactive adapter 将显式值映射为 `turn/start.serviceTier` 的 `fast` / `default`；CLI invocation 对应 `-c service_tier="fast"` / `"default"`，继承时不传覆盖值。不要用降低 reasoning effort 实现 Fast mode，也不要修改用户的全局 Codex 配置。
+
+### Codex 连接关闭
+
+App-server client 的 `onClose` 是一次性生命周期通知，覆盖无 pending RPC 时的进程退出、pipe error 与主动关闭；晚订阅者立即收到已保存的关闭结果。启动未完成时关闭也必须拒绝 `started`，不能留下无限等待。Interactive session 在启动请求前订阅，完成时退订，异常关闭立即 settle 为 failed，保留数字 exit code、已有 session ID 和已确认 file changes；不把原始 stderr、RPC payload 或未完成回复写入错误字段。主动取消与正常 Turn 完成先 settle 再关连接，避免被错误覆盖。RunService 沿用 terminal persistence 与 SSE 更新界面。

@@ -38,6 +38,7 @@ function createSession({
   const capabilities = normalizedCapabilities(run.capabilities)
   let client = null
   let unsubscribe = () => {}
+  let unsubscribeClosed = () => {}
   let threadId = null
   let turnId = null
   let turnRevision = 0
@@ -135,7 +136,13 @@ function createSession({
         configOverrides: capabilityLaunch.configOverrides,
       })
       unsubscribe = client.onNotification(handleNotification)
+      unsubscribeClosed = client.onClose?.((error) => finish({
+        ...failedResult(error),
+        session_id: threadId,
+        file_changes: [...fileChanges.values()],
+      })) ?? (() => {})
       const spawned = await client.started
+      if (settled) return completion
       onSpawn({ pid: spawned.pid })
       await client.request('initialize', {
         clientInfo: { name: 'tasks-recorder', title: 'Tasks Recorder', version: 'source' },
@@ -154,6 +161,7 @@ function createSession({
         ephemeral: false,
         config: threadConfig,
       }))
+      if (settled) return completion
       threadId = startedThread?.thread?.id
       if (typeof threadId !== 'string' || threadId.length === 0) {
         throw sessionError('RUNTIME_PROTOCOL_INVALID')
@@ -171,6 +179,7 @@ function createSession({
         effort: run.reasoning_effort,
         serviceTier: run.fast_mode == null ? undefined : run.fast_mode ? 'fast' : 'default',
       }))
+      if (settled) return completion
       const startedTurnId = startedTurn?.turn?.id
       if (typeof startedTurnId !== 'string' || startedTurnId.length === 0) {
         throw sessionError('RUNTIME_PROTOCOL_INVALID')
@@ -222,6 +231,7 @@ function createSession({
     clearTimer(timeout)
     signal.removeEventListener('abort', onAbort)
     unsubscribe()
+    unsubscribeClosed()
     client?.close()
     resolveCompletion(result)
   }
@@ -258,7 +268,7 @@ function turnResult(turn, { threadId, finalMessage, fileChanges }) {
 function failedResult(error) {
   return {
     status: error?.code === 'RUN_CANCELED' ? 'canceled' : 'failed',
-    exit_code: null,
+    exit_code: Number.isSafeInteger(error?.exit_code) ? error.exit_code : null,
     error_code: error?.code ?? 'RUNTIME_PROTOCOL_ERROR',
     session_id: null,
     final_message: null,
